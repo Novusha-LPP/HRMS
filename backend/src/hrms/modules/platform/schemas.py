@@ -1,0 +1,137 @@
+from datetime import datetime
+from typing import Any, Literal, Optional
+
+from pydantic import BaseModel, EmailStr, Field
+
+
+class PlatformLoginRequest(BaseModel):
+    email: EmailStr
+    password: str
+
+
+class PlatformLoginResponse(BaseModel):
+    access_token: str
+    token_type: str = "bearer"
+    expires_in: int
+    name: str
+    email: str
+    role: str
+
+
+class PlatformMe(BaseModel):
+    name: str
+    email: str
+    role: str
+
+
+class TenantSummary(BaseModel):
+    id: str
+    slug: str
+    display_name: str
+    status: str
+    plan: str
+    legal_entity_count: int
+    created_at: datetime
+    archived_at: Optional[datetime] = None
+
+
+class TenantListResponse(BaseModel):
+    items: list[TenantSummary]
+    total: int
+
+
+class TenantLegalEntity(BaseModel):
+    id: str
+    name: str
+    short_name: Optional[str] = None
+    status: str
+
+
+class TenantDetail(TenantSummary):
+    country_code: str
+    employee_count: int
+    legal_entities: list[TenantLegalEntity]
+
+
+class TenantUpdate(BaseModel):
+    status: Optional[Literal["ACTIVE", "SUSPENDED"]] = None
+    plan: Optional[Literal["STARTER", "GROWTH", "ENTERPRISE"]] = None
+
+
+class PlatformCompanyCreate(BaseModel):
+    company_name: str = Field(min_length=2, max_length=255)
+    country_code: str = Field(default="IN", min_length=2, max_length=2)
+    mode: Literal["NEW_TENANT", "SUBSIDIARY"]
+    # Required for SUBSIDIARY: which existing tenant this becomes a legal
+    # entity inside. Ignored for NEW_TENANT.
+    parent_tenant_id: Optional[str] = None
+    # Required for NEW_TENANT: the first login for that new, independent
+    # tenant. Ignored for SUBSIDIARY — it inherits the parent tenant's
+    # existing admins/roles rather than getting its own.
+    admin_email: Optional[EmailStr] = None
+    admin_password: Optional[str] = Field(default=None, min_length=8, max_length=72)
+
+
+class PlatformCompanyResponse(BaseModel):
+    mode: Literal["NEW_TENANT", "SUBSIDIARY"]
+    tenant_id: str
+    tenant_name: str
+    legal_entity_id: str
+    legal_entity_name: str
+    admin_email: Optional[str] = None
+
+
+class PlatformAdminSummary(BaseModel):
+    id: str
+    name: str
+    email: str
+    role: str
+    status: str
+    created_at: datetime
+    last_login_at: Optional[datetime] = None
+    is_you: bool = False
+
+
+class PlatformAdminCreate(BaseModel):
+    name: str = Field(min_length=2, max_length=255)
+    email: EmailStr
+    password: str = Field(min_length=8, max_length=72)
+    role: Literal["ADMIN", "VIEWER"] = "ADMIN"
+
+
+class PlatformAdminUpdate(BaseModel):
+    status: Optional[Literal["ACTIVE", "SUSPENDED"]] = None
+    role: Optional[Literal["ADMIN", "VIEWER"]] = None
+
+
+class AuditLogEntry(BaseModel):
+    id: str
+    actor_name: str
+    action: str
+    target_type: str
+    target_id: Optional[str] = None
+    target_label: str
+    metadata: Optional[dict[str, Any]] = None
+    created_at: datetime
+
+
+class AuditLogResponse(BaseModel):
+    items: list[AuditLogEntry]
+    total: int
+
+
+class ForgotPasswordRequest(BaseModel):
+    email: EmailStr
+
+
+class ForgotPasswordResponse(BaseModel):
+    message: str
+    # Only populated when HRMS_DEBUG=true — there's no email provider wired
+    # up in this codebase, so dev/test flows need some way to get the link.
+    # Never populated outside debug mode.
+    dev_reset_url: Optional[str] = None
+
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str = Field(min_length=8, max_length=72)

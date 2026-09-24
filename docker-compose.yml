@@ -1,0 +1,42 @@
+version: "3.9"
+
+services:
+  db:
+    image: postgres:16-alpine
+    environment:
+      POSTGRES_USER: hrms
+      POSTGRES_PASSWORD: hrms
+      POSTGRES_DB: hrms
+    ports:
+      - "5432:5432"
+    volumes:
+      - postgres_data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hrms"]
+      interval: 5s
+      timeout: 5s
+      retries: 10
+
+  api:
+    build:
+      context: ./backend
+      dockerfile: Dockerfile
+    env_file: ./backend/.env
+    environment:
+      # Superuser — migrations need DDL rights. Never used by request handling.
+      HRMS_DATABASE_URL: postgresql+asyncpg://hrms:hrms@db:5432/hrms
+      # NOSUPERUSER / NOBYPASSRLS role (created by migration 0005) that the
+      # running app actually connects as, so Postgres RLS enforces tenant
+      # isolation even if an app-layer WHERE tenant_id = ... is ever missed.
+      HRMS_APP_DATABASE_URL: postgresql+asyncpg://hrms_app:hrms_app_dev_password@db:5432/hrms
+    ports:
+      - "8015:8015"
+    depends_on:
+      db:
+        condition: service_healthy
+    volumes:
+      - ./backend/src:/app/src
+    command: ["uvicorn", "hrms.main:app", "--host", "0.0.0.0", "--port", "8015", "--reload"]
+
+volumes:
+  postgres_data:
