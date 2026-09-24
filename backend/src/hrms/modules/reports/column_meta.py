@@ -1,0 +1,141 @@
+"""
+Static metadata describing which columns and filters are available per report module.
+The frontend uses this to build the report builder UI.
+"""
+
+AVAILABLE_COLUMNS: dict[str, list[dict]] = {
+    "ATTENDANCE": [
+        {"field": "employee_number", "label": "Employee No.", "type": "string", "default": True},
+        {"field": "employee_name", "label": "Employee Name", "type": "string", "default": True},
+        {"field": "department", "label": "Department", "type": "string", "default": True},
+        {"field": "work_date", "label": "Date", "type": "date", "default": True},
+        {"field": "status", "label": "Status", "type": "enum",
+         "options": ["PRESENT", "ABSENT", "HALF_DAY", "LATE", "ON_LEAVE", "HOLIDAY", "WEEKEND"],
+         "default": True},
+        {"field": "first_punch_in", "label": "Check In", "type": "time", "default": True},
+        {"field": "last_punch_out", "label": "Check Out", "type": "time", "default": True},
+        {"field": "effective_minutes", "label": "Hours Worked", "type": "duration", "default": True},
+        {"field": "late_by_minutes", "label": "Late By (min)", "type": "number", "default": False},
+        {"field": "early_departure_minutes", "label": "Early Departure (min)", "type": "number", "default": False},
+        {"field": "location", "label": "Location", "type": "string", "default": False},
+    ],
+    "EMPLOYEE": [
+        {"field": "employee_number", "label": "Employee No.", "type": "string", "default": True},
+        {"field": "legal_name", "label": "Name", "type": "string", "default": True},
+        {"field": "hire_date", "label": "Hire Date", "type": "date", "default": True},
+        {"field": "employment_state", "label": "Status", "type": "enum",
+         "options": ["ACTIVE", "PROBATION", "NOTICE", "SEPARATED"], "default": True},
+        {"field": "department", "label": "Department", "type": "string", "default": True},
+        {"field": "job_title", "label": "Job Title", "type": "string", "default": True},
+        {"field": "location", "label": "Location", "type": "string", "default": True},
+        {"field": "manager_name", "label": "Manager", "type": "string", "default": False},
+        {"field": "legal_entity", "label": "Legal Entity", "type": "string", "default": False},
+        {"field": "grade", "label": "Grade", "type": "string", "default": False},
+        {"field": "service_stage", "label": "Service Stage", "type": "string", "default": False},
+        {"field": "date_of_birth", "label": "Date of Birth", "type": "date", "default": False},
+        {"field": "gender", "label": "Gender", "type": "string", "default": False},
+    ],
+    "ONBOARDING": [
+        {"field": "employee_number", "label": "Employee No.", "type": "string", "default": True},
+        {"field": "employee_name", "label": "Employee Name", "type": "string", "default": True},
+        {"field": "hire_date", "label": "Hire Date", "type": "date", "default": True},
+        {"field": "case_status", "label": "Onboarding Status", "type": "enum",
+         "options": ["IN_PROGRESS", "COMPLETED", "CANCELLED"], "default": True},
+        {"field": "total_items", "label": "Total Tasks", "type": "number", "default": True},
+        {"field": "completed_items", "label": "Completed", "type": "number", "default": True},
+        {"field": "overdue_items", "label": "Overdue", "type": "number", "default": True},
+        {"field": "completion_pct", "label": "Completion %", "type": "number", "default": False},
+        {"field": "started_at", "label": "Started On", "type": "date", "default": False},
+        {"field": "completed_at", "label": "Completed On", "type": "date", "default": False},
+    ],
+    "HEADCOUNT": [
+        {"field": "department", "label": "Department", "type": "string", "default": True},
+        {"field": "location", "label": "Location", "type": "string", "default": True},
+        {"field": "job_title", "label": "Job Title", "type": "string", "default": False},
+        {"field": "grade", "label": "Grade", "type": "string", "default": False},
+        {"field": "worker_type", "label": "Worker Type", "type": "string", "default": True},
+        {"field": "headcount", "label": "Headcount", "type": "number", "default": True},
+        {"field": "active", "label": "Active", "type": "number", "default": True},
+        {"field": "on_notice", "label": "On Notice", "type": "number", "default": False},
+        {"field": "on_leave", "label": "On Leave Today", "type": "number", "default": False},
+    ],
+}
+
+AVAILABLE_FILTERS: dict[str, list[dict]] = {
+    "ATTENDANCE": [
+        {"field": "work_date", "label": "Date", "type": "date", "ops": ["eq", "gte", "lte", "between"]},
+        {"field": "status", "label": "Status", "type": "enum",
+         "options": ["PRESENT", "ABSENT", "HALF_DAY", "LATE", "ON_LEAVE", "HOLIDAY"],
+         "ops": ["in", "eq"]},
+        {"field": "department", "label": "Department", "type": "string", "ops": ["eq", "in"]},
+        {"field": "location", "label": "Location", "type": "string", "ops": ["eq", "in"]},
+        {"field": "employment_id", "label": "Employee", "type": "employee", "ops": ["eq"]},
+    ],
+    "EMPLOYEE": [
+        {"field": "employment_state", "label": "Status", "type": "enum",
+         "options": ["ACTIVE", "PROBATION", "NOTICE", "SEPARATED"], "ops": ["in", "eq"]},
+        {"field": "department", "label": "Department", "type": "string", "ops": ["eq", "in"]},
+        {"field": "location", "label": "Location", "type": "string", "ops": ["eq", "in"]},
+        {"field": "hire_date", "label": "Hire Date", "type": "date", "ops": ["gte", "lte", "between"]},
+        {"field": "service_stage", "label": "Service Stage", "type": "string", "ops": ["eq", "in"]},
+    ],
+    "ONBOARDING": [
+        {"field": "case_status", "label": "Onboarding Status", "type": "enum",
+         "options": ["IN_PROGRESS", "COMPLETED", "CANCELLED"], "ops": ["in", "eq"]},
+        {"field": "hire_date", "label": "Hire Date", "type": "date", "ops": ["gte", "lte", "between"]},
+        {"field": "has_overdue", "label": "Has Overdue Items", "type": "boolean", "ops": ["eq"]},
+    ],
+    "HEADCOUNT": [
+        {"field": "department", "label": "Department", "type": "string", "ops": ["eq", "in"]},
+        {"field": "location", "label": "Location", "type": "string", "ops": ["eq", "in"]},
+        {"field": "worker_type", "label": "Worker Type", "type": "string", "ops": ["eq", "in"]},
+    ],
+}
+
+# Default system reports seeded per tenant
+DEFAULT_REPORTS = [
+    {
+        "name": "Monthly Attendance Summary",
+        "description": "Attendance status for all employees in the selected month",
+        "module": "ATTENDANCE",
+        "owner_type": "HR",
+        "columns": ["employee_number", "employee_name", "department", "work_date",
+                    "status", "first_punch_in", "last_punch_out", "effective_minutes"],
+        "filters": [{"field": "work_date", "op": "gte", "value": ""},
+                    {"field": "work_date", "op": "lte", "value": ""}],
+    },
+    {
+        "name": "Employee Directory",
+        "description": "Current employee list with key details",
+        "module": "EMPLOYEE",
+        "owner_type": "HR",
+        "columns": ["employee_number", "legal_name", "hire_date", "employment_state",
+                    "department", "job_title", "location", "manager_name"],
+        "filters": [{"field": "employment_state", "op": "in", "value": ["ACTIVE", "PROBATION"]}],
+    },
+    {
+        "name": "Headcount by Department",
+        "description": "Current headcount grouped by department",
+        "module": "HEADCOUNT",
+        "owner_type": "HR",
+        "columns": ["department", "location", "worker_type", "headcount", "active"],
+        "filters": [],
+    },
+    {
+        "name": "Onboarding Status",
+        "description": "New hire onboarding progress",
+        "module": "ONBOARDING",
+        "owner_type": "HR",
+        "columns": ["employee_number", "employee_name", "hire_date", "case_status",
+                    "total_items", "completed_items", "overdue_items"],
+        "filters": [{"field": "case_status", "op": "eq", "value": "IN_PROGRESS"}],
+    },
+    {
+        "name": "My Attendance",
+        "description": "Personal attendance history",
+        "module": "ATTENDANCE",
+        "owner_type": "EMPLOYEE",
+        "columns": ["work_date", "status", "first_punch_in", "last_punch_out", "effective_minutes"],
+        "filters": [],
+    },
+]

@@ -1,0 +1,205 @@
+import { useId, useRef, useState } from "react";
+import type { MouseEvent, ReactNode } from "react";
+
+export const CHART = {
+  present: "#10b981",
+  late: "#f59e0b",
+  absent: "#ef4444",
+  leave: "#3b82f6",
+  brand: "rgb(var(--brand-500))",
+  track: "rgb(var(--muted))",
+};
+
+function svgId(raw: string) {
+  return raw.replace(/[^a-zA-Z0-9_-]/g, "");
+}
+
+export function Sparkline({ data, className = "", width = 88, height = 32 }: {
+  data: number[];
+  className?: string;
+  width?: number;
+  height?: number;
+}) {
+  const id = svgId(useId());
+  const min = Math.min(...data);
+  const span = Math.max(...data) - min || 1;
+  const pts = data.map((d, i) => [
+    (i / (data.length - 1)) * width,
+    height - 3 - ((d - min) / span) * (height - 6),
+  ]);
+  const line = pts.map(([x, y], i) => `${i ? "L" : "M"}${x.toFixed(1)},${y.toFixed(1)}`).join(" ");
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width={width} height={height} className={className} aria-hidden>
+      <defs>
+        <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
+          <stop offset="0" stopColor="currentColor" stopOpacity="0.2" />
+          <stop offset="1" stopColor="currentColor" stopOpacity="0" />
+        </linearGradient>
+      </defs>
+      <path d={`${line} L${width},${height} L0,${height} Z`} fill={`url(#${id})`} />
+      <path d={line} fill="none" stroke="currentColor" strokeWidth="1.6" strokeLinecap="round" strokeLinejoin="round" />
+    </svg>
+  );
+}
+
+export interface AreaPoint { label: string; value: number; detail?: ReactNode }
+
+export function AreaChart({ data, min, max, height = 220, unit = "", color = CHART.brand }: {
+  data: AreaPoint[];
+  min: number;
+  max: number;
+  height?: number;
+  unit?: string;
+  color?: string;
+}) {
+  const id = svgId(useId());
+  const [hover, setHover] = useState<number | null>(null);
+  const plotRef = useRef<HTMLDivElement>(null);
+  const W = 1000;
+  const H = 100;
+  const x = (i: number) => (i / (data.length - 1)) * W;
+  const y = (v: number) => H - ((v - min) / (max - min)) * H;
+  const line = data.map((d, i) => `${i ? "L" : "M"}${x(i).toFixed(1)},${y(d.value).toFixed(2)}`).join(" ");
+  const ticks = [0, 0.25, 0.5, 0.75, 1].map((t) => min + (max - min) * (1 - t));
+
+  const onMove = (e: MouseEvent) => {
+    const r = plotRef.current?.getBoundingClientRect();
+    if (!r) return;
+    const i = Math.round(((e.clientX - r.left) / r.width) * (data.length - 1));
+    setHover(Math.max(0, Math.min(data.length - 1, i)));
+  };
+
+  const h = hover !== null ? data[hover] : null;
+  const hx = hover !== null ? (hover / (data.length - 1)) * 100 : 0;
+
+  return (
+    <div className="flex gap-3">
+      <div className="flex shrink-0 flex-col justify-between pb-6 text-right text-[11px] tabular-nums text-fg-subtle" style={{ height }}>
+        {ticks.map((t) => <span key={t} className="-translate-y-1/2 leading-none first:translate-y-0 last:translate-y-0">{Math.round(t)}{unit}</span>)}
+      </div>
+      <div className="min-w-0 flex-1">
+        <div ref={plotRef} className="relative" style={{ height: height - 24 }} onMouseMove={onMove} onMouseLeave={() => setHover(null)}>
+          {ticks.map((t, i) => (
+            <div key={t} className="absolute inset-x-0 border-t border-dashed border-line" style={{ top: `${i * 25}%` }} />
+          ))}
+          <svg viewBox={`0 0 ${W} ${H}`} preserveAspectRatio="none" className="absolute inset-0 h-full w-full overflow-visible" aria-hidden>
+            <defs>
+              <linearGradient id={id} x1="0" x2="0" y1="0" y2="1">
+                <stop offset="0" stopColor={color} stopOpacity="0.22" />
+                <stop offset="1" stopColor={color} stopOpacity="0" />
+              </linearGradient>
+            </defs>
+            <path d={`${line} L${W},${H} L0,${H} Z`} fill={`url(#${id})`} />
+            <path d={line} fill="none" stroke={color} strokeWidth="2" vectorEffect="non-scaling-stroke" strokeLinejoin="round" />
+          </svg>
+          {h && (
+            <>
+              <div className="pointer-events-none absolute inset-y-0 w-px bg-line-strong" style={{ left: `${hx}%` }} />
+              <div
+                className="pointer-events-none absolute h-2.5 w-2.5 -translate-x-1/2 -translate-y-1/2 rounded-full border-2 border-surface shadow"
+                style={{ left: `${hx}%`, top: `${(y(h.value) / H) * 100}%`, background: color }}
+              />
+              <div
+                className="pointer-events-none absolute top-0 z-10 min-w-[140px] rounded-lg border border-line bg-surface px-3 py-2 text-xs shadow-pop"
+                style={hx > 60 ? { right: `${100 - hx}%`, marginRight: 12 } : { left: `${hx}%`, marginLeft: 12 }}
+              >
+                <p className="font-medium text-fg">{h.label}</p>
+                <p className="mt-0.5 tabular-nums text-fg-muted">
+                  <span className="font-semibold text-fg">{h.value}{unit}</span> attendance
+                </p>
+                {h.detail && <div className="mt-1.5 border-t border-line pt-1.5 text-fg-subtle">{h.detail}</div>}
+              </div>
+            </>
+          )}
+        </div>
+        <div className="mt-2 flex justify-between text-[11px] text-fg-subtle">
+          {data.map((d, i) => (
+            <span key={d.label} className={i % 2 ? "hidden sm:inline" : ""}>{d.label}</span>
+          ))}
+        </div>
+      </div>
+    </div>
+  );
+}
+
+export interface DonutSegment { label: string; value: number; color: string }
+
+export function Donut({ segments, size = 152, thickness = 14, children }: {
+  segments: DonutSegment[];
+  size?: number;
+  thickness?: number;
+  children?: ReactNode;
+}) {
+  const r = (size - thickness) / 2;
+  const c = 2 * Math.PI * r;
+  const total = segments.reduce((a, s) => a + s.value, 0);
+  const visible = segments.filter((s) => s.value > 0);
+  const gap = visible.length > 1 ? 3 : 0;
+  let offset = 0;
+  return (
+    <div className="relative shrink-0" style={{ width: size, height: size }}>
+      <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={CHART.track} strokeWidth={thickness} />
+        {total > 0 && visible.map((s) => {
+          const len = (s.value / total) * c;
+          const el = (
+            <circle
+              key={s.label}
+              cx={size / 2}
+              cy={size / 2}
+              r={r}
+              fill="none"
+              stroke={s.color}
+              strokeWidth={thickness}
+              strokeDasharray={`${Math.max(len - gap, 0.5)} ${c}`}
+              strokeDashoffset={-offset}
+              className="transition-[stroke-dasharray] duration-500"
+            />
+          );
+          offset += len;
+          return el;
+        })}
+      </svg>
+      <div className="absolute inset-0 flex flex-col items-center justify-center text-center">{children}</div>
+    </div>
+  );
+}
+
+export function BarList({ items, formatValue = (v) => String(v) }: {
+  items: { label: string; value: number; color?: string }[];
+  formatValue?: (v: number) => string;
+}) {
+  const max = Math.max(...items.map((i) => i.value), 1);
+  return (
+    <ul className="space-y-1.5">
+      {items.map((it) => (
+        <li key={it.label} className="flex items-center gap-3">
+          <div className="relative h-8 flex-1 overflow-hidden rounded-md">
+            <div
+              className="absolute inset-y-0 left-0 rounded-md bg-brand-500/15 transition-[width] duration-500 dark:bg-brand-400/15"
+              style={{ width: `${(it.value / max) * 100}%`, background: it.color }}
+            />
+            <span className="relative flex h-full items-center px-2.5 text-[13px] text-fg">{it.label}</span>
+          </div>
+          <span className="w-10 text-right text-[13px] font-medium tabular-nums text-fg">{formatValue(it.value)}</span>
+        </li>
+      ))}
+    </ul>
+  );
+}
+
+export function Legend({ items }: { items: { label: string; color: string; value?: ReactNode }[] }) {
+  return (
+    <ul className="space-y-2.5">
+      {items.map((it) => (
+        <li key={it.label} className="flex items-center justify-between gap-6 text-[13px]">
+          <span className="flex items-center gap-2 text-fg-muted">
+            <span className="h-2 w-2 rounded-full" style={{ background: it.color }} />
+            {it.label}
+          </span>
+          {it.value !== undefined && <span className="font-medium tabular-nums text-fg">{it.value}</span>}
+        </li>
+      ))}
+    </ul>
+  );
+}

@@ -1,0 +1,361 @@
+import { useState } from "react";
+import type { FormEvent, ReactNode } from "react";
+import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { Plus, Pencil, Trash2, ShieldCheck, Clock, Coffee, Timer, Zap, FilePenLine, MoreHorizontal } from "lucide-react";
+import type { PolicyTemplate } from "../api/policy";
+import { policyApi } from "../api/policy";
+import { PageHeader } from "../components/ui/PageHeader";
+import { Sheet, ConfirmDialog } from "../components/ui/Overlay";
+import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
+import { usePopover } from "../components/ui/Popover";
+import { useToast, errorMessage } from "../components/ui/Toast";
+
+const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
+
+const DEFAULTS: Partial<PolicyTemplate> = {
+  name: "",
+  description: "",
+  timezone: "Asia/Kolkata",
+  expected_start_time: "09:00:00",
+  expected_end_time: "18:00:00",
+  work_days: "1111100",
+  break_minutes: 60,
+  break_auto_deduct: false,
+  grace_late_minutes: 0,
+  grace_early_departure_minutes: 0,
+  half_day_threshold_pct: 50,
+  ot_enabled: true,
+  ot_qualifying_minutes: 30,
+  ot_rate: 1.5,
+  ot_daily_cap_minutes: null,
+  punch_rounding_minutes: 0,
+  punch_rounding_direction: "NONE",
+  correction_requires_approval: true,
+  correction_approval_levels: 1,
+  is_default: false,
+};
+
+export function PolicyPage() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [editing, setEditing] = useState<PolicyTemplate | "new" | null>(null);
+  const [deleting, setDeleting] = useState<PolicyTemplate | null>(null);
+
+  const { data: templates, isPending: isLoading, isError, refetch } = useQuery<PolicyTemplate[]>({
+    queryKey: ["policy-templates"],
+    queryFn: () => policyApi.listTemplates(),
+  });
+
+  const saveMut = useMutation({
+    mutationFn: (body: Partial<PolicyTemplate>) =>
+      editing && editing !== "new" ? policyApi.updateTemplate(editing.id, body) : policyApi.createTemplate(body),
+    onSuccess: (_, body) => {
+      qc.invalidateQueries({ queryKey: ["policy-templates"] });
+      toast.success(editing === "new" ? "Policy created" : "Policy updated", body.name);
+      setEditing(null);
+    },
+    onError: (e) => toast.error("Couldn’t save policy", errorMessage(e)),
+  });
+
+  const deleteMut = useMutation({
+    mutationFn: (id: string) => policyApi.deleteTemplate(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["policy-templates"] });
+      toast.success("Policy deleted", deleting?.name);
+      setDeleting(null);
+    },
+    onError: (e) => toast.error("Couldn’t delete policy", errorMessage(e)),
+  });
+
+  return (
+    <>
+      <PageHeader
+        title="Attendance policies"
+        description="Working hours, grace periods, overtime and correction rules you can assign to employees."
+        actions={<button className="btn-primary" onClick={() => setEditing("new")}><Plus size={15} /> New policy</button>}
+      />
+
+      {isError ? (
+        <Notice title="Couldn’t load policies" action={<button className="btn-secondary btn-sm" onClick={() => refetch()}>Retry</button>}>
+          The policy API isn’t responding.
+        </Notice>
+      ) : isLoading ? (
+        <div className="grid gap-4 lg:grid-cols-2">{[0, 1].map((i) => <Skeleton key={i} className="h-60 rounded-xl" />)}</div>
+      ) : !templates?.length ? (
+        <div className="card">
+          <EmptyState
+            icon={ShieldCheck}
+            title="No policies yet"
+            description="Create a policy to define working hours and attendance rules, then assign it to employees."
+            action={<button className="btn-primary" onClick={() => setEditing("new")}><Plus size={15} /> New policy</button>}
+          />
+        </div>
+      ) : (
+        <div className="grid gap-4 lg:grid-cols-2">
+          {templates.map((t) => (
+            <PolicyCard key={t.id} tpl={t} onEdit={() => setEditing(t)} onDelete={() => setDeleting(t)} />
+          ))}
+        </div>
+      )}
+
+      <PolicySheet
+        key={editing === "new" ? "new" : editing?.id ?? "closed"}
+        open={editing !== null}
+        initial={editing && editing !== "new" ? editing : undefined}
+        saving={saveMut.isPending}
+        onSave={(v) => saveMut.mutate(v)}
+        onClose={() => setEditing(null)}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
+        loading={deleteMut.isPending}
+        title={`Delete “${deleting?.name}”?`}
+        description="Employees assigned to this policy will need a new one. This can’t be undone."
+        confirmLabel="Delete policy"
+      />
+    </>
+  );
+}
+
+function PolicyCard({ tpl, onEdit, onDelete }: { tpl: PolicyTemplate; onEdit: () => void; onDelete: () => void }) {
+  const { open: menuOpen, setOpen: setMenuOpen, ref: menuRef } = usePopover();
+  const hours = (tpl.standard_minutes / 60).toFixed(1).replace(/\.0$/, "");
+  const rows: [typeof Clock, string, string][] = [
+    [Clock, "Hours", `${tpl.expected_start_time.slice(0, 5)} – ${tpl.expected_end_time.slice(0, 5)} · ${hours}h/day`],
+    [Coffee, "Break", `${tpl.break_minutes} min${tpl.break_auto_deduct ? " · auto-deducted" : ""}`],
+    [Timer, "Grace", `${tpl.grace_late_minutes} min late · ${tpl.grace_early_departure_minutes} min early`],
+    [Zap, "Overtime", tpl.ot_enabled ? `After ${tpl.ot_qualifying_minutes} min at ${tpl.ot_rate}×` : "Disabled"],
+    [FilePenLine, "Corrections", tpl.correction_requires_approval ? `${tpl.correction_approval_levels}-level approval` : "Auto-approved"],
+  ];
+
+  return (
+    <div className="card flex flex-col">
+      <div className="flex items-start justify-between gap-3 px-5 pt-5">
+        <div className="min-w-0">
+          <div className="flex items-center gap-2">
+            <h3 className="truncate text-[15px] font-semibold tracking-tight text-fg">{tpl.name}</h3>
+            {tpl.is_default && <span className="badge badge-brand">Default</span>}
+          </div>
+          <p className="mt-0.5 truncate text-xs text-fg-subtle">{tpl.description || tpl.timezone}</p>
+        </div>
+        <div ref={menuRef} className="relative">
+          <button className="btn-icon -mr-2 -mt-1" onClick={() => setMenuOpen((o) => !o)} aria-label={`Actions for ${tpl.name}`}>
+            <MoreHorizontal size={16} />
+          </button>
+          {menuOpen && (
+            <div className="popover absolute right-0 top-full mt-1 w-40">
+              <button className="menu-item" onClick={() => { setMenuOpen(false); onEdit(); }}><Pencil size={14} /> Edit</button>
+              <button className="menu-item hover:text-danger" onClick={() => { setMenuOpen(false); onDelete(); }}><Trash2 size={14} /> Delete</button>
+            </div>
+          )}
+        </div>
+      </div>
+
+      <dl className="mx-5 mt-4 divide-y divide-line rounded-xl border border-line">
+        {rows.map(([Icon, k, v]) => (
+          <div key={k} className="flex items-center gap-3 px-3.5 py-2.5 text-[13px]">
+            <Icon size={14} className="shrink-0 text-fg-subtle" />
+            <dt className="w-24 shrink-0 text-fg-subtle">{k}</dt>
+            <dd className="min-w-0 truncate font-medium text-fg">{v}</dd>
+          </div>
+        ))}
+      </dl>
+
+      <div className="flex items-center justify-between gap-3 px-5 py-4">
+        <div className="flex gap-1">
+          {DAYS.map((d, i) => (
+            <span
+              key={d}
+              className={`grid h-7 w-8 place-items-center rounded-md text-[11px] font-medium ${
+                tpl.work_days[i] === "1" ? "bg-brand-500/10 text-accent" : "bg-muted text-fg-subtle/70"
+              }`}
+            >
+              {d.slice(0, 2)}
+            </span>
+          ))}
+        </div>
+        <button className="btn-ghost btn-sm" onClick={onEdit}><Pencil size={13} /> Edit</button>
+      </div>
+    </div>
+  );
+}
+
+function Section({ title, children }: { title: string; children: ReactNode }) {
+  return (
+    <fieldset className="space-y-3">
+      <legend className="eyebrow mb-3">{title}</legend>
+      {children}
+    </fieldset>
+  );
+}
+
+function Toggle({ label, hint, checked, onChange }: { label: string; hint?: string; checked: boolean; onChange: (v: boolean) => void }) {
+  return (
+    <label className="flex cursor-pointer items-start justify-between gap-4 rounded-lg border border-line px-3.5 py-3">
+      <span>
+        <span className="block text-[13px] font-medium text-fg">{label}</span>
+        {hint && <span className="block text-xs text-fg-subtle">{hint}</span>}
+      </span>
+      <button
+        type="button"
+        role="switch"
+        aria-checked={checked}
+        onClick={() => onChange(!checked)}
+        className={`relative mt-0.5 h-5 w-9 shrink-0 rounded-full transition-colors ${checked ? "bg-brand-600" : "bg-line-strong"}`}
+      >
+        <span className={`absolute top-0.5 h-4 w-4 rounded-full bg-white shadow transition-transform ${checked ? "translate-x-4" : "translate-x-0.5"}`} />
+      </button>
+    </label>
+  );
+}
+
+function PolicySheet({ open, initial, saving, onSave, onClose }: {
+  open: boolean;
+  initial?: PolicyTemplate;
+  saving: boolean;
+  onSave: (v: Partial<PolicyTemplate>) => void;
+  onClose: () => void;
+}) {
+  const [form, setForm] = useState<Partial<PolicyTemplate>>({ ...DEFAULTS, ...initial });
+  const set = <K extends keyof PolicyTemplate>(k: K, v: PolicyTemplate[K] | null) => setForm((f) => ({ ...f, [k]: v }));
+
+  const num = (label: string, k: keyof PolicyTemplate, suffix?: string, opts: { step?: string; nullable?: boolean } = {}) => (
+    <div>
+      <label className="label" htmlFor={`pol-${k}`}>{label}</label>
+      <div className="relative">
+        <input
+          id={`pol-${k}`}
+          type="number"
+          step={opts.step}
+          className={`input ${suffix ? "pr-12" : ""}`}
+          value={form[k] == null ? "" : String(form[k])}
+          placeholder={opts.nullable ? "No limit" : undefined}
+          onChange={(e) => set(k, (e.target.value === "" && opts.nullable ? null : Number(e.target.value)) as never)}
+        />
+        {suffix && <span className="pointer-events-none absolute right-3 top-1/2 -translate-y-1/2 text-xs text-fg-subtle">{suffix}</span>}
+      </div>
+    </div>
+  );
+
+  const toggleDay = (i: number) => {
+    const bits = (form.work_days ?? "1111100").split("");
+    bits[i] = bits[i] === "1" ? "0" : "1";
+    set("work_days", bits.join(""));
+  };
+
+  const submit = (e: FormEvent) => { e.preventDefault(); if (form.name?.trim()) onSave(form); };
+
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={initial ? "Edit policy" : "New policy"}
+      description={initial ? initial.name : "Define working hours and attendance rules."}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" type="submit" form="policy-form" disabled={!form.name?.trim() || saving}>
+            {saving ? "Saving…" : initial ? "Save changes" : "Create policy"}
+          </button>
+        </>
+      }
+    >
+      <form id="policy-form" onSubmit={submit} className="space-y-7">
+        <Section title="Basics">
+          <div>
+            <label className="label" htmlFor="pol-name">Policy name</label>
+            <input id="pol-name" className="input" placeholder="e.g. Head office — general shift" value={form.name ?? ""} onChange={(e) => set("name", e.target.value)} />
+          </div>
+          <div>
+            <label className="label" htmlFor="pol-desc">Description <span className="font-normal text-fg-subtle">(optional)</span></label>
+            <textarea id="pol-desc" rows={2} className="input" value={form.description ?? ""} onChange={(e) => set("description", e.target.value)} />
+          </div>
+          <div>
+            <label className="label" htmlFor="pol-tz">Timezone</label>
+            <input id="pol-tz" className="input" value={form.timezone ?? ""} onChange={(e) => set("timezone", e.target.value)} />
+          </div>
+        </Section>
+
+        <Section title="Schedule">
+          <div className="grid grid-cols-2 gap-3">
+            <div>
+              <label className="label" htmlFor="pol-start">Start time</label>
+              <input id="pol-start" type="time" className="input" value={form.expected_start_time?.slice(0, 5) ?? ""} onChange={(e) => set("expected_start_time", `${e.target.value}:00`)} />
+            </div>
+            <div>
+              <label className="label" htmlFor="pol-end">End time</label>
+              <input id="pol-end" type="time" className="input" value={form.expected_end_time?.slice(0, 5) ?? ""} onChange={(e) => set("expected_end_time", `${e.target.value}:00`)} />
+            </div>
+          </div>
+          <div>
+            <span className="label">Working days</span>
+            <div className="flex gap-1.5">
+              {DAYS.map((d, i) => {
+                const on = (form.work_days ?? "1111100")[i] === "1";
+                return (
+                  <button
+                    key={d}
+                    type="button"
+                    aria-pressed={on}
+                    onClick={() => toggleDay(i)}
+                    className={`h-9 flex-1 rounded-lg border text-xs font-medium transition-colors ${
+                      on ? "border-brand-500/40 bg-brand-500/10 text-accent" : "border-line text-fg-subtle hover:border-line-strong"
+                    }`}
+                  >
+                    {d}
+                  </button>
+                );
+              })}
+            </div>
+          </div>
+          <div className="grid grid-cols-2 gap-3">
+            {num("Break", "break_minutes", "min")}
+            {num("Half-day threshold", "half_day_threshold_pct", "%")}
+          </div>
+          <Toggle label="Auto-deduct break" hint="Subtract the break from worked time automatically" checked={!!form.break_auto_deduct} onChange={(v) => set("break_auto_deduct", v)} />
+        </Section>
+
+        <Section title="Grace & rounding">
+          <div className="grid grid-cols-2 gap-3">
+            {num("Late arrival grace", "grace_late_minutes", "min")}
+            {num("Early departure grace", "grace_early_departure_minutes", "min")}
+            {num("Punch rounding", "punch_rounding_minutes", "min")}
+            <div>
+              <label className="label" htmlFor="pol-round">Rounding direction</label>
+              <select id="pol-round" className="input" value={form.punch_rounding_direction ?? "NONE"} onChange={(e) => set("punch_rounding_direction", e.target.value)}>
+                {[["NONE", "None"], ["UP", "Round up"], ["DOWN", "Round down"], ["NEAREST", "Nearest"]].map(([v, l]) => <option key={v} value={v}>{l}</option>)}
+              </select>
+            </div>
+          </div>
+        </Section>
+
+        <Section title="Overtime">
+          <Toggle label="Enable overtime" checked={!!form.ot_enabled} onChange={(v) => set("ot_enabled", v)} />
+          {form.ot_enabled && (
+            <div className="grid grid-cols-3 gap-3">
+              {num("Qualifies after", "ot_qualifying_minutes", "min")}
+              {num("Rate", "ot_rate", "×", { step: "0.25" })}
+              {num("Daily cap", "ot_daily_cap_minutes", "min", { nullable: true })}
+            </div>
+          )}
+        </Section>
+
+        <Section title="Corrections">
+          <Toggle label="Require approval" hint="Attendance corrections must be approved before they apply" checked={!!form.correction_requires_approval} onChange={(v) => set("correction_requires_approval", v)} />
+          {form.correction_requires_approval && (
+            <div>
+              <label className="label" htmlFor="pol-levels">Approval levels</label>
+              <select id="pol-levels" className="input" value={form.correction_approval_levels ?? 1} onChange={(e) => set("correction_approval_levels", Number(e.target.value))}>
+                {[1, 2, 3].map((n) => <option key={n} value={n}>{n} level{n > 1 ? "s" : ""}</option>)}
+              </select>
+            </div>
+          )}
+        </Section>
+
+        <Toggle label="Set as default policy" hint="Applied to employees without an explicit assignment" checked={!!form.is_default} onChange={(v) => set("is_default", v)} />
+      </form>
+    </Sheet>
+  );
+}
