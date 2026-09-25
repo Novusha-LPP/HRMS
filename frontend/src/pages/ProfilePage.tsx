@@ -1,10 +1,13 @@
-import { useEffect, useState } from "react";
+import { useState } from "react";
 import type { FormEvent } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Skeleton } from "../components/ui/Feedback";
+import { Tabs } from "../components/ui/Tabs";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { peopleApi } from "../api/people";
+import { KycSection } from "../components/kyc/KycSection";
 
 const GENDER_OPTIONS = [
   { value: "", label: "Prefer not to say" },
@@ -12,6 +15,8 @@ const GENDER_OPTIONS = [
   { value: "FEMALE", label: "Female" },
   { value: "NON_BINARY", label: "Non-binary" },
 ];
+
+type ProfileTab = "personal" | "kyc";
 
 type FormState = {
   preferredName: string;
@@ -34,12 +39,27 @@ function toForm(p: { preferred_name: string | null; date_of_birth: string | null
 export function ProfilePage() {
   const qc = useQueryClient();
   const toast = useToast();
+  const [params, setParams] = useSearchParams();
+  const activeTab: ProfileTab = params.get("tab") === "kyc" ? "kyc" : "personal";
+
+  const handleTabChange = (tab: ProfileTab) => {
+    const next = new URLSearchParams(params);
+    if (tab === "personal") {
+      next.delete("tab");
+    } else {
+      next.set("tab", tab);
+    }
+    setParams(next, { replace: true });
+  };
+
   const profile = useQuery({ queryKey: ["my-profile"], queryFn: () => peopleApi.getMyProfile() });
   const [form, setForm] = useState<FormState | null>(null);
+  const [prevProfileData, setPrevProfileData] = useState(profile.data);
 
-  useEffect(() => {
-    if (profile.data) setForm(toForm(profile.data));
-  }, [profile.data]);
+  if (profile.data && profile.data !== prevProfileData && !form) {
+    setPrevProfileData(profile.data);
+    setForm(toForm(profile.data));
+  }
 
   const update = useMutation({
     mutationFn: (body: Parameters<typeof peopleApi.updateMyProfile>[0]) => peopleApi.updateMyProfile(body),
@@ -53,7 +73,7 @@ export function ProfilePage() {
   if (profile.isPending || !form) {
     return (
       <>
-        <PageHeader title="My profile" description="Update your personal details." />
+        <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." />
         <div className="card max-w-xl space-y-4 p-6">
           {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
         </div>
@@ -64,7 +84,7 @@ export function ProfilePage() {
   if (profile.isError || !profile.data) {
     return (
       <>
-        <PageHeader title="My profile" description="Update your personal details." />
+        <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." />
         <div className="card p-6 text-sm text-danger">Couldn't load your profile. Try refreshing.</div>
       </>
     );
@@ -90,11 +110,24 @@ export function ProfilePage() {
   };
 
   return (
-    <>
-      <PageHeader title="My profile" description="Update your personal details." />
+    <div className="max-w-4xl">
+      <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." />
 
-      <form onSubmit={submit} className="max-w-xl space-y-6">
-        <div className="card p-6">
+      <Tabs<ProfileTab>
+        className="mb-6"
+        value={activeTab}
+        onChange={handleTabChange}
+        items={[
+          { value: "personal", label: "Personal details" },
+          { value: "kyc", label: "KYC & Documents" },
+        ]}
+      />
+
+      {activeTab === "kyc" ? (
+        <KycSection isSelf={true} />
+      ) : (
+        <form onSubmit={submit} className="space-y-6 max-w-2xl">
+          <div className="card p-6">
           <p className="eyebrow">Legal identity</p>
           <p className="mt-1 text-xs text-fg-subtle">
             Your legal name and email are managed by HR — contact them if these need to change.
@@ -171,6 +204,7 @@ export function ProfilePage() {
           )}
         </div>
       </form>
-    </>
+      )}
+    </div>
   );
 }

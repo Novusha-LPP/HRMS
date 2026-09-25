@@ -40,21 +40,29 @@ from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import now_utc, working_days_between
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
+from hrms.modules.policy.engine import resolve_policy
 from hrms.modules.leave.models import (
+    CompOffGrant,
     LeaveApprovalAction,
     LeaveApprovalActionType,
     LeaveApplication,
     LeaveApplicationStatus,
     LeaveBalance,
+    LeaveEncashment,
     LeaveType,
 )
 from hrms.modules.leave.schemas import (
+    AccrualRunResponse,
+    CompOffGrantRequest,
+    CompOffGrantResponse,
     LeaveApplyRequest,
     LeaveApprovalActionRequest,
     LeaveApprovalActionResponse,
     LeaveApplicationResponse,
     LeaveBalanceResponse,
     LeaveCancelRequest,
+    LeaveEncashmentRequest,
+    LeaveEncashmentResponse,
     LeaveTypeCreate,
     LeaveTypeResponse,
     LeaveTypeUpdate,
@@ -195,6 +203,181 @@ async def init_balances(
     return {"created": created, "employment_id": employment_id, "year": year}
 
 
+# ─── Comp-off, encashment & accrual ────────────────────────────────────────────
+#
+# All three are direct HR/admin balance adjustments with an audit-trail row,
+# not a second approval chain mirroring leave applications — comp-off and
+# encashment are one-shot credits/debits an HR user enters after the fact,
+# and accrual is a scheduled top-up. None of this needs multi-level review.
+
+@router.post("/comp-off", response_model=CompOffGrantResponse, status_code=201,
+             dependencies=[require_permission("leave.write")])
+async def grant_comp_off(
+    body: CompOffGrantRequest,
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> CompOffGrantResponse:
+    emp_uuid = to_uuid(body.employment_id)
+    await authorize_employment(session, tenant_id, scope, emp_uuid)
+
+    existing = await session.execute(
+        select(CompOffGrant)
+        .where(CompOffGrant.tenant_id == tenant_id)
+        .where(CompOffGrant.employment_id == emp_uuid)
+        .where(CompOffGrant.work_date == body.work_date)
+    )
+    if existing.scalars().first():
+        raise HTTPException(400, f"Comp-off already granted for {body.work_date}")
+
+    lt = await _get_or_create_comp_off_type(session, tenant_id)
+
+    grant = CompOffGrant(
+        tenant_id=tenant_id, id=uuid4(), employment_id=emp_uuid, work_date=body.work_date,
+        days_granted=body.days_granted, notes=body.notes, granted_by=principal.employment_id,
+        recorded_at=now_utc(),
+    )
+    session.add(grant)
+    await _adjust_balance(session, tenant_id, emp_uuid, lt.id, body.work_date.year,
+                          allocated_delta=body.days_granted, create_if_missing=True)
+    await session.flush()
+    return CompOffGrantResponse(
+        id=to_typed_id("comp_off_grant", grant.id),
+        employment_id=to_typed_id("employment", emp_uuid),
+        work_date=grant.work_date,
+        days_granted=grant.days_granted,
+        notes=grant.notes,
+        granted_by=to_typed_id("employment", grant.granted_by) if grant.granted_by else None,
+        recorded_at=grant.recorded_at,
+    )
+
+
+@router.post("/encashment", response_model=LeaveEncashmentResponse, status_code=201,
+             dependencies=[require_permission("leave.write")])
+async def encash_leave(
+    body: LeaveEncashmentRequest,
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> LeaveEncashmentResponse:
+    emp_uuid = to_uuid(body.employment_id)
+    await authorize_employment(session, tenant_id, scope, emp_uuid)
+
+    lt = await _get_lt(session, tenant_id, body.leave_type_id)
+    if not lt.encashable:
+        raise HTTPException(400, f"{lt.name} is not marked encashable")
+
+    effective_date = body.effective_date or now_utc().date()
+    row = await session.execute(
+        select(LeaveBalance)
+        .where(LeaveBalance.tenant_id == tenant_id)
+        .where(LeaveBalance.employment_id == emp_uuid)
+        .where(LeaveBalance.leave_type_id == lt.id)
+        .where(LeaveBalance.year == effective_date.year)
+    )
+    lb = row.scalars().first()
+    available = (lb.allocated_days + lb.carry_forward_days - lb.used_days - lb.pending_days) if lb else 0.0
+    if body.days > available:
+        raise HTTPException(400, f"Only {available} days available to encash, requested {body.days}")
+
+    enc = LeaveEncashment(
+        tenant_id=tenant_id, id=uuid4(), employment_id=emp_uuid, leave_type_id=lt.id,
+        days=body.days, effective_date=effective_date, notes=body.notes,
+        processed_by=principal.employment_id, recorded_at=now_utc(),
+    )
+    session.add(enc)
+    await _adjust_balance(session, tenant_id, emp_uuid, lt.id, effective_date.year, allocated_delta=-body.days)
+    await session.flush()
+    return LeaveEncashmentResponse(
+        id=to_typed_id("leave_encashment", enc.id),
+        employment_id=to_typed_id("employment", emp_uuid),
+        leave_type_id=to_typed_id("leave_type", lt.id),
+        leave_type_name=lt.name,
+        days=enc.days,
+        effective_date=enc.effective_date,
+        notes=enc.notes,
+        processed_by=to_typed_id("employment", enc.processed_by) if enc.processed_by else None,
+        recorded_at=enc.recorded_at,
+    )
+
+
+@router.post("/accrual/run", response_model=AccrualRunResponse,
+             dependencies=[require_permission("leave.write")])
+async def run_accrual(
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    period: str | None = Query(default=None, description='"YYYY-MM", defaults to the current month'),
+) -> AccrualRunResponse:
+    """
+    Credits days_per_year / 12 to every active employee's balance for every
+    leave type with accrual_enabled. last_accrued_period is a high-water
+    mark (compared as a "YYYY-MM" string), not a set of periods ever run —
+    so this is safe to call more than once for the same or an earlier
+    month, but a month that's already behind the mark is skipped rather
+    than re-credited; it does not backfill a month that was skipped by
+    mistake. Meant to be triggered by an external cron; there is no in-app
+    scheduler (see RUNBOOK.md).
+    """
+    if period is None:
+        period = now_utc().strftime("%Y-%m")
+    year = int(period[:4])
+
+    lt_rows = await session.execute(
+        select(LeaveType)
+        .where(LeaveType.tenant_id == tenant_id)
+        .where(LeaveType.accrual_enabled == True)  # noqa: E712
+        .where(LeaveType.archived_at == None)  # noqa: E711
+    )
+    leave_types = list(lt_rows.scalars())
+    if not leave_types:
+        return AccrualRunResponse(period=period, balances_credited=0, days_credited_total=0.0)
+
+    clause, params = scope.employment_filter_sql("e")
+    emp_rows = await session.execute(
+        text(f"""
+            SELECT e.id FROM employments e
+            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state NOT IN ('SEPARATED')
+            {clause}
+        """),
+        {"tid": str(tenant_id), **params},
+    )
+    employment_ids = [r[0] for r in emp_rows]
+
+    credited = 0
+    total_days = 0.0
+    for lt in leave_types:
+        monthly = round(lt.days_per_year / 12, 4)
+        if monthly <= 0:
+            continue
+        for emp_id in employment_ids:
+            row = await session.execute(
+                select(LeaveBalance)
+                .where(LeaveBalance.tenant_id == tenant_id)
+                .where(LeaveBalance.employment_id == emp_id)
+                .where(LeaveBalance.leave_type_id == lt.id)
+                .where(LeaveBalance.year == year)
+            )
+            lb = row.scalars().first()
+            if lb is None:
+                lb = LeaveBalance(
+                    tenant_id=tenant_id, id=uuid4(), employment_id=emp_id,
+                    leave_type_id=lt.id, year=year, recorded_at=now_utc(),
+                )
+            if lb.last_accrued_period is not None and lb.last_accrued_period >= period:
+                continue
+            lb.allocated_days += monthly
+            lb.last_accrued_period = period
+            session.add(lb)
+            credited += 1
+            total_days += monthly
+
+    await session.flush()
+    return AccrualRunResponse(period=period, balances_credited=credited, days_credited_total=round(total_days, 2))
+
+
 # ─── Leave applications ───────────────────────────────────────────────────────
 
 @router.get("/applications", response_model=list[LeaveApplicationResponse])
@@ -260,7 +443,18 @@ async def create_application(
 
     lt = await _get_lt(session, tenant_id, body.leave_type_id)
 
-    days = working_days_between(body.from_date, body.to_date, "1111100")
+    holiday_rows = await session.execute(
+        text("""
+            SELECT holiday_date FROM holidays
+            WHERE tenant_id = CAST(:tid AS uuid) AND legal_entity_id IS NULL AND archived_at IS NULL
+              AND holiday_date >= CAST(:from_date AS date) AND holiday_date <= CAST(:to_date AS date)
+        """),
+        {"tid": str(tenant_id), "from_date": body.from_date, "to_date": body.to_date},
+    )
+    holidays = {r[0] for r in holiday_rows}
+
+    policy = await resolve_policy(emp_uuid, body.from_date, session, tenant_id)
+    days = working_days_between(body.from_date, body.to_date, policy.work_days, holidays, policy.saturday_pattern)
     if body.half_day_option != "NONE":
         days = 0.5
 
@@ -518,6 +712,9 @@ def _lt_resp(lt: LeaveType) -> LeaveTypeResponse:
         is_paid=lt.is_paid,
         is_active=lt.is_active,
         color=lt.color,
+        is_comp_off=lt.is_comp_off,
+        encashable=lt.encashable,
+        accrual_enabled=lt.accrual_enabled,
     )
 
 
@@ -542,6 +739,28 @@ def _app_resp(app: LeaveApplication, lt: LeaveType, history: list[LeaveApprovalA
         cancel_requested_at=app.cancel_requested_at,
         approval_history=history,
     )
+
+
+async def _get_or_create_comp_off_type(session, tenant_id) -> LeaveType:
+    """The single leave type comp-off credits land in — auto-created on first
+    use so tenants don't have to manually set one up before granting comp-off."""
+    row = await session.execute(
+        select(LeaveType)
+        .where(LeaveType.tenant_id == tenant_id)
+        .where(LeaveType.is_comp_off == True)  # noqa: E712
+        .where(LeaveType.archived_at == None)  # noqa: E711
+    )
+    lt = row.scalars().first()
+    if lt:
+        return lt
+    lt = LeaveType(
+        tenant_id=tenant_id, id=uuid4(), name="Comp Off", code="COMPOFF",
+        days_per_year=0, requires_approval=False, is_comp_off=True, is_paid=True,
+        color="#8B5CF6", recorded_at=now_utc(),
+    )
+    session.add(lt)
+    await session.flush()
+    return lt
 
 
 async def _get_lt(session, tenant_id, lt_id: str) -> LeaveType:
@@ -592,7 +811,8 @@ async def _get_history(session, tenant_id, app_id) -> list[LeaveApprovalActionRe
 
 async def _adjust_balance(
     session, tenant_id, employment_id, leave_type_id, year: int,
-    pending_delta: float = 0.0, used_delta: float = 0.0,
+    pending_delta: float = 0.0, used_delta: float = 0.0, allocated_delta: float = 0.0,
+    create_if_missing: bool = False,
 ) -> None:
     row = await session.execute(
         select(LeaveBalance)
@@ -602,11 +822,18 @@ async def _adjust_balance(
         .where(LeaveBalance.year == year)
     )
     lb = row.scalars().first()
+    if not lb and create_if_missing:
+        lb = LeaveBalance(
+            tenant_id=tenant_id, id=uuid4(), employment_id=employment_id,
+            leave_type_id=leave_type_id, year=year, recorded_at=now_utc(),
+        )
     if lb:
         if pending_delta:
             lb.pending_days = max(0.0, lb.pending_days + pending_delta)
         if used_delta:
             lb.used_days = max(0.0, lb.used_days + used_delta)
+        if allocated_delta:
+            lb.allocated_days = max(0.0, lb.allocated_days + allocated_delta)
         session.add(lb)
 
 

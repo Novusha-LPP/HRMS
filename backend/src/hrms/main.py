@@ -22,6 +22,7 @@ from hrms.modules.dashboard.router import router as dashboard_router
 from hrms.modules.policy.router import router as policy_router
 from hrms.modules.leave.router import router as leave_router
 from hrms.modules.corrections.router import router as corrections_router
+from hrms.modules.kyc.router import router as kyc_router
 
 app = FastAPI(
     title=settings.app_name,
@@ -57,6 +58,7 @@ app.include_router(dashboard_router)
 app.include_router(policy_router)
 app.include_router(leave_router)
 app.include_router(corrections_router)
+app.include_router(kyc_router)
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────

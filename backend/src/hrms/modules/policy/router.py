@@ -20,11 +20,12 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
 
-from hrms.core.authz import ScopeDep, authorize_employment, require_permission
+from hrms.core.authz import ScopeDep, authorize_employment, authorize_org_unit, require_permission
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import compute_standard_minutes, now_utc
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
+from hrms.modules.org.models import LegalEntity, OrgUnit
 from hrms.modules.policy.engine import resolve_policy
 from hrms.modules.policy.models import EmployeePolicyAssignment, PolicyTemplate
 from hrms.modules.policy.schemas import (
@@ -125,10 +126,14 @@ async def list_assignments(
     session: SessionDep,
     scope: ScopeDep,
     employment_id: str | None = Query(default=None),
+    org_unit_id: str | None = Query(default=None),
+    legal_entity_id: str | None = Query(default=None),
 ) -> list[EmployeePolicyAssignResponse]:
     q = (
-        select(EmployeePolicyAssignment, PolicyTemplate.name)
+        select(EmployeePolicyAssignment, PolicyTemplate.name, OrgUnit.name, LegalEntity.name)
         .join(PolicyTemplate, PolicyTemplate.id == EmployeePolicyAssignment.policy_template_id)
+        .outerjoin(OrgUnit, OrgUnit.id == EmployeePolicyAssignment.org_unit_id)
+        .outerjoin(LegalEntity, LegalEntity.id == EmployeePolicyAssignment.legal_entity_id)
         .where(EmployeePolicyAssignment.tenant_id == tenant_id)
         .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
     )
@@ -136,13 +141,24 @@ async def list_assignments(
         emp_uuid = to_uuid(employment_id)
         await authorize_employment(session, tenant_id, scope, emp_uuid)
         q = q.where(EmployeePolicyAssignment.employment_id == emp_uuid)
+    elif org_unit_id:
+        ou_uuid = to_uuid(org_unit_id)
+        await authorize_org_unit(session, tenant_id, scope, ou_uuid)
+        q = q.where(EmployeePolicyAssignment.org_unit_id == ou_uuid)
+    elif legal_entity_id:
+        le_uuid = to_uuid(legal_entity_id)
+        if not scope.covers_entity(le_uuid):
+            raise HTTPException(status_code=403, detail="Not authorized for this company")
+        q = q.where(EmployeePolicyAssignment.legal_entity_id == le_uuid)
     else:
         scope.require("policy.read")
     rows = await session.execute(q)
     return [
         EmployeePolicyAssignResponse(
             id=to_typed_id("employee_policy", a.id),
-            employment_id=to_typed_id("employment", a.employment_id),
+            employment_id=to_typed_id("employment", a.employment_id) if a.employment_id else None,
+            org_unit_id=to_typed_id("org_unit", a.org_unit_id) if a.org_unit_id else None,
+            legal_entity_id=to_typed_id("legal_entity", a.legal_entity_id) if a.legal_entity_id else None,
             policy_template_id=to_typed_id("policy_template", a.policy_template_id),
             effective_from=a.effective_from,
             effective_to=a.effective_to,
@@ -151,9 +167,11 @@ async def list_assignments(
             grace_early_departure_minutes_override=a.grace_early_departure_minutes_override,
             ot_enabled_override=a.ot_enabled_override,
             ot_rate_override=a.ot_rate_override,
-            policy_template_name=name,
+            policy_template_name=tpl_name,
+            org_unit_name=ou_name,
+            legal_entity_name=le_name,
         )
-        for a, name in rows
+        for a, tpl_name, ou_name, le_name in rows
     ]
 
 
@@ -166,8 +184,32 @@ async def assign_policy(
     scope: ScopeDep,
 ) -> EmployeePolicyAssignResponse:
     tpl_uuid = to_uuid(body.policy_template_id)
-    emp_uuid = to_uuid(body.employment_id)
-    await authorize_employment(session, tenant_id, scope, emp_uuid)
+    emp_uuid = to_uuid(body.employment_id) if body.employment_id else None
+    ou_uuid = to_uuid(body.org_unit_id) if body.org_unit_id else None
+    le_uuid = to_uuid(body.legal_entity_id) if body.legal_entity_id else None
+    ou_name = None
+    le_name = None
+    if emp_uuid:
+        await authorize_employment(session, tenant_id, scope, emp_uuid)
+    elif ou_uuid:
+        await authorize_org_unit(session, tenant_id, scope, ou_uuid)
+        ou_row = await session.execute(
+            select(OrgUnit).where(OrgUnit.tenant_id == tenant_id).where(OrgUnit.id == ou_uuid)
+        )
+        ou = ou_row.scalars().first()
+        if not ou:
+            raise HTTPException(404, "Department not found")
+        ou_name = ou.name
+    else:
+        if not scope.covers_entity(le_uuid):
+            raise HTTPException(status_code=403, detail="Not authorized for this company")
+        le_row = await session.execute(
+            select(LegalEntity).where(LegalEntity.tenant_id == tenant_id).where(LegalEntity.id == le_uuid)
+        )
+        le = le_row.scalars().first()
+        if not le:
+            raise HTTPException(404, "Company not found")
+        le_name = le.name
 
     # Verify template exists
     tpl_row = await session.execute(
@@ -185,6 +227,8 @@ async def assign_policy(
         tenant_id=tenant_id,
         id=uid,
         employment_id=emp_uuid,
+        org_unit_id=ou_uuid,
+        legal_entity_id=le_uuid,
         policy_template_id=tpl_uuid,
         effective_from=body.effective_from,
         effective_to=body.effective_to,
@@ -200,6 +244,8 @@ async def assign_policy(
     return EmployeePolicyAssignResponse(
         id=to_typed_id("employee_policy", uid),
         employment_id=body.employment_id,
+        org_unit_id=body.org_unit_id,
+        legal_entity_id=body.legal_entity_id,
         policy_template_id=body.policy_template_id,
         effective_from=body.effective_from,
         effective_to=body.effective_to,
@@ -209,6 +255,8 @@ async def assign_policy(
         ot_enabled_override=body.ot_enabled_override,
         ot_rate_override=body.ot_rate_override,
         policy_template_name=tpl.name,
+        org_unit_name=ou_name,
+        legal_entity_name=le_name,
     )
 
 
@@ -268,6 +316,7 @@ def _tpl_response(t: PolicyTemplate) -> PolicyTemplateResponse:
         expected_start_time=t.expected_start_time,
         expected_end_time=t.expected_end_time,
         work_days=t.work_days,
+        saturday_pattern=t.saturday_pattern,
         break_minutes=t.break_minutes,
         break_auto_deduct=t.break_auto_deduct,
         grace_late_minutes=t.grace_late_minutes,

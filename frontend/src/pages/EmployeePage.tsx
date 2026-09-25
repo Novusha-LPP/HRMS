@@ -6,6 +6,7 @@ import { differenceInMonths, format } from "date-fns";
 import {
   Download, Plus, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Users,
   Mail, MapPin, Briefcase, Building2, CalendarDays, Hash, UserRound, SearchX, ArrowLeftRight,
+  ShieldCheck,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
@@ -20,6 +21,7 @@ import { Sheet } from "../components/ui/Overlay";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { DEMO_EMPLOYEES } from "../lib/demo";
+import { KycSection } from "../components/kyc/KycSection";
 
 interface Row {
   id: string;
@@ -371,6 +373,7 @@ export function EmployeePage() {
       </div>
 
       <EmployeeSheet
+        key={detail?.id ?? "none"}
         row={detail}
         canPlace={canPlace}
         onClose={() => setDetail(null)}
@@ -382,9 +385,13 @@ export function EmployeePage() {
   );
 }
 
+type EmployeeSheetTab = "overview" | "kyc";
+
 function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
   row: Row | null; canPlace: boolean; onClose: () => void; onTransfer: () => void;
 }) {
+  const [activeTab, setActiveTab] = useState<EmployeeSheetTab>("overview");
+
   const fields = row
     ? [
         { icon: Hash, label: "Employee ID", value: row.employeeNumber },
@@ -403,10 +410,24 @@ function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
       open={!!row}
       onClose={onClose}
       title="Employee profile"
-      footer={row && canPlace ? (
-        <button className="btn-primary" onClick={onTransfer}>
-          <ArrowLeftRight size={14} /> {isPlaced ? "Transfer / change department" : "Place in a department"}
-        </button>
+      className="max-w-4xl"
+      footer={row ? (
+        <div className="flex items-center justify-between w-full">
+          {activeTab === "overview" ? (
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab("kyc")}>
+              <ShieldCheck size={13} /> View KYC & Documents
+            </button>
+          ) : (
+            <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab("overview")}>
+              Back to Overview
+            </button>
+          )}
+          {canPlace && activeTab === "overview" && (
+            <button className="btn-primary btn-sm" onClick={onTransfer}>
+              <ArrowLeftRight size={14} /> {isPlaced ? "Transfer" : "Place in a department"}
+            </button>
+          )}
+        </div>
       ) : undefined}
     >
       {row && (
@@ -422,23 +443,44 @@ function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
               </div>
             </div>
           </div>
-          {!isPlaced && row.legalEntityId !== undefined && (
-            <Notice title="Not yet placed in a department" tone="warning">
-              This employee was hired but hasn’t been assigned a department, job title or location yet.
-            </Notice>
+
+          <Tabs<EmployeeSheetTab>
+            className="border-b border-line"
+            value={activeTab}
+            onChange={setActiveTab}
+            items={[
+              { value: "overview", label: "Employment overview" },
+              { value: "kyc", label: "KYC & Documents" },
+            ]}
+          />
+
+          {activeTab === "overview" ? (
+            <>
+              {!isPlaced && row.legalEntityId !== undefined && (
+                <Notice title="Not yet placed in a department" tone="warning">
+                  This employee was hired but hasn’t been assigned a department, job title or location yet.
+                </Notice>
+              )}
+              <div>
+                <p className="eyebrow mb-2">Employment</p>
+                <dl className="divide-y divide-line rounded-xl border border-line">
+                  {fields.map(({ icon: Icon, label, value }) => (
+                    <div key={label} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
+                      <Icon size={14} className="shrink-0 text-fg-subtle" />
+                      <dt className="w-28 shrink-0 text-fg-subtle">{label}</dt>
+                      <dd className="min-w-0 truncate font-medium text-fg">{value ?? "—"}</dd>
+                    </div>
+                  ))}
+                </dl>
+              </div>
+            </>
+          ) : (
+            <KycSection
+              employmentId={row.id}
+              employeeName={row.name}
+              isHR={true}
+            />
           )}
-          <div>
-            <p className="eyebrow mb-2">Employment</p>
-            <dl className="divide-y divide-line rounded-xl border border-line">
-              {fields.map(({ icon: Icon, label, value }) => (
-                <div key={label} className="flex items-center gap-3 px-4 py-2.5 text-[13px]">
-                  <Icon size={14} className="shrink-0 text-fg-subtle" />
-                  <dt className="w-28 shrink-0 text-fg-subtle">{label}</dt>
-                  <dd className="min-w-0 truncate font-medium text-fg">{value ?? "—"}</dd>
-                </div>
-              ))}
-            </dl>
-          </div>
         </div>
       )}
     </Sheet>

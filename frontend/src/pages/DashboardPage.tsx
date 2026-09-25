@@ -3,7 +3,7 @@ import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Users, UserCheck, Umbrella, Inbox, ChevronRight, Cake, Award, UserPlus, CheckCheck,
-  BarChart3, FilePenLine, CalendarX2, Timer, CalendarCheck,
+  BarChart3, FilePenLine, CalendarX2, Timer, CalendarCheck, ArrowUpRight,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { dashboardApi } from "../api/dashboard";
@@ -104,7 +104,13 @@ function HRDashboard() {
               <h3 className="card-title">Attendance trend</h3>
               <p className="card-desc">Daily attendance rate · last 12 working days</p>
             </div>
-            <SampleTag />
+            <div className="flex items-center gap-2">
+              <Link to="/daily-analysis" className="btn-ghost btn-sm text-xs gap-1">
+                <span>Daily analysis</span>
+                <ArrowUpRight size={13} />
+              </Link>
+              <SampleTag />
+            </div>
           </div>
           <div className="px-5 pb-5">
             <AreaChart

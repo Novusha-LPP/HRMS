@@ -26,11 +26,19 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler;
 }
 
+export function getAuthToken(): string | null {
+  return authToken;
+}
+
+export const API_BASE_URL = BASE;
+
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
-    "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
+  if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
+    headers["Content-Type"] = "application/json";
+  }
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
@@ -46,10 +54,12 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 }
 
 export const api = {
-  get:    <T>(path: string) => request<T>(path),
-  post:   <T>(path: string, body: unknown) =>
+  get:      <T>(path: string) => request<T>(path),
+  post:     <T>(path: string, body: unknown) =>
     request<T>(path, { method: "POST", body: JSON.stringify(body) }),
-  patch:  <T>(path: string, body: unknown) =>
+  postForm: <T>(path: string, formData: FormData) =>
+    request<T>(path, { method: "POST", body: formData }),
+  patch:    <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
-  delete: (path: string) => request<void>(path, { method: "DELETE" }),
+  delete:   (path: string) => request<void>(path, { method: "DELETE" }),
 };

@@ -388,6 +388,152 @@ Use http://localhost:8015/docs (Swagger UI) for all setup calls — click
 
 ---
 
+## Alternate Saturdays, Policy Assignment & Schedule Entry
+
+Two gaps found together: `PolicyTemplate.work_days` was a plain weekly
+Mon–Sun bitmask that could not express "2nd & 4th Saturday off," and it
+was — separately — never actually consulted anywhere (no `WEEKEND` status
+was ever derived, and leave's day-counting was hard-coded to `"1111100"`
+regardless of what a policy said). Both are fixed as of migration `0012`;
+`0013` renamed the saturday_pattern values (see below).
+
+**Alternate Saturday**: `PolicyTemplate.saturday_pattern` (`ALL` /
+`SECOND_FOURTH_OFF` / `FIRST_THIRD_OFF`) refines Saturday specifically —
+it's only consulted when `work_days`' Saturday bit is `"1"`. Named by which
+Saturdays are OFF (matching how this is actually described in a policy —
+"2nd & 4th off"), not which are working, so a 5th Saturday in a month that
+has one is never named as off by either pattern and is always a working
+day — there's nothing extra to configure for it. There's no `NONE` value:
+turning Saturday off entirely is the `work_days` toggle's job, not a
+second, redundant control here. See `core/datetime_utils.is_working_day()`.
+This now actually drives two real things: `GET /v1/time/daily-analysis`
+marks an un-punched non-working day `WEEKEND` (vs. `ABSENT` for a missed
+working day — including a working Saturday under an alternate pattern),
+and `POST /v1/leave/applications` excludes non-working Saturdays from
+`days_requested`.
+
+**Assigning a policy to a department or a company**: `employee_policy_assignments`
+can target exactly one of `employment_id`, `org_unit_id` (department) or
+`legal_entity_id` (company) — enforced by a DB check constraint
+(`num_nonnulls(...) = 1`, added in migration `0014`). `resolve_policy()`'s
+priority: employee-specific → the employee's department (walking up the
+org hierarchy for the nearest ancestor with an assignment) → the
+employee's legal entity → the tenant's `is_default` template →
+hard-coded system defaults. The legal-entity tier exists because
+`tenant_provisioning.py` never creates an org_unit when a company is
+created — only `employments.legal_entity_id` is guaranteed to exist for
+every employee, so it's the only reliable "whole company" target;
+org_unit_id depends on both an org_unit tree existing and the employee
+having a current `Assignment` row. Assign via **Attendance policies** →
+a policy's `⋯` menu → **Assign** → the **Department** / **Company**
+toggle, or `POST /v1/policies/assignments` with `org_unit_id` or
+`legal_entity_id` instead of `employment_id`.
+
+**Schedule as start time + duration**: the policy form no longer asks for
+an end time directly — `PolicySheet` takes **Start time** + **Total
+working hours** and computes `expected_end_time` as
+`start + hours + break_minutes` (shown as a read-only "Ends at HH:MM").
+This is purely a frontend UX change; the API is unchanged (still stores
+`expected_start_time`/`expected_end_time`, still derives `standard_minutes`
+server-side via `compute_standard_minutes`). Overtime needs no separate
+wiring for this — `calc_overtime()` has always compared `effective_minutes`
+against `standard_minutes`, so once `standard_minutes` correctly reflects
+the entered hours, OT already measures against it.
+
+---
+
+## Overtime
+
+`PolicyTemplate` has always had `ot_enabled`/`ot_qualifying_minutes`/
+`ot_rate`/`ot_daily_cap_minutes`, and `core/datetime_utils.compute_day()`
+has always computed OT correctly from them — but until migration `0009`,
+`attendance_days` had no column for it, so both places that call
+`compute_day()` (a punch-out in `time/router.py`, a corrections
+recompute in `corrections/router.py`) silently discarded the value. The
+Daily Analysis page showed a different, hardcoded `max(0, effective - 480)`
+flat-8-hour number labeled "Approved Overtime" despite no approval step
+existing anywhere.
+
+**Now real, end to end:**
+1. A day's OT is computed from whichever policy resolves for that
+   employee/date (`policy/engine.py:resolve_policy`) and persisted as
+   `attendance_days.ot_minutes`, with `ot_status` starting at `PENDING`
+   (or `NONE` if no OT was worked). See `apply_overtime()` in
+   `time/models.py` — a correction that changes the minutes resets any
+   prior review rather than leaving a stale `APPROVED` sitting on a
+   different number.
+2. `GET /v1/time/overtime/pending` — attendance days with `ot_status=PENDING`
+   in the caller's scope. `PATCH /v1/time/overtime/{attendance_day_id}` —
+   approve or reject. Gated on `corrections.approve` (same reviewers who
+   already approve attendance corrections) rather than a new permission
+   string; self-approval is blocked; re-reviewing an already-decided day
+   is rejected with 400.
+3. Frontend: an "Overtime awaiting review" card on the **Attendance** page
+   (HR/Manager/Super Admin only, hides itself when nothing's pending), and
+   Daily Analysis now shows the real number with a status-aware label
+   (`Overtime — pending review` / `Approved overtime` / `Overtime — rejected`)
+   instead of unconditionally claiming "Approved".
+
+No demo tenant ships with `ot_enabled` on by default (`_DEFAULT_POLICY` in
+`policy/engine.py` has it off, and `seed_demo.py` doesn't create a
+`PolicyTemplate` at all) — create one with `POST /v1/policies/templates`,
+`is_default: true`, `ot_enabled: true` to turn it on for the whole tenant.
+
+---
+
+## Leave Completeness — Holidays, Comp-off, Encashment, Accrual
+
+Migration `0010` filled four gaps in Leave: `HOLIDAY` existed only as an
+`AttendanceStatus` enum value with no calendar to ever set one; there was no
+comp-off concept; no leave encashment; and balances only ever moved via the
+one-time manual `POST /v1/leave/balances/init` — no ongoing accrual.
+
+**Holiday calendar** (`time/router.py`, gated on `leave.write` — HR
+maintains it the same way it maintains leave types):
+- `GET/POST /v1/time/holidays`, `DELETE /v1/time/holidays/{id}`.
+  `legal_entity_id` null = tenant-wide; set = specific to one company.
+- Feeds two places: `GET /v1/time/daily-analysis` shows `HOLIDAY` status for
+  employees who didn't punch in on a tenant-wide holiday (per-company
+  holidays aren't resolved there yet — see code comment); and
+  `POST /v1/leave/applications` excludes tenant-wide holidays from the
+  working-day count via `working_days_between()`'s new `holidays` param.
+
+**Comp-off** (`POST /v1/leave/comp-off`, `leave.write`): a direct HR credit
+for a day worked outside the normal schedule, not a second approval chain —
+one row in `comp_off_grants` (unique per employment/work_date, so re-granting
+the same day 400s) plus an `allocated_days` credit to that employee's "Comp
+Off" `LeaveType`, auto-created on first use (`_get_or_create_comp_off_type`
+in `leave/router.py`).
+
+**Encashment** (`POST /v1/leave/encashment`, `leave.write`): converts N days
+of balance to a payout record (`leave_encashments`) and debits
+`allocated_days`. Only leave types with `encashable=true` qualify — toggle it
+via `PATCH /v1/leave/types/{id}`. There's no payroll module (see below), so
+this is the record for payroll to act on externally; it doesn't move money.
+
+**Accrual** (`POST /v1/leave/accrual/run?period=YYYY-MM`, `leave.write`):
+credits `days_per_year / 12` to every active employment in the caller's scope
+for every `LeaveType` with `accrual_enabled=true`. `last_accrued_period` on
+`LeaveBalance` is a **high-water mark**, compared as a `"YYYY-MM"` string —
+re-running the current or an earlier period is a safe no-op, but it does not
+backfill a month that was skipped by mistake (running `2026-11` after
+`2026-09` moves the mark to `2026-11`; re-running `2026-09` afterward no-ops
+rather than double-crediting). There's no in-app scheduler anywhere in this
+stack — trigger this from an external monthly cron in production, the same
+way `seed_demo.py` is a manually-run script rather than a job.
+
+Frontend: **Leave → Admin** tab (HR only — gated on the same role that holds
+`leave.write`, not just any approver) has cards for all four: leave-type
+toggles for Encashable/Accrues-monthly, the holiday calendar, a comp-off
+grant form, an encashment form, and a manual "Run accrual" button.
+
+**Payroll is intentionally not built.** `LeaveEncashment` is designed as the
+handoff point for it (see its docstring), but salary/CTC/bank data doesn't
+exist anywhere in this codebase yet — it's a from-scratch subsystem, not a
+gap-fill. Scoping doc: [`docs/payroll-design.md`](docs/payroll-design.md).
+
+---
+
 ## Frontend Environment
 
 `frontend/.env` — defaults for local dev:

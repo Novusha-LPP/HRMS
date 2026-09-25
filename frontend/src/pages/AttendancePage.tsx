@@ -1,18 +1,22 @@
 import { useState } from "react";
 import { Link } from "react-router-dom";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   addMonths, eachDayOfInterval, endOfMonth, format, getDay, isAfter, isSameDay, startOfMonth, subMonths,
 } from "date-fns";
-import { CalendarDays, ChevronLeft, ChevronRight, FilePenLine, List, CalendarCheck, Timer, CalendarX2, Umbrella } from "lucide-react";
+import {
+  CalendarDays, ChevronLeft, ChevronRight, FilePenLine, List, CalendarCheck, Timer, CalendarX2, Umbrella,
+  Clock3, CircleCheck, CircleX,
+} from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { timeApi } from "../api/time";
-import type { AttendanceDay } from "../api/time";
+import type { AttendanceDay, PendingOvertimeItem } from "../api/time";
 import { PunchClock } from "../components/attendance/PunchClock";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { Segmented } from "../components/ui/Tabs";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
+import { useToast, errorMessage } from "../components/ui/Toast";
 
 const DOT: Record<string, string> = {
   PRESENT: "bg-success", LATE: "bg-warning", ABSENT: "bg-danger", ON_LEAVE: "bg-info",
@@ -66,7 +70,18 @@ export function AttendancePage() {
       <PageHeader
         title="Attendance"
         description="Your check-ins, working hours and monthly record."
-        actions={<Link to="/corrections?new=1" className="btn-secondary"><FilePenLine size={15} /> Request correction</Link>}
+        actions={
+          <div className="flex items-center gap-2">
+            {["HR", "SUPER_ADMIN", "MANAGER"].includes(user.role) && (
+              <Link to="/daily-analysis" className="btn-secondary">
+                <CalendarCheck size={15} /> Daily Analysis
+              </Link>
+            )}
+            <Link to="/corrections?new=1" className="btn-secondary">
+              <FilePenLine size={15} /> Request correction
+            </Link>
+          </div>
+        }
       />
 
       {isError && (
@@ -74,6 +89,12 @@ export function AttendancePage() {
           <Notice title="Couldn’t load attendance" action={<button className="btn-secondary btn-sm" onClick={() => refetch()}>Retry</button>}>
             The attendance API isn’t responding.
           </Notice>
+        </div>
+      )}
+
+      {["HR", "SUPER_ADMIN", "MANAGER"].includes(user.role) && (
+        <div className="mb-4">
+          <OvertimeApprovals />
         </div>
       )}
 
@@ -189,6 +210,86 @@ function MonthGrid({ month, byDate }: { month: Date; byDate: Map<string, Attenda
           <span key={l} className="flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${c}`} />{l}</span>
         ))}
       </div>
+    </div>
+  );
+}
+
+function fmtOtMins(minutes: number): string {
+  const h = Math.floor(minutes / 60);
+  const m = minutes % 60;
+  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+}
+
+/**
+ * Overtime is computed by the same policy engine as everything else on this
+ * page, but needs a human review before it counts as approved — this is
+ * that review queue. See POST-review logic in time/router.py:review_overtime.
+ */
+function OvertimeApprovals() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["pending-overtime"],
+    queryFn: () => timeApi.pendingOvertime(),
+  });
+
+  const review = useMutation({
+    mutationFn: ({ id, status }: { id: string; status: "APPROVED" | "REJECTED" }) => timeApi.reviewOvertime(id, status),
+    onSuccess: (_r, vars) => {
+      qc.invalidateQueries({ queryKey: ["pending-overtime"] });
+      toast.success(vars.status === "APPROVED" ? "Overtime approved" : "Overtime rejected");
+    },
+    onError: (e) => toast.error("Couldn't update overtime", errorMessage(e)),
+  });
+
+  const items = data ?? [];
+  if (!isPending && !isError && items.length === 0) return null; // nothing pending — don't take up space
+
+  return (
+    <div className="card">
+      <div className="card-header">
+        <div>
+          <h3 className="card-title flex items-center gap-1.5"><Clock3 size={15} className="text-warning" /> Overtime awaiting review</h3>
+          <p className="card-desc">Policy-computed overtime for people in your scope, pending approval.</p>
+        </div>
+      </div>
+      {isPending ? (
+        <div className="space-y-2 p-5 pt-0">{[0, 1].map((i) => <Skeleton key={i} className="h-11 rounded-lg" />)}</div>
+      ) : isError ? (
+        <p className="px-5 pb-5 text-sm text-danger">Couldn't load pending overtime.</p>
+      ) : (
+        <div className="overflow-x-auto">
+          <table className="tbl">
+            <thead><tr><th>Employee</th><th>Date</th><th>Worked</th><th>Overtime</th><th className="text-right">Review</th></tr></thead>
+            <tbody>
+              {items.map((it: PendingOvertimeItem) => (
+                <tr key={it.attendance_day_id}>
+                  <td className="font-medium text-fg">{it.name}<span className="ml-1.5 text-xs text-fg-subtle">{it.department ?? it.employee_number}</span></td>
+                  <td className="tabular-nums">{format(new Date(it.work_date), "d MMM")}</td>
+                  <td className="tabular-nums">{fmtOtMins(it.effective_minutes)}</td>
+                  <td className="tabular-nums font-medium text-warning">+{fmtOtMins(it.ot_minutes)}</td>
+                  <td className="text-right">
+                    <span className="inline-flex items-center gap-1.5">
+                      <button
+                        onClick={() => review.mutate({ id: it.attendance_day_id, status: "REJECTED" })}
+                        disabled={review.isPending} className="btn-icon text-danger hover:bg-danger/10" aria-label="Reject"
+                      >
+                        <CircleX size={16} />
+                      </button>
+                      <button
+                        onClick={() => review.mutate({ id: it.attendance_day_id, status: "APPROVED" })}
+                        disabled={review.isPending} className="btn-icon text-success hover:bg-success/10" aria-label="Approve"
+                      >
+                        <CircleCheck size={16} />
+                      </button>
+                    </span>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
     </div>
   );
 }

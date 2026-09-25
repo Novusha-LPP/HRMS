@@ -1,9 +1,9 @@
 from datetime import date, datetime
-from typing import Optional
+from typing import Literal, Optional
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
-from hrms.modules.time.models import AttendanceStatus, PunchSource, PunchType
+from hrms.modules.time.models import AttendanceStatus, OvertimeStatus, PunchSource, PunchType
 
 
 class PunchCreate(BaseModel):
@@ -54,27 +54,101 @@ class AttendanceDayResponse(BaseModel):
     early_departure_minutes: int
     status: AttendanceStatus
     is_locked: bool
+    ot_minutes: int = 0
+    ot_status: OvertimeStatus = OvertimeStatus.NONE
+    ot_reviewed_by: Optional[str] = None
+    ot_reviewed_at: Optional[datetime] = None
+    ot_review_notes: Optional[str] = None
 
 
-class ShiftCreate(BaseModel):
+class OvertimeReviewRequest(BaseModel):
+    status: Literal["APPROVED", "REJECTED"]
+    notes: Optional[str] = Field(default=None, max_length=500)
+
+
+class PendingOvertimeItem(BaseModel):
+    attendance_day_id: str
+    employment_id: str
+    employee_number: str
     name: str
-    start_time: str  # "09:00"
-    end_time: str    # "18:00"
-    break_minutes: int = 30
-    work_days: int = 31
-    grace_late_minutes: int = 10
-    grace_early_departure_minutes: int = 10
-    is_default: bool = False
+    department: Optional[str] = None
+    work_date: date
+    effective_minutes: int
+    ot_minutes: int
+    ot_status: OvertimeStatus
 
 
-class ShiftResponse(BaseModel):
+class HolidayCreate(BaseModel):
+    holiday_date: date
+    name: str = Field(max_length=200)
+    legal_entity_id: Optional[str] = Field(default=None, description="Omit for a tenant-wide holiday")
+    is_optional: bool = False
+
+
+class HolidayResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
     id: str
+    holiday_date: date
     name: str
-    start_time: str
-    end_time: str
-    break_minutes: int
-    work_days: int
-    is_default: bool
+    legal_entity_id: Optional[str]
+    is_optional: bool
+
+
+class DailyEmployeeRecord(BaseModel):
+    employment_id: str
+    employee_number: str
+    name: str
+    email: Optional[str] = None
+    department: Optional[str] = None
+    designation: Optional[str] = None
+    location: Optional[str] = None
     status: str
+    first_punch_in: Optional[datetime] = None
+    last_punch_out: Optional[datetime] = None
+    effective_minutes: int = 0
+    gross_minutes: int = 0
+    break_minutes: int = 0
+    late_by_minutes: int = 0
+    early_departure_minutes: int = 0
+    overtime_minutes: int = 0
+    overtime_status: OvertimeStatus = OvertimeStatus.NONE
+    leave_type: Optional[str] = None
+    punches_count: int = 0
+    is_currently_in: bool = False
+
+
+class DailyMetrics(BaseModel):
+    total_headcount: int = 0
+    present_count: int = 0
+    on_time_count: int = 0
+    late_count: int = 0
+    absent_count: int = 0
+    on_leave_count: int = 0
+    half_day_count: int = 0
+    presence_rate: float = 0.0
+    average_work_minutes: int = 0
+    total_overtime_minutes: int = 0
+
+
+class DepartmentAttendanceStat(BaseModel):
+    department: str
+    total: int
+    present: int
+    late: int
+    absent: int
+    on_leave: int
+    presence_rate: float
+
+
+class HourlyArrivalStat(BaseModel):
+    hour: str
+    count: int
+
+
+class DailyAnalysisResponse(BaseModel):
+    work_date: date
+    metrics: DailyMetrics
+    department_stats: list[DepartmentAttendanceStat]
+    hourly_arrivals: list[HourlyArrivalStat]
+    employees: list[DailyEmployeeRecord]

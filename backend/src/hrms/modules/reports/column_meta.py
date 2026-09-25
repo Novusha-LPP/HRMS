@@ -59,6 +59,19 @@ AVAILABLE_COLUMNS: dict[str, list[dict]] = {
         {"field": "on_notice", "label": "On Notice", "type": "number", "default": False},
         {"field": "on_leave", "label": "On Leave Today", "type": "number", "default": False},
     ],
+    "LEAVE": [
+        {"field": "employee_number", "label": "Employee No.", "type": "string", "default": True},
+        {"field": "employee_name", "label": "Employee Name", "type": "string", "default": True},
+        {"field": "department", "label": "Department", "type": "string", "default": True},
+        {"field": "leave_type_name", "label": "Leave Type", "type": "string", "default": True},
+        {"field": "from_date", "label": "From", "type": "date", "default": True},
+        {"field": "to_date", "label": "To", "type": "date", "default": True},
+        {"field": "days_requested", "label": "Days", "type": "number", "default": True},
+        {"field": "status", "label": "Status", "type": "enum",
+         "options": ["DRAFT", "PENDING_L1", "PENDING_L2", "PENDING_L3", "APPROVED", "REJECTED", "CANCELLED"],
+         "default": True},
+        {"field": "applied_at", "label": "Applied On", "type": "date", "default": False},
+    ],
 }
 
 AVAILABLE_FILTERS: dict[str, list[dict]] = {
@@ -89,6 +102,14 @@ AVAILABLE_FILTERS: dict[str, list[dict]] = {
         {"field": "department", "label": "Department", "type": "string", "ops": ["eq", "in"]},
         {"field": "location", "label": "Location", "type": "string", "ops": ["eq", "in"]},
         {"field": "worker_type", "label": "Worker Type", "type": "string", "ops": ["eq", "in"]},
+    ],
+    "LEAVE": [
+        {"field": "status", "label": "Status", "type": "enum",
+         "options": ["DRAFT", "PENDING_L1", "PENDING_L2", "PENDING_L3", "APPROVED", "REJECTED", "CANCELLED"],
+         "ops": ["in", "eq"]},
+        {"field": "from_date", "label": "From", "type": "date", "ops": ["gte", "lte", "between"]},
+        {"field": "to_date", "label": "To", "type": "date", "ops": ["gte", "lte", "between"]},
+        {"field": "department", "label": "Department", "type": "string", "ops": ["eq", "in"]},
     ],
 }
 
@@ -136,6 +157,15 @@ DEFAULT_REPORTS = [
         "module": "ATTENDANCE",
         "owner_type": "EMPLOYEE",
         "columns": ["work_date", "status", "first_punch_in", "last_punch_out", "effective_minutes"],
+        "filters": [],
+    },
+    {
+        "name": "Leave Summary",
+        "description": "Leave requests across the organisation",
+        "module": "LEAVE",
+        "owner_type": "HR",
+        "columns": ["employee_number", "employee_name", "department", "leave_type_name",
+                    "from_date", "to_date", "days_requested", "status"],
         "filters": [],
     },
 ]

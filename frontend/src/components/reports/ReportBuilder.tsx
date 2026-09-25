@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { ReactNode } from "react";
 import { useMutation, useQuery } from "@tanstack/react-query";
-import { Plus, Trash2, Play, Clock, Users, ClipboardCheck, BarChart3 } from "lucide-react";
+import { Plus, Trash2, Play, Clock, Users, ClipboardCheck, BarChart3, Umbrella } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { reportsApi } from "../../api/reports";
 import type { ColumnMeta, FilterMeta, FilterSpec, RunResult } from "../../api/reports";
@@ -12,6 +12,7 @@ import { useToast, errorMessage } from "../ui/Toast";
 export const MODULES: { value: string; label: string; icon: LucideIcon; desc: string }[] = [
   { value: "ATTENDANCE", label: "Attendance", icon: Clock, desc: "Daily records, punches, hours" },
   { value: "EMPLOYEE", label: "Employees", icon: Users, desc: "People and employment data" },
+  { value: "LEAVE", label: "Leave", icon: Umbrella, desc: "Leave requests and their status" },
   { value: "ONBOARDING", label: "Onboarding", icon: ClipboardCheck, desc: "Cases and task progress" },
   { value: "HEADCOUNT", label: "Headcount", icon: BarChart3, desc: "Workforce size and movement" },
 ];

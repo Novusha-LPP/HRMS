@@ -207,6 +207,8 @@ async def _execute_report(
         return await _run_onboarding(session, tenant_id, columns, filters, limit, scope)
     elif module == "HEADCOUNT":
         return await _run_headcount(session, tenant_id, filters, limit, scope)
+    elif module == "LEAVE":
+        return await _run_leave(session, tenant_id, filters, limit, scope)
     return []
 
 
@@ -349,6 +351,65 @@ async def _run_onboarding(session, tenant_id, columns, filters, limit, scope: Sc
         GROUP BY oc.id, e.employee_number, p.legal_first_name, p.legal_last_name,
                  oc.hire_date, oc.status, oc.started_at, oc.completed_at
         ORDER BY oc.started_at DESC
+        LIMIT :limit
+    """
+    result = await session.execute(text(sql), params)
+    return [dict(row._mapping) for row in result]
+
+
+async def _run_leave(session, tenant_id, filters, limit, scope: Scope) -> list[dict]:
+    entity_clause, entity_params = scope.employment_filter_sql("e")
+    params: dict = {"tid": str(tenant_id), "limit": limit, **entity_params}
+    where = ["la.tenant_id = CAST(:tid AS uuid)", "la.archived_at IS NULL"]
+
+    for i, f in enumerate(filters):
+        key = f"f{i}"
+        if f["field"] == "status" and f.get("value"):
+            vals = f["value"] if isinstance(f["value"], list) else [f["value"]]
+            placeholders = ", ".join(f":{key}_{j}" for j in range(len(vals)))
+            where.append(f"la.status IN ({placeholders})")
+            for j, v in enumerate(vals):
+                params[f"{key}_{j}"] = v
+        elif f["field"] in ("from_date", "to_date") and f.get("value"):
+            try:
+                value = date.fromisoformat(str(f["value"]))
+            except ValueError:
+                continue
+            col = f"la.{f['field']}"
+            if f["op"] == "gte":
+                where.append(f"{col} >= CAST(:{key} AS date)")
+                params[key] = value
+            elif f["op"] == "lte":
+                where.append(f"{col} <= CAST(:{key} AS date)")
+                params[key] = value
+        elif f["field"] == "department" and f.get("value"):
+            vals = f["value"] if isinstance(f["value"], list) else [f["value"]]
+            placeholders = ", ".join(f":{key}_{j}" for j in range(len(vals)))
+            where.append(f"ou.name IN ({placeholders})")
+            for j, v in enumerate(vals):
+                params[f"{key}_{j}"] = v
+
+    sql = f"""
+        SELECT
+            e.employee_number,
+            p.legal_first_name || ' ' || p.legal_last_name AS employee_name,
+            ou.name                                          AS department,
+            lt.name                                          AS leave_type_name,
+            la.from_date,
+            la.to_date,
+            la.days_requested,
+            la.status,
+            la.applied_at
+        FROM leave_applications la
+        JOIN employments e   ON e.tenant_id = la.tenant_id AND e.id = la.employment_id
+        JOIN persons p       ON p.tenant_id = e.tenant_id  AND p.id = e.person_id
+        JOIN leave_types lt  ON lt.tenant_id = la.tenant_id AND lt.id = la.leave_type_id
+        LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
+            AND a.effective_to IS NULL
+        LEFT JOIN org_units ou  ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
+        WHERE {" AND ".join(where)}
+          {entity_clause}
+        ORDER BY la.from_date DESC, e.employee_number
         LIMIT :limit
     """
     result = await session.execute(text(sql), params)

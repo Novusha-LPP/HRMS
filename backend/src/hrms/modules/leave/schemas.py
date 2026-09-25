@@ -22,6 +22,9 @@ class LeaveTypeCreate(BaseModel):
     requires_document: bool = False
     is_paid: bool = True
     color: str = "#3B82F6"
+    is_comp_off: bool = False
+    encashable: bool = False
+    accrual_enabled: bool = False
 
 
 class LeaveTypeUpdate(BaseModel):
@@ -40,6 +43,9 @@ class LeaveTypeUpdate(BaseModel):
     is_paid: Optional[bool] = None
     is_active: Optional[bool] = None
     color: Optional[str] = None
+    is_comp_off: Optional[bool] = None
+    encashable: Optional[bool] = None
+    accrual_enabled: Optional[bool] = None
 
 
 class LeaveTypeResponse(LeaveTypeCreate):
@@ -87,6 +93,49 @@ class LeaveApprovalActionResponse(BaseModel):
     approver_employment_id: Optional[str]
     comments: Optional[str]
     actioned_at: datetime
+
+
+class CompOffGrantRequest(BaseModel):
+    employment_id: str = Field(description="Employee being credited — an HR/admin action, not self-service")
+    work_date: date
+    days_granted: float = Field(default=1.0, gt=0)
+    notes: Optional[str] = None
+
+
+class CompOffGrantResponse(BaseModel):
+    id: str
+    employment_id: str
+    work_date: date
+    days_granted: float
+    notes: Optional[str]
+    granted_by: Optional[str]
+    recorded_at: datetime
+
+
+class LeaveEncashmentRequest(BaseModel):
+    employment_id: str = Field(description="Employee being paid out — an HR/admin action, not self-service")
+    leave_type_id: str
+    days: float = Field(gt=0)
+    effective_date: Optional[date] = None
+    notes: Optional[str] = None
+
+
+class LeaveEncashmentResponse(BaseModel):
+    id: str
+    employment_id: str
+    leave_type_id: str
+    leave_type_name: str
+    days: float
+    effective_date: date
+    notes: Optional[str]
+    processed_by: Optional[str]
+    recorded_at: datetime
+
+
+class AccrualRunResponse(BaseModel):
+    period: str
+    balances_credited: int
+    days_credited_total: float
 
 
 class LeaveApplicationResponse(BaseModel):

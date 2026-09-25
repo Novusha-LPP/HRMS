@@ -18,6 +18,45 @@ export interface LeaveType {
   is_paid: boolean;
   is_active: boolean;
   color: string;
+  is_comp_off: boolean;
+  encashable: boolean;
+  accrual_enabled: boolean;
+}
+
+export interface Holiday {
+  id: string;
+  holiday_date: string;
+  name: string;
+  legal_entity_id: string | null;
+  is_optional: boolean;
+}
+
+export interface CompOffGrant {
+  id: string;
+  employment_id: string;
+  work_date: string;
+  days_granted: number;
+  notes: string | null;
+  granted_by: string | null;
+  recorded_at: string;
+}
+
+export interface LeaveEncashment {
+  id: string;
+  employment_id: string;
+  leave_type_id: string;
+  leave_type_name: string;
+  days: number;
+  effective_date: string;
+  notes: string | null;
+  processed_by: string | null;
+  recorded_at: string;
+}
+
+export interface AccrualRunResult {
+  period: string;
+  balances_credited: number;
+  days_credited_total: number;
 }
 
 export interface LeaveBalance {
@@ -109,4 +148,18 @@ export const leaveApi = {
 
   cancelReject: (appId: string, approverEmpId: string, comments?: string) =>
     api.post<LeaveApplication>(`/v1/leave/applications/${appId}/cancel-reject?approver_employment_id=${approverEmpId}`, { action: "REJECT", comments }),
+
+  listHolidays: (year?: number) => api.get<Holiday[]>(`/v1/time/holidays${year ? `?year=${year}` : ""}`),
+  createHoliday: (body: { holiday_date: string; name: string; is_optional?: boolean }) =>
+    api.post<Holiday>("/v1/time/holidays", body),
+  deleteHoliday: (id: string) => api.delete(`/v1/time/holidays/${id}`),
+
+  grantCompOff: (body: { employment_id: string; work_date: string; days_granted?: number; notes?: string }) =>
+    api.post<CompOffGrant>("/v1/leave/comp-off", body),
+
+  encash: (body: { employment_id: string; leave_type_id: string; days: number; notes?: string }) =>
+    api.post<LeaveEncashment>("/v1/leave/encashment", body),
+
+  runAccrual: (period?: string) =>
+    api.post<AccrualRunResult>(`/v1/leave/accrual/run${period ? `?period=${period}` : ""}`, {}),
 };
