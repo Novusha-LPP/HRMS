@@ -22,6 +22,7 @@ import { OnboardingPage } from "./pages/OnboardingPage";
 import { ReportsPage } from "./pages/ReportsPage";
 import { OrganizationPage } from "./pages/OrganizationPage";
 import { ProfilePage } from "./pages/ProfilePage";
+import { DailyAnalysisPage } from "./pages/DailyAnalysisPage";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
@@ -71,6 +72,8 @@ export default function App() {
                           <Route path="/" element={<Navigate to="/dashboard" replace />} />
                           <Route path="/dashboard" element={<DashboardPage />} />
                           <Route path="/employees" element={<EmployeePage />} />
+                          <Route path="/daily-analysis" element={<DailyAnalysisPage />} />
+                          <Route path="/kyc" element={<Navigate to="/profile?tab=kyc" replace />} />
                           <Route path="/attendance" element={<AttendancePage />} />
                           <Route path="/leave" element={<LeavePage />} />
                           <Route path="/corrections" element={<CorrectionsPage />} />

@@ -188,19 +188,53 @@ def derive_attendance_status(
     return "PRESENT"
 
 
-def working_days_between(from_date: date, to_date: date, work_days: str) -> float:
+def is_working_day(d: date, work_days: str, saturday_pattern: str = "ALL") -> bool:
+    """
+    Whether `d` is a working day per work_days, with saturday_pattern
+    refining Saturday specifically (work_days index 5) to support
+    "alternate Saturday" schedules that a plain weekly bitmask can't
+    express. Named by which Saturdays are OFF, matching how this is
+    actually described in a policy document:
+      ALL               — every Saturday marked working in work_days works
+      SECOND_FOURTH_OFF — 2nd & 4th Saturday off; 1st/3rd/(5th if it
+                           occurs) work ("alternate Saturday", the common
+                           case)
+      FIRST_THIRD_OFF   — 1st & 3rd Saturday off; 2nd/4th/(5th if it
+                           occurs) work
+    A 5th Saturday, when a month has one, is never named as off by either
+    pattern, so it's always a working day — there's no separate case to
+    configure for it. To make Saturday never a working day at all, turn
+    it off in work_days directly rather than via this field.
+    Holidays are handled separately by the caller (see working_days_between).
+    """
+    if len(work_days) != 7:
+        work_days = "1111100"
+    if work_days[d.weekday()] != "1":
+        return False
+    if d.weekday() == 5 and saturday_pattern != "ALL":
+        week_of_month = (d.day - 1) // 7 + 1
+        if saturday_pattern == "SECOND_FOURTH_OFF":
+            return week_of_month not in (2, 4)
+        if saturday_pattern == "FIRST_THIRD_OFF":
+            return week_of_month not in (1, 3)
+    return True
+
+
+def working_days_between(
+    from_date: date, to_date: date, work_days: str,
+    holidays: set[date] | None = None, saturday_pattern: str = "ALL",
+) -> float:
     """
     Count working days between from_date and to_date inclusive.
 
     work_days: 7-char string "1111100" — index 0=Mon, 6=Sun, "1"=working day.
+    holidays: calendar dates to exclude even if they fall on a working day.
     Returns a float to support half-day counting at boundaries.
     """
-    if len(work_days) != 7:
-        work_days = "1111100"
     days = 0
     current = from_date
     while current <= to_date:
-        if work_days[current.weekday()] == "1":
+        if is_working_day(current, work_days, saturday_pattern) and (not holidays or current not in holidays):
             days += 1
         current += timedelta(days=1)
     return float(days)

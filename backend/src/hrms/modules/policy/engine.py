@@ -15,6 +15,7 @@ from datetime import date, time
 from typing import Optional
 from uuid import UUID
 
+from sqlalchemy import text
 from sqlmodel import select
 
 from hrms.core.datetime_utils import compute_standard_minutes
@@ -28,6 +29,7 @@ class ResolvedPolicy:
     expected_start_time: time
     expected_end_time: time
     work_days: str
+    saturday_pattern: str
     break_minutes: int
     break_auto_deduct: bool
     standard_minutes: int  # derived from start/end/break
@@ -49,6 +51,7 @@ _DEFAULT_POLICY = ResolvedPolicy(
     expected_start_time=time(9, 0),
     expected_end_time=time(18, 0),
     work_days="1111100",
+    saturday_pattern="ALL",
     break_minutes=60,
     break_auto_deduct=False,
     standard_minutes=480,
@@ -101,6 +104,7 @@ def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment) -> Re
         expected_start_time=template.expected_start_time,
         expected_end_time=template.expected_end_time,
         work_days=template.work_days,
+        saturday_pattern=template.saturday_pattern,
         break_minutes=template.break_minutes,
         break_auto_deduct=template.break_auto_deduct,
         standard_minutes=std_mins,
@@ -118,6 +122,102 @@ def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment) -> Re
     )
 
 
+async def _resolve_department_assignment(
+    session, tenant_id: UUID, employment_id: UUID, work_date: date,
+) -> EmployeePolicyAssignment | None:
+    """
+    An employee's department-level policy, if any: find their current
+    org_unit, then walk up its ancestor chain (self first) for the nearest
+    org_unit with an active policy assignment. Mirrors the recursive
+    ancestor walk core.authz._entities_for_org_units already does for
+    role scopes.
+    """
+    org_unit_row = await session.execute(
+        text("""
+            SELECT org_unit_id FROM assignments
+            WHERE tenant_id = CAST(:tid AS uuid) AND employment_id = CAST(:eid AS uuid)
+              AND effective_to IS NULL
+            LIMIT 1
+        """),
+        {"tid": str(tenant_id), "eid": str(employment_id)},
+    )
+    org_unit_id = org_unit_row.scalar()
+    if org_unit_id is None:
+        return None
+
+    match_row = await session.execute(
+        text("""
+            WITH RECURSIVE chain AS (
+                SELECT id, parent_id, 0 AS depth
+                FROM org_units
+                WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:start AS uuid)
+                UNION ALL
+                SELECT ou.id, ou.parent_id, chain.depth + 1
+                FROM org_units ou
+                JOIN chain ON ou.id = chain.parent_id
+                WHERE ou.tenant_id = CAST(:tid AS uuid)
+            )
+            SELECT epa.id
+            FROM employee_policy_assignments epa
+            JOIN chain ON chain.id = epa.org_unit_id
+            WHERE epa.tenant_id = CAST(:tid AS uuid)
+              AND epa.effective_from <= CAST(:work_date AS date)
+              AND (epa.effective_to IS NULL OR epa.effective_to >= CAST(:work_date AS date))
+              AND epa.archived_at IS NULL
+            ORDER BY chain.depth ASC, epa.effective_from DESC
+            LIMIT 1
+        """),
+        {"tid": str(tenant_id), "start": str(org_unit_id), "work_date": work_date},
+    )
+    match_id = match_row.scalar()
+    if match_id is None:
+        return None
+
+    row = await session.execute(
+        select(EmployeePolicyAssignment)
+        .where(EmployeePolicyAssignment.tenant_id == tenant_id)
+        .where(EmployeePolicyAssignment.id == match_id)
+    )
+    return row.scalars().first()
+
+
+async def _resolve_legal_entity_assignment(
+    session, tenant_id: UUID, employment_id: UUID, work_date: date,
+) -> EmployeePolicyAssignment | None:
+    """
+    An employee's company-wide policy, if any. Unlike org_unit_id, every
+    employment always has a legal_entity_id (set at hire, on the
+    employments table directly) — so this tier works even for a tenant
+    that hasn't built out an org_unit tree at all, which org_unit_id-based
+    department assignment can't guarantee.
+    """
+    entity_row = await session.execute(
+        text("""
+            SELECT legal_entity_id FROM employments
+            WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:eid AS uuid)
+        """),
+        {"tid": str(tenant_id), "eid": str(employment_id)},
+    )
+    legal_entity_id = entity_row.scalar()
+    if legal_entity_id is None:
+        return None
+
+    row = await session.execute(
+        select(EmployeePolicyAssignment)
+        .where(EmployeePolicyAssignment.tenant_id == tenant_id)
+        .where(EmployeePolicyAssignment.legal_entity_id == legal_entity_id)
+        .where(EmployeePolicyAssignment.effective_from <= work_date)
+        .where(
+            (EmployeePolicyAssignment.effective_to == None)  # noqa: E711
+            | (EmployeePolicyAssignment.effective_to >= work_date)
+        )
+        .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
+        .order_by(EmployeePolicyAssignment.effective_from.desc())
+        .limit(1)
+    )
+    return row.scalars().first()
+
+
 async def resolve_policy(
     employment_id: UUID,
     work_date: date,
@@ -126,9 +226,12 @@ async def resolve_policy(
 ) -> ResolvedPolicy:
     """
     Return the resolved policy for an employee on a specific date.
-    Falls back to system defaults if no assignment exists.
+    Priority: employee-specific assignment, then their department's
+    assignment (walking up the org hierarchy), then their legal entity's
+    (company-wide) assignment, then the tenant's default template, then
+    hard-coded system defaults if none of those exist.
     """
-    # Find active assignment
+    # Find active employee-specific assignment
     asgn_row = await session.execute(
         select(EmployeePolicyAssignment)
         .where(EmployeePolicyAssignment.tenant_id == tenant_id)
@@ -143,6 +246,12 @@ async def resolve_policy(
         .limit(1)
     )
     assignment: EmployeePolicyAssignment | None = asgn_row.scalars().first()
+
+    if assignment is None:
+        assignment = await _resolve_department_assignment(session, tenant_id, employment_id, work_date)
+
+    if assignment is None:
+        assignment = await _resolve_legal_entity_assignment(session, tenant_id, employment_id, work_date)
 
     if assignment is None:
         # Try the tenant's default template
@@ -162,6 +271,7 @@ async def resolve_policy(
             expected_start_time=tpl.expected_start_time,
             expected_end_time=tpl.expected_end_time,
             work_days=tpl.work_days,
+            saturday_pattern=tpl.saturday_pattern,
             break_minutes=tpl.break_minutes,
             break_auto_deduct=tpl.break_auto_deduct,
             standard_minutes=std_mins,

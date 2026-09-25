@@ -37,7 +37,7 @@ from hrms.modules.corrections.schemas import (
     CorrectionResponse,
 )
 from hrms.modules.policy.engine import resolve_policy
-from hrms.modules.time.models import AttendanceDay, AttendanceStatus
+from hrms.modules.time.models import AttendanceDay, AttendanceStatus, apply_overtime
 
 router = APIRouter(prefix="/v1/corrections", tags=["Attendance Corrections"])
 
@@ -248,6 +248,7 @@ async def _apply_correction(session, tenant_id, cor: AttendanceCorrectionRequest
         ad.effective_minutes = 0
         ad.late_by_minutes = 0
         ad.early_departure_minutes = 0
+        apply_overtime(ad, 0)
         session.add(ad)
         return
 
@@ -290,6 +291,7 @@ async def _apply_correction(session, tenant_id, cor: AttendanceCorrectionRequest
         ad.late_by_minutes = result.late_by_minutes
         ad.early_departure_minutes = result.early_departure_minutes
         ad.status = getattr(AttendanceStatus, result.status, AttendanceStatus.PRESENT)
+        apply_overtime(ad, result.ot_minutes)
 
     session.add(ad)
 

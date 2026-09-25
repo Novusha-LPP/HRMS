@@ -50,6 +50,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "policy.read", "policy.write",
         "reports.read", "reports.write",
         "dashboard.hr",
+        "kyc.read", "kyc.write", "kyc.verify",
     }),
     "MANAGER": frozenset({
         "people.read",
@@ -57,9 +58,10 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         "onboarding.read",
         "reports.read",
         "dashboard.manager",
+        "kyc.read",
     }),
-    "EMPLOYEE": frozenset({"self.read", "self.write", "leave.apply", "corrections.request", "reports.read"}),
-    "ACCOUNTANT": frozenset({"people.read", "reports.read", "dashboard.hr"}),
+    "EMPLOYEE": frozenset({"self.read", "self.write", "leave.apply", "corrections.request", "reports.read", "kyc.self"}),
+    "ACCOUNTANT": frozenset({"people.read", "reports.read", "dashboard.hr", "kyc.read"}),
 }
 
 # Human-readable blurb for each system role — the single source of truth for
@@ -306,6 +308,29 @@ async def employment_legal_entity(session: AsyncSession, tenant_id: UUID, employ
         {"tid": str(tenant_id), "eid": str(employment_id)},
     )
     return row.scalar()
+
+
+async def org_unit_legal_entity(session: AsyncSession, tenant_id: UUID, org_unit_id: UUID) -> UUID | None:
+    row = await session.execute(
+        text("""
+            SELECT legal_entity_id FROM org_units
+            WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:oid AS uuid)
+        """),
+        {"tid": str(tenant_id), "oid": str(org_unit_id)},
+    )
+    return row.scalar()
+
+
+async def authorize_org_unit(
+    session: AsyncSession, tenant_id: UUID, scope: Scope, org_unit_id: UUID
+) -> None:
+    """Raise 403/404 unless the caller's scope covers this org unit's legal entity."""
+    if scope.is_all:
+        return
+    entity_id = await org_unit_legal_entity(session, tenant_id, org_unit_id)
+    if entity_id is not None and scope.covers_entity(entity_id):
+        return
+    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this department")
 
 
 async def authorize_employment(

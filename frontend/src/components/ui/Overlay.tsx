@@ -27,13 +27,14 @@ function useModal(open: boolean, onClose: () => void) {
   return panelRef;
 }
 
-export function Sheet({ open, onClose, title, description, children, footer }: {
+export function Sheet({ open, onClose, title, description, children, footer, className = "max-w-md" }: {
   open: boolean;
   onClose: () => void;
   title: ReactNode;
   description?: ReactNode;
   children: ReactNode;
   footer?: ReactNode;
+  className?: string;
 }) {
   const panelRef = useModal(open, onClose);
   const titleId = useId();
@@ -47,7 +48,7 @@ export function Sheet({ open, onClose, title, description, children, footer }: {
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className="absolute inset-y-0 right-0 flex w-full max-w-md flex-col border-l border-line bg-surface shadow-pop outline-none animate-slide-in-right sm:inset-y-2 sm:right-2 sm:rounded-2xl sm:border"
+        className={`absolute inset-y-0 right-0 flex w-full flex-col border-l border-line bg-surface shadow-pop outline-none animate-slide-in-right sm:inset-y-2 sm:right-2 sm:rounded-2xl sm:border ${className}`}
       >
         <header className="flex items-start justify-between gap-4 border-b border-line px-6 py-4">
           <div className="min-w-0">

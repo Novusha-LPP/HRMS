@@ -9,6 +9,7 @@ export interface PolicyTemplate {
   expected_start_time: string;
   expected_end_time: string;
   work_days: string;
+  saturday_pattern: "ALL" | "SECOND_FOURTH_OFF" | "FIRST_THIRD_OFF";
   break_minutes: number;
   break_auto_deduct: boolean;
   grace_late_minutes: number;
@@ -27,7 +28,9 @@ export interface PolicyTemplate {
 
 export interface EmployeePolicyAssignment {
   id: string;
-  employment_id: string;
+  employment_id: string | null;
+  org_unit_id: string | null;
+  legal_entity_id: string | null;
   policy_template_id: string;
   effective_from: string;
   effective_to: string | null;
@@ -37,6 +40,8 @@ export interface EmployeePolicyAssignment {
   ot_enabled_override: boolean | null;
   ot_rate_override: number | null;
   policy_template_name: string | null;
+  org_unit_name: string | null;
+  legal_entity_name: string | null;
 }
 
 export const policyApi = {
@@ -46,9 +51,13 @@ export const policyApi = {
   updateTemplate: (id: string, body: Partial<PolicyTemplate>) => api.patch<PolicyTemplate>(`/v1/policies/templates/${id}`, body),
   deleteTemplate: (id: string) => api.delete(`/v1/policies/templates/${id}`),
 
-  listAssignments: (employmentId?: string) => {
-    const q = employmentId ? `?employment_id=${employmentId}` : "";
-    return api.get<EmployeePolicyAssignment[]>(`/v1/policies/assignments${q}`);
+  listAssignments: (employmentId?: string, orgUnitId?: string, legalEntityId?: string) => {
+    const params = new URLSearchParams();
+    if (employmentId) params.set("employment_id", employmentId);
+    if (orgUnitId) params.set("org_unit_id", orgUnitId);
+    if (legalEntityId) params.set("legal_entity_id", legalEntityId);
+    const q = params.toString();
+    return api.get<EmployeePolicyAssignment[]>(`/v1/policies/assignments${q ? `?${q}` : ""}`);
   },
   assignPolicy: (body: Partial<EmployeePolicyAssignment>) => api.post<EmployeePolicyAssignment>("/v1/policies/assignments", body),
   removeAssignment: (id: string) => api.delete(`/v1/policies/assignments/${id}`),

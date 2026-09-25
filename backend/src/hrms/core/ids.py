@@ -48,6 +48,9 @@ _PREFIX_MAP: dict[str, str] = {
     # Corrections
     "attendance_correction": "cor",
     "correction_approval": "cappr",
+    # KYC
+    "kyc_record": "kyc",
+    "kyc_document": "kdoc",
 }
 
 

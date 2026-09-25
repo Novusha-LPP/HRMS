@@ -1,13 +1,13 @@
 type Tone = "success" | "warning" | "danger" | "info" | "plum" | "neutral" | "brand";
 
 const TONE_BY_STATUS: Record<string, Tone> = {
-  PRESENT: "success", APPROVED: "success", COMPLETED: "success", ACTIVE: "success", CONFIRMED: "success",
-  LATE: "warning", PROBATION: "warning", HALF_DAY: "warning", PENDING: "warning",
+  PRESENT: "success", APPROVED: "success", COMPLETED: "success", ACTIVE: "success", CONFIRMED: "success", VERIFIED: "success",
+  LATE: "warning", PROBATION: "warning", HALF_DAY: "warning", PENDING: "warning", ACTION_REQUIRED: "warning",
   ABSENT: "danger", REJECTED: "danger", OVERDUE: "danger", ON_NOTICE: "danger", NOTICE: "danger",
-  ON_LEAVE: "info", IN_PROGRESS: "info", CONTRACT: "info",
+  ON_LEAVE: "info", IN_PROGRESS: "info", CONTRACT: "info", SUBMITTED: "info",
   HOLIDAY: "plum",
   WEEKEND: "neutral", SKIPPED: "neutral", CANCELLED: "neutral", SEPARATED: "neutral",
-  INACTIVE: "neutral", DRAFT: "neutral", CANCEL_REJECTED: "neutral",
+  INACTIVE: "neutral", DRAFT: "neutral", NOT_SUBMITTED: "neutral", CANCEL_REJECTED: "neutral",
 };
 
 export function statusTone(status: string): Tone {

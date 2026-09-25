@@ -1,5 +1,5 @@
 import {
-  LayoutGrid, Users, Clock, Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2,
+  LayoutGrid, Users, Clock, Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { UserRole } from "../../context/AuthContext";
@@ -29,6 +29,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Workforce",
     items: [
       { to: "/employees", label: "Employees", icon: Users, roles: [...HR_ROLES, "MANAGER"] },
+      { to: "/daily-analysis", label: "Daily Analysis", icon: UserCheck, roles: [...HR_ROLES, "MANAGER"] },
       { to: "/attendance", label: "Attendance", icon: Clock },
       { to: "/leave", label: "Leave", icon: Umbrella },
       { to: "/corrections", label: "Corrections", icon: FilePenLine },
