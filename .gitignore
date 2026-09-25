@@ -1,8 +1,124 @@
+# ============================================================
+#  HRMS Monorepo — .gitignore
+#  Backend: Python / FastAPI / uv / Alembic
+#  Frontend: Vite / React / TypeScript / Tailwind
+#  Infra: Docker Compose / PostgreSQL
+# ============================================================
+
+# --------------------------------------------------
+#  Environment & secrets
+# --------------------------------------------------
+.env
+.env.local
+.env.*.local
+!.env.example
+
+# --------------------------------------------------
+#  Python
+# --------------------------------------------------
+__pycache__/
+*.py[cod]
+*$py.class
+*.so
+
+# Virtual environments
+.venv/
+venv/
+ENV/
+env/
+
+# Distribution / packaging
+*.egg
+*.egg-info/
+dist/
+build/
+*.whl
+
+# pytest / coverage
+.pytest_cache/
+.coverage
+htmlcov/
+coverage/
+coverage.xml
+*.cover
+
+# mypy / type-checkers
+.mypy_cache/
+.dmypy.json
+dmypy.json
+.pytype/
+
+# ruff
+.ruff_cache/
+
+# Jupyter (just in case)
+.ipynb_checkpoints/
+
+# --------------------------------------------------
+#  Node / Frontend
+# --------------------------------------------------
 node_modules/
 dist/
-.env
+dist-ssr/
+*.local
+
+# Logs
+logs/
 *.log
-storage/
-coverage/
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+lerna-debug.log*
+
+# --------------------------------------------------
+#  Build & bundler caches
+# --------------------------------------------------
+.turbo/
+.next/
+.nuxt/
+.cache/
+.parcel-cache/
+.vite/
+
+# --------------------------------------------------
+#  IDE / Editors
+# --------------------------------------------------
+.vscode/*
+!.vscode/extensions.json
+!.vscode/settings.json
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+*.swp
+*.swo
+*~
+
+# --------------------------------------------------
+#  OS files
+# --------------------------------------------------
 .DS_Store
-apps/web/dist/
+Thumbs.db
+Desktop.ini
+ehthumbs.db
+
+# --------------------------------------------------
+#  Docker
+# --------------------------------------------------
+# Ignore persistent volume data if mounted locally
+postgres_data/
+
+# --------------------------------------------------
+#  Storage / uploads
+# --------------------------------------------------
+storage/
+
+# --------------------------------------------------
+#  Misc
+# --------------------------------------------------
+*.bak
+*.tmp
+*.temp
