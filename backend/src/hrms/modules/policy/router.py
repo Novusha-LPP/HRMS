@@ -20,7 +20,13 @@ from uuid import uuid4
 from fastapi import APIRouter, HTTPException, Query
 from sqlmodel import select
 
-from hrms.core.authz import ScopeDep, authorize_employment, authorize_org_unit, require_permission
+from hrms.core.authz import (
+    ScopeDep,
+    authorize_employment,
+    authorize_org_unit,
+    require_global_permission,
+    require_permission,
+)
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import compute_standard_minutes, now_utc
 from hrms.core.ids import to_typed_id, to_uuid
@@ -41,6 +47,7 @@ router = APIRouter(prefix="/v1/policies", tags=["HR Policies"])
 
 # ─── Template CRUD ────────────────────────────────────────────────────────────
 
+
 @router.get("/templates", response_model=list[PolicyTemplateResponse])
 async def list_templates(
     tenant_id: TenantDep = None,
@@ -55,8 +62,12 @@ async def list_templates(
     return [_tpl_response(t) for t in rows.scalars()]
 
 
-@router.post("/templates", response_model=PolicyTemplateResponse, status_code=201,
-             dependencies=[require_permission("policy.write")])
+@router.post(
+    "/templates",
+    response_model=PolicyTemplateResponse,
+    status_code=201,
+    dependencies=[require_global_permission("policy.write")],
+)
 async def create_template(
     body: PolicyTemplateCreate,
     tenant_id: TenantDep = None,
@@ -88,8 +99,11 @@ async def get_template(
     return _tpl_response(tpl)
 
 
-@router.patch("/templates/{template_id}", response_model=PolicyTemplateResponse,
-              dependencies=[require_permission("policy.write")])
+@router.patch(
+    "/templates/{template_id}",
+    response_model=PolicyTemplateResponse,
+    dependencies=[require_global_permission("policy.write")],
+)
 async def update_template(
     template_id: str,
     body: PolicyTemplateUpdate,
@@ -106,8 +120,11 @@ async def update_template(
     return _tpl_response(tpl)
 
 
-@router.delete("/templates/{template_id}", status_code=204,
-               dependencies=[require_permission("policy.write")])
+@router.delete(
+    "/templates/{template_id}",
+    status_code=204,
+    dependencies=[require_global_permission("policy.write")],
+)
 async def archive_template(
     template_id: str,
     tenant_id: TenantDep = None,
@@ -119,6 +136,7 @@ async def archive_template(
 
 
 # ─── Employee policy assignments ──────────────────────────────────────────────
+
 
 @router.get("/assignments", response_model=list[EmployeePolicyAssignResponse])
 async def list_assignments(
@@ -151,14 +169,29 @@ async def list_assignments(
             raise HTTPException(status_code=403, detail="Not authorized for this company")
         q = q.where(EmployeePolicyAssignment.legal_entity_id == le_uuid)
     else:
-        scope.require("policy.read")
+        scope = scope.for_permission("policy.read")
+    if not scope.is_all:
+        from hrms.core.authz import visible_employment_ids
+
+        emp_ids = await visible_employment_ids(session, tenant_id, scope)
+        from sqlalchemy import or_
+
+        q = q.where(
+            or_(
+                EmployeePolicyAssignment.employment_id.in_(emp_ids),
+                EmployeePolicyAssignment.org_unit_id.in_(scope.org_unit_ids),
+                EmployeePolicyAssignment.legal_entity_id.in_(scope.legal_entity_ids),
+            )
+        )
     rows = await session.execute(q)
     return [
         EmployeePolicyAssignResponse(
             id=to_typed_id("employee_policy", a.id),
             employment_id=to_typed_id("employment", a.employment_id) if a.employment_id else None,
             org_unit_id=to_typed_id("org_unit", a.org_unit_id) if a.org_unit_id else None,
-            legal_entity_id=to_typed_id("legal_entity", a.legal_entity_id) if a.legal_entity_id else None,
+            legal_entity_id=to_typed_id("legal_entity", a.legal_entity_id)
+            if a.legal_entity_id
+            else None,
             policy_template_id=to_typed_id("policy_template", a.policy_template_id),
             effective_from=a.effective_from,
             effective_to=a.effective_to,
@@ -175,14 +208,19 @@ async def list_assignments(
     ]
 
 
-@router.post("/assignments", response_model=EmployeePolicyAssignResponse, status_code=201,
-             dependencies=[require_permission("policy.write")])
+@router.post(
+    "/assignments",
+    response_model=EmployeePolicyAssignResponse,
+    status_code=201,
+    dependencies=[require_permission("policy.write")],
+)
 async def assign_policy(
     body: EmployeePolicyAssignCreate,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
 ) -> EmployeePolicyAssignResponse:
+    scope = scope.for_permission("policy.write")
     tpl_uuid = to_uuid(body.policy_template_id)
     emp_uuid = to_uuid(body.employment_id) if body.employment_id else None
     ou_uuid = to_uuid(body.org_unit_id) if body.org_unit_id else None
@@ -204,7 +242,9 @@ async def assign_policy(
         if not scope.covers_entity(le_uuid):
             raise HTTPException(status_code=403, detail="Not authorized for this company")
         le_row = await session.execute(
-            select(LegalEntity).where(LegalEntity.tenant_id == tenant_id).where(LegalEntity.id == le_uuid)
+            select(LegalEntity)
+            .where(LegalEntity.tenant_id == tenant_id)
+            .where(LegalEntity.id == le_uuid)
         )
         le = le_row.scalars().first()
         if not le:
@@ -260,10 +300,14 @@ async def assign_policy(
     )
 
 
-@router.delete("/assignments/{assignment_id}", status_code=204,
-               dependencies=[require_permission("policy.write")])
+@router.delete(
+    "/assignments/{assignment_id}",
+    status_code=204,
+    dependencies=[require_permission("policy.write")],
+)
 async def remove_assignment(
     assignment_id: str,
+    scope: ScopeDep,
     tenant_id: TenantDep = None,
     session: SessionDep = None,
 ) -> None:
@@ -276,6 +320,13 @@ async def remove_assignment(
     asgn = row.scalars().first()
     if not asgn:
         raise HTTPException(404, "Assignment not found")
+    scope = scope.for_permission("policy.write")
+    if asgn.employment_id:
+        await authorize_employment(session, tenant_id, scope, asgn.employment_id)
+    elif asgn.org_unit_id:
+        await authorize_org_unit(session, tenant_id, scope, asgn.org_unit_id)
+    elif not scope.covers_entity(asgn.legal_entity_id):
+        raise HTTPException(403, "Not authorized for this company")
     asgn.archived_at = now_utc()
     session.add(asgn)
 
@@ -290,6 +341,7 @@ async def get_effective_policy(
 ) -> dict:
     if work_date is None:
         from datetime import date as d_
+
         work_date = d_.today()
     emp_uuid = to_uuid(employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
@@ -304,6 +356,7 @@ async def get_effective_policy(
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
 
 def _tpl_response(t: PolicyTemplate) -> PolicyTemplateResponse:
     std = compute_standard_minutes(t.expected_start_time, t.expected_end_time, t.break_minutes)

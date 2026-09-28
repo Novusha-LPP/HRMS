@@ -2,20 +2,20 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Building2, Landmark, MapPin, Briefcase, Users } from "lucide-react";
+import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2 } from "lucide-react";
 import { orgApi } from "../api/org";
-import type { LegalEntity, OrgUnit } from "../api/org";
+import type { LegalEntity, OrgUnit, EmployeeIdScheme } from "../api/org";
 import { usersApi } from "../api/users";
 import type { Role, ScopeType } from "../api/users";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
-import { Sheet } from "../components/ui/Overlay";
+import { Sheet, ConfirmDialog } from "../components/ui/Overlay";
 import { EmptyState, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { useAuth } from "../context/AuthContext";
 import { format } from "date-fns";
 
-type Tab = "companies" | "departments" | "locations" | "jobs" | "access";
+type Tab = "companies" | "departments" | "locations" | "jobs" | "employee-ids" | "access";
 
 export function OrganizationPage() {
   const { user } = useAuth();
@@ -41,6 +41,7 @@ export function OrganizationPage() {
           { value: "departments", label: "Departments" },
           { value: "locations", label: "Locations" },
           { value: "jobs", label: "Job titles" },
+          { value: "employee-ids", label: "Employee IDs" },
           ...(canManageAccess ? [{ value: "access" as const, label: "Users & access" }] : []),
         ]}
       />
@@ -48,6 +49,7 @@ export function OrganizationPage() {
       {tab === "departments" && <DepartmentsTab />}
       {tab === "locations" && <LocationsTab />}
       {tab === "jobs" && <JobsTab />}
+      {tab === "employee-ids" && <EmployeeIdSchemesTab canCreateGlobal={canCreateCompany} />}
       {tab === "access" && canManageAccess && <AccessTab />}
     </>
   );
@@ -266,7 +268,7 @@ function AddDepartmentSheet({ open, onClose, entities, departments }: {
         </div>
         <div>
           <label className="label" htmlFor="dp-code">Code <span className="font-normal text-fg-subtle">(optional)</span></label>
-          <input id="dp-code" className="input font-mono" placeholder="e.g. SFPL-FIN" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
+          <input id="dp-code" className="input font-mono" placeholder="e.g. HQ-FIN" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
         </div>
         {parentOptions.length > 0 && (
           <div>
@@ -360,7 +362,7 @@ function AddLocationSheet({ open, onClose, entities }: { open: boolean; onClose:
       <form id="add-loc" onSubmit={submit} className="space-y-4">
         <div>
           <label className="label" htmlFor="lo-name">Location name</label>
-          <input id="lo-name" className="input" placeholder="e.g. SFPL Head Office" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          <input id="lo-name" className="input" placeholder="e.g. Head Office" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
@@ -471,6 +473,190 @@ function AddJobSheet({ open, onClose }: { open: boolean; onClose: () => void }) 
             <label className="label" htmlFor="jb-fn">Function <span className="font-normal text-fg-subtle">(optional)</span></label>
             <input id="jb-fn" className="input" placeholder="e.g. Engineering" value={form.function} onChange={(e) => setForm((f) => ({ ...f, function: e.target.value }))} />
           </div>
+        </div>
+      </form>
+    </Sheet>
+  );
+}
+
+/* ─────────────────────────── Employee IDs ─────────────────────────── */
+
+function EmployeeIdSchemesTab({ canCreateGlobal }: { canCreateGlobal: boolean }) {
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<EmployeeIdScheme | null>(null);
+  const [deleting, setDeleting] = useState<EmployeeIdScheme | null>(null);
+  const qc = useQueryClient();
+  const toast = useToast();
+
+  const schemes = useQuery({ queryKey: ["employee-id-schemes"], queryFn: () => orgApi.listEmployeeIdSchemes() });
+  const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
+
+  const usedEntityIds = new Set((schemes.data ?? []).filter((s) => s.legal_entity_id).map((s) => s.legal_entity_id));
+  const hasGlobal = (schemes.data ?? []).some((s) => !s.legal_entity_id);
+  const availableEntities = (entities.data ?? []).filter((e) => !usedEntityIds.has(e.id));
+
+  const remove = useMutation({
+    mutationFn: (id: string) => orgApi.deleteEmployeeIdScheme(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-id-schemes"] });
+      toast.success("Scheme removed");
+      setDeleting(null);
+    },
+    onError: (e) => toast.error("Couldn’t remove scheme", errorMessage(e)),
+  });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-start justify-between gap-3">
+        <p className="max-w-lg text-[13px] text-fg-subtle">
+          When set, new hires get an employee ID generated automatically — a company's own scheme
+          wins over the tenant-wide one. Leave both unset to keep entering employee IDs by hand.
+        </p>
+        <button className="btn-primary shrink-0" onClick={() => setAdding(true)}>
+          <Plus size={15} /> Add scheme
+        </button>
+      </div>
+      {schemes.isError ? (
+        <div className="card"><EmptyState icon={Hash} title="Couldn’t load employee ID schemes" description="The organization API isn’t responding." action={<button className="btn-secondary btn-sm" onClick={() => schemes.refetch()}>Retry</button>} /></div>
+      ) : schemes.isPending ? (
+        <Skeleton className="h-40 rounded-xl" />
+      ) : !schemes.data?.length ? (
+        <div className="card">
+          <EmptyState
+            icon={Hash}
+            title="No employee ID schemes yet"
+            description="Employee IDs are entered by hand right now. Add a scheme to generate them automatically — tenant-wide, or per company."
+            action={<button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add scheme</button>}
+          />
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <table className="tbl">
+            <thead><tr><th>Scope</th><th>Format</th><th>Next ID</th><th className="w-20" /></tr></thead>
+            <tbody>
+              {schemes.data.map((s) => (
+                <tr key={s.id}>
+                  <td className="font-medium text-fg">
+                    {s.legal_entity_id ? s.legal_entity_name ?? s.legal_entity_id : <span className="inline-flex items-center gap-1.5"><Building2 size={13} className="text-fg-subtle" /> Whole tenant</span>}
+                  </td>
+                  <td className="font-mono text-xs text-fg-subtle">{s.prefix}{s.separator}{"Y".repeat(s.number_digits)}</td>
+                  <td className="font-mono font-medium text-fg">{s.preview}</td>
+                  <td>
+                    <div className="flex justify-end gap-1">
+                      <button className="btn-icon" onClick={() => setEditing(s)} aria-label={`Edit ${s.preview} scheme`}><Pencil size={14} /></button>
+                      <button className="btn-icon hover:text-danger" onClick={() => setDeleting(s)} aria-label={`Remove ${s.preview} scheme`}><Trash2 size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <EmployeeIdSchemeSheet
+        open={adding} onClose={() => setAdding(false)}
+        availableEntities={availableEntities} canCreateGlobal={canCreateGlobal && !hasGlobal}
+      />
+      <EmployeeIdSchemeSheet
+        key={editing?.id}
+        open={editing !== null} onClose={() => setEditing(null)}
+        initial={editing ?? undefined} availableEntities={availableEntities} canCreateGlobal={canCreateGlobal}
+      />
+      <ConfirmDialog
+        open={!!deleting}
+        onClose={() => setDeleting(null)}
+        onConfirm={() => deleting && remove.mutate(deleting.id)}
+        loading={remove.isPending}
+        title={`Remove the ${deleting?.preview ?? ""} scheme?`}
+        description="New hires in this scope will go back to needing an employee ID entered by hand."
+        confirmLabel="Remove scheme"
+      />
+    </div>
+  );
+}
+
+function EmployeeIdSchemeSheet({ open, onClose, initial, availableEntities, canCreateGlobal }: {
+  open: boolean;
+  onClose: () => void;
+  initial?: EmployeeIdScheme;
+  availableEntities: LegalEntity[];
+  canCreateGlobal: boolean;
+}) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const isEdit = !!initial;
+  const [legalEntityId, setLegalEntityId] = useState(initial?.legal_entity_id ?? "");
+  const [prefix, setPrefix] = useState(initial?.prefix ?? "");
+  const [separator, setSeparator] = useState(initial?.separator ?? "-");
+  const [numberDigits, setNumberDigits] = useState(initial?.number_digits ?? 4);
+  const [nextNumber, setNextNumber] = useState(initial?.next_number ?? 1);
+
+  const save = useMutation({
+    mutationFn: () =>
+      isEdit
+        ? orgApi.updateEmployeeIdScheme(initial!.id, { prefix, separator, number_digits: numberDigits, next_number: nextNumber })
+        : orgApi.createEmployeeIdScheme({ legal_entity_id: legalEntityId || undefined, prefix, separator, number_digits: numberDigits, next_number: nextNumber }),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey: ["employee-id-schemes"] });
+      toast.success(isEdit ? "Scheme updated" : "Scheme added");
+      onClose();
+    },
+    onError: (e) => toast.error(isEdit ? "Couldn’t update scheme" : "Couldn’t add scheme", errorMessage(e)),
+  });
+
+  const preview = `${prefix || "…"}${separator}${String(nextNumber).padStart(numberDigits, "0")}`;
+  const valid = prefix.trim().length > 0 && (isEdit || legalEntityId || canCreateGlobal);
+  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
+
+  return (
+    <Sheet
+      open={open}
+      onClose={onClose}
+      title={isEdit ? "Edit employee ID scheme" : "Add employee ID scheme"}
+      description={isEdit ? undefined : "Applies to new hires from now on — it doesn't renumber anyone already hired."}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={onClose}>Cancel</button>
+          <button className="btn-primary" type="submit" form="eis-form" disabled={!valid || save.isPending}>
+            {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add scheme"}
+          </button>
+        </>
+      }
+    >
+      <form id="eis-form" onSubmit={submit} className="space-y-4">
+        {!isEdit && (
+          <div>
+            <label className="label" htmlFor="eis-scope">Scope</label>
+            <select id="eis-scope" className="input" value={legalEntityId} onChange={(e) => setLegalEntityId(e.target.value)}>
+              {canCreateGlobal ? <option value="">Whole tenant</option> : <option value="" disabled>Select a company…</option>}
+              {availableEntities.map((en) => <option key={en.id} value={en.id}>{en.name}</option>)}
+            </select>
+            {!canCreateGlobal && !availableEntities.length && (
+              <p className="hint">Every company you can administer already has its own scheme.</p>
+            )}
+          </div>
+        )}
+        <div>
+          <label className="label" htmlFor="eis-prefix">Prefix</label>
+          <input id="eis-prefix" className="input font-mono uppercase" placeholder="e.g. ABC" value={prefix} onChange={(e) => setPrefix(e.target.value.toUpperCase())} />
+        </div>
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="label" htmlFor="eis-sep">Separator</label>
+            <input id="eis-sep" className="input text-center font-mono" maxLength={5} value={separator} onChange={(e) => setSeparator(e.target.value)} />
+          </div>
+          <div>
+            <label className="label" htmlFor="eis-digits">Digits</label>
+            <input id="eis-digits" type="number" min={1} max={10} className="input" value={numberDigits} onChange={(e) => setNumberDigits(Math.max(1, Math.min(10, Number(e.target.value))))} />
+          </div>
+          <div>
+            <label className="label" htmlFor="eis-next">Starts at</label>
+            <input id="eis-next" type="number" min={1} className="input" value={nextNumber} onChange={(e) => setNextNumber(Math.max(1, Number(e.target.value)))} />
+          </div>
+        </div>
+        <div className="flex items-center justify-between rounded-xl border border-line bg-panel px-4 py-3 text-[13px]">
+          <span className="text-fg-muted">Next employee ID will be</span>
+          <span className="font-mono font-semibold tabular-nums text-fg">{preview}</span>
         </div>
       </form>
     </Sheet>

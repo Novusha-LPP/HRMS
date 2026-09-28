@@ -128,26 +128,28 @@ export const leaveApi = {
     from_date: string;
     to_date: string;
     half_day_option?: string;
+    document_id?: string;
     reason?: string;
   }) => api.post<LeaveApplication>(`/v1/leave/applications?employment_id=${employmentId}`, body),
 
   submit: (appId: string, employmentId: string) =>
     api.post<LeaveApplication>(`/v1/leave/applications/${appId}/submit?employment_id=${employmentId}`, {}),
 
-  approve: (appId: string, approverEmpId: string, comments?: string) =>
-    api.post<LeaveApplication>(`/v1/leave/applications/${appId}/approve?approver_employment_id=${approverEmpId}`, { action: "APPROVE", comments }),
+  // The approver is always the signed-in account (from the token) — no id is passed.
+  approve: (appId: string, comments?: string) =>
+    api.post<LeaveApplication>(`/v1/leave/applications/${appId}/approve`, { action: "APPROVE", comments }),
 
-  reject: (appId: string, approverEmpId: string, comments?: string) =>
-    api.post<LeaveApplication>(`/v1/leave/applications/${appId}/reject?approver_employment_id=${approverEmpId}`, { action: "REJECT", comments }),
+  reject: (appId: string, comments?: string) =>
+    api.post<LeaveApplication>(`/v1/leave/applications/${appId}/reject`, { action: "REJECT", comments }),
 
   cancel: (appId: string, employmentId: string, cancelReason?: string) =>
     api.post<LeaveApplication>(`/v1/leave/applications/${appId}/cancel?employment_id=${employmentId}`, { cancel_reason: cancelReason }),
 
-  cancelApprove: (appId: string, approverEmpId: string, comments?: string) =>
-    api.post<LeaveApplication>(`/v1/leave/applications/${appId}/cancel-approve?approver_employment_id=${approverEmpId}`, { action: "APPROVE", comments }),
+  cancelApprove: (appId: string, comments?: string) =>
+    api.post<LeaveApplication>(`/v1/leave/applications/${appId}/cancel-approve`, { action: "APPROVE", comments }),
 
-  cancelReject: (appId: string, approverEmpId: string, comments?: string) =>
-    api.post<LeaveApplication>(`/v1/leave/applications/${appId}/cancel-reject?approver_employment_id=${approverEmpId}`, { action: "REJECT", comments }),
+  cancelReject: (appId: string, comments?: string) =>
+    api.post<LeaveApplication>(`/v1/leave/applications/${appId}/cancel-reject`, { action: "REJECT", comments }),
 
   listHolidays: (year?: number) => api.get<Holiday[]>(`/v1/time/holidays${year ? `?year=${year}` : ""}`),
   createHoliday: (body: { holiday_date: string; name: string; is_optional?: boolean }) =>

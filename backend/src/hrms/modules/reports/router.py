@@ -10,7 +10,7 @@ DELETE /v1/reports/{id}          — delete a custom report
 """
 
 import json
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query
@@ -18,7 +18,7 @@ from pydantic import BaseModel
 from sqlalchemy import text
 from sqlmodel import select
 
-from hrms.core.authz import Scope, ScopeDep, require_permission
+from hrms.core.authz import Scope, ScopeDep, require_global_permission, require_permission
 from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
@@ -33,6 +33,7 @@ router = APIRouter(prefix="/v1/reports", tags=["Reports"])
 
 
 # ─── Schemas ──────────────────────────────────────────────────────────────────
+
 
 class ColumnSpec(BaseModel):
     field: str
@@ -76,13 +77,14 @@ class RunResponse(BaseModel):
     report_id: str
     name: str
     module: str
-    columns: list[dict]   # visible columns in order
+    columns: list[dict]  # visible columns in order
     rows: list[dict]
     total_rows: int
     generated_at: datetime
 
 
 # ─── Column / filter metadata ─────────────────────────────────────────────────
+
 
 @router.get("/meta/{module}", summary="Available columns and filters for a module")
 async def report_meta(module: ReportModule) -> dict:
@@ -95,10 +97,16 @@ async def report_meta(module: ReportModule) -> dict:
 
 # ─── CRUD ─────────────────────────────────────────────────────────────────────
 
-@router.get("", response_model=list[ReportDefResponse], summary="List report definitions",
-            dependencies=[require_permission("reports.read")])
+
+@router.get(
+    "",
+    response_model=list[ReportDefResponse],
+    summary="List report definitions",
+    dependencies=[require_permission("reports.read")],
+)
 async def list_reports(
-    tenant_id: TenantDep, session: SessionDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
     owner_type: str | None = Query(default=None),
 ) -> list[ReportDefResponse]:
     # Seed defaults if none exist yet
@@ -117,15 +125,23 @@ async def list_reports(
     return [_def_response(r) for r in rows.scalars()]
 
 
-@router.post("", response_model=ReportDefResponse, status_code=201,
-             dependencies=[require_permission("reports.write")])
+@router.post(
+    "",
+    response_model=ReportDefResponse,
+    status_code=201,
+    dependencies=[require_global_permission("reports.write")],
+)
 async def create_report(
-    body: ReportDefCreate, tenant_id: TenantDep, session: SessionDep,
+    body: ReportDefCreate,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> ReportDefResponse:
     uid = uuid4()
     rd = ReportDefinition(
-        tenant_id=tenant_id, id=uid,
-        name=body.name, description=body.description,
+        tenant_id=tenant_id,
+        id=uid,
+        name=body.name,
+        description=body.description,
         module=body.module,
         columns=json.dumps([c.model_dump() for c in body.columns]),
         filters=json.dumps([f.model_dump() for f in body.filters]),
@@ -137,29 +153,43 @@ async def create_report(
     return _def_response(rd)
 
 
-@router.get("/{report_id}", response_model=ReportDefResponse,
-            dependencies=[require_permission("reports.read")])
-async def get_report(report_id: str, tenant_id: TenantDep, session: SessionDep) -> ReportDefResponse:
+@router.get(
+    "/{report_id}",
+    response_model=ReportDefResponse,
+    dependencies=[require_permission("reports.read")],
+)
+async def get_report(
+    report_id: str, tenant_id: TenantDep, session: SessionDep
+) -> ReportDefResponse:
     rd = await _fetch_def(session, tenant_id, report_id)
     return _def_response(rd)
 
 
-@router.delete("/{report_id}", status_code=204, dependencies=[require_permission("reports.write")])
+@router.delete(
+    "/{report_id}", status_code=204, dependencies=[require_global_permission("reports.write")]
+)
 async def delete_report(report_id: str, tenant_id: TenantDep, session: SessionDep) -> None:
     rd = await _fetch_def(session, tenant_id, report_id)
     if rd.is_system:
         raise HTTPException(status_code=403, detail="Cannot delete a system report")
-    rd.archived_at = datetime.now(timezone.utc)
+    rd.archived_at = datetime.now(UTC)
     session.add(rd)
 
 
-@router.post("/{report_id}/run", response_model=RunResponse,
-             summary="Execute a report and return rows",
-             dependencies=[require_permission("reports.read")])
+@router.post(
+    "/{report_id}/run",
+    response_model=RunResponse,
+    summary="Execute a report and return rows",
+    dependencies=[require_permission("reports.read")],
+)
 async def run_report(
-    report_id: str, body: RunRequest,
-    tenant_id: TenantDep, session: SessionDep, scope: ScopeDep,
+    report_id: str,
+    body: RunRequest,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
 ) -> RunResponse:
+    scope = scope.for_permission("reports.read")
     rd = await _fetch_def(session, tenant_id, report_id)
     saved_columns = json.loads(rd.columns)
     saved_filters = json.loads(rd.filters)
@@ -177,7 +207,9 @@ async def run_report(
         if not replaced:
             run_filters.append(override.model_dump())
 
-    rows = await _execute_report(session, tenant_id, rd.module, saved_columns, run_filters, body.limit, scope)
+    rows = await _execute_report(
+        session, tenant_id, rd.module, saved_columns, run_filters, body.limit, scope
+    )
     visible = [c for c in saved_columns if c.get("visible", True)]
 
     return RunResponse(
@@ -187,15 +219,21 @@ async def run_report(
         columns=visible,
         rows=rows,
         total_rows=len(rows),
-        generated_at=datetime.now(timezone.utc),
+        generated_at=datetime.now(UTC),
     )
 
 
 # ─── Query execution ──────────────────────────────────────────────────────────
 
+
 async def _execute_report(
-    session, tenant_id: UUID, module: str,
-    columns: list[dict], filters: list[dict], limit: int, scope: Scope,
+    session,
+    tenant_id: UUID,
+    module: str,
+    columns: list[dict],
+    filters: list[dict],
+    limit: int,
+    scope: Scope,
 ) -> list[dict]:
     """Build and run the SQL for each module type."""
 
@@ -256,7 +294,8 @@ async def _run_attendance(session, tenant_id, columns, filters, limit, scope: Sc
         JOIN employments e   ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
         JOIN persons p       ON p.tenant_id = e.tenant_id  AND p.id = e.person_id
         LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
-            AND a.effective_to IS NULL
+            AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from
+            <= CURRENT_DATE
         LEFT JOIN org_units ou  ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
         LEFT JOIN locations l   ON l.tenant_id = a.tenant_id  AND l.id = a.location_id
         WHERE {" AND ".join(where)}
@@ -298,7 +337,8 @@ async def _run_employee(session, tenant_id, columns, filters, limit, scope: Scop
         FROM employments e
         JOIN persons p         ON p.tenant_id = e.tenant_id AND p.id = e.person_id
         LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
-            AND a.effective_to IS NULL
+            AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from
+            <= CURRENT_DATE
         LEFT JOIN org_units ou  ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
         LEFT JOIN jobs j        ON j.tenant_id = a.tenant_id  AND j.id = a.job_id
         LEFT JOIN locations l   ON l.tenant_id = a.tenant_id  AND l.id = a.location_id
@@ -405,7 +445,8 @@ async def _run_leave(session, tenant_id, filters, limit, scope: Scope) -> list[d
         JOIN persons p       ON p.tenant_id = e.tenant_id  AND p.id = e.person_id
         JOIN leave_types lt  ON lt.tenant_id = la.tenant_id AND lt.id = la.leave_type_id
         LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
-            AND a.effective_to IS NULL
+            AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from
+            <= CURRENT_DATE
         LEFT JOIN org_units ou  ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
         WHERE {" AND ".join(where)}
           {entity_clause}
@@ -429,7 +470,8 @@ async def _run_headcount(session, tenant_id, filters, limit, scope: Scope) -> li
             COUNT(DISTINCT e.id) FILTER (WHERE e.employment_state = 'NOTICE') AS on_notice
         FROM employments e
         LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
-            AND a.effective_to IS NULL
+            AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from
+            <= CURRENT_DATE
         LEFT JOIN org_units ou  ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
         LEFT JOIN locations l   ON l.tenant_id = a.tenant_id  AND l.id = a.location_id
         WHERE e.tenant_id = CAST(:tid AS uuid)
@@ -445,6 +487,7 @@ async def _run_headcount(session, tenant_id, filters, limit, scope: Scope) -> li
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
+
 
 async def _fetch_def(session, tenant_id: UUID, report_id: str) -> ReportDefinition:
     r_uuid = to_uuid(report_id)
@@ -471,14 +514,19 @@ async def _ensure_defaults(session, tenant_id: UUID) -> None:
 
     for r in DEFAULT_REPORTS:
         cols = [{"field": f, "label": f, "visible": True} for f in r["columns"]]
-        session.add(ReportDefinition(
-            tenant_id=tenant_id, id=uuid4(),
-            name=r["name"], description=r["description"],
-            module=r["module"],
-            columns=json.dumps(cols),
-            filters=json.dumps(r["filters"]),
-            is_system=True, owner_type=r["owner_type"],
-        ))
+        session.add(
+            ReportDefinition(
+                tenant_id=tenant_id,
+                id=uuid4(),
+                name=r["name"],
+                description=r["description"],
+                module=r["module"],
+                columns=json.dumps(cols),
+                filters=json.dumps(r["filters"]),
+                is_system=True,
+                owner_type=r["owner_type"],
+            )
+        )
     # The session doesn't autoflush (see core/database.py), so without this
     # the caller's very next SELECT wouldn't see these rows until the next request.
     await session.flush()
@@ -487,7 +535,8 @@ async def _ensure_defaults(session, tenant_id: UUID) -> None:
 def _def_response(rd: ReportDefinition) -> ReportDefResponse:
     return ReportDefResponse(
         id=to_typed_id("report_definition", rd.id),
-        name=rd.name, description=rd.description or "",
+        name=rd.name,
+        description=rd.description or "",
         module=rd.module,
         columns=json.loads(rd.columns),
         filters=json.loads(rd.filters),

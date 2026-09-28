@@ -1,0 +1,126 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1200 620" width="1200" height="620" role="img" aria-label="API Platform Architecture: Clients, FastAPI Gateway, OpenAPI 3.1 contracts, dual token authentication, and PostgreSQL 16 RLS execution." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif">
+  <style>
+    .bg{fill:#ffffff;stroke:#d5dde1}
+    .n{fill:#f4f6f7;stroke:#7b8a92}
+    .na{fill:#ddeaea;stroke:#0d6b6b}
+    .nb{fill:#eff6ff;stroke:#3b82f6}
+    .np{fill:#eceff1;stroke:#7b8a92}
+    .g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}
+    .t{fill:#16222a;font-weight:600}
+    .s{fill:#4f5e67}
+    .ta{fill:#0d6b6b;font-weight:600}
+    .tb{fill:#1e40af;font-weight:600}
+    .e{fill:none;stroke:#4f5e67;stroke-width:1.5}
+    .ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}
+    .ah{fill:#4f5e67}
+  </style>
+  <defs>
+    <marker id="ah-api" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0.5" y="0.5" width="1199" height="619" rx="10"/>
+
+  <text class="t" x="30" y="32" font-size="14">API Product &amp; Architecture: FastAPI + OpenAPI 3.1 + PostgreSQL 16 RLS</text>
+  <text class="s" x="30" y="50" font-size="12">Interactive API documentation (/docs, /redoc), typed Pydantic v2 schemas, and strict dual-plane token authorization.</text>
+
+  <!-- LEFT: CLIENT CONSUMERS -->
+  <rect class="g" x="30" y="80" width="260" height="490" rx="8" stroke-width="1.25"/>
+  <text class="t" x="45" y="104" font-size="13">API Consumers</text>
+
+  <rect class="np" x="45" y="120" width="230" height="70" rx="8" stroke-width="1.25"/>
+  <text class="t" x="160" y="145" font-size="12" text-anchor="middle">Tenant Web Portal (React 19)</text>
+  <text class="s" x="160" y="162" font-size="10" text-anchor="middle">TanStack Query client (client.ts)</text>
+  <text class="s" x="160" y="176" font-size="10" text-anchor="middle">Carries Bearer &lt;tenant_token&gt;</text>
+
+  <rect class="nb" x="45" y="210" width="230" height="70" rx="8" stroke-width="1.25"/>
+  <text class="tb" x="160" y="235" font-size="12" text-anchor="middle">Platform Console</text>
+  <text class="s" x="160" y="252" font-size="10" text-anchor="middle">platformClient.ts</text>
+  <text class="s" x="160" y="266" font-size="10" text-anchor="middle">Carries Bearer &lt;platform_token&gt;</text>
+
+  <rect class="np" x="45" y="300" width="230" height="70" rx="8" stroke-width="1.25"/>
+  <text class="t" x="160" y="325" font-size="12" text-anchor="middle">Biometric Devices / Agents</text>
+  <text class="s" x="160" y="342" font-size="10" text-anchor="middle">Pushes punches to /v1/time/punches</text>
+  <text class="s" x="160" y="356" font-size="10" text-anchor="middle">Source: DEVICE, GPS &amp; device_id</text>
+
+  <rect class="np" x="45" y="390" width="230" height="70" rx="8" stroke-width="1.25"/>
+  <text class="t" x="160" y="415" font-size="12" text-anchor="middle">External ERP / Integrations</text>
+  <text class="s" x="160" y="432" font-size="10" text-anchor="middle">SAP, Tally, Custom Payroll</text>
+  <text class="s" x="160" y="446" font-size="10" text-anchor="middle">Pulls snapshots &amp; reports</text>
+
+  <rect class="n" x="45" y="480" width="230" height="70" rx="8" stroke-width="1.25"/>
+  <text class="t" x="160" y="505" font-size="12" text-anchor="middle">Interactive API Explorers</text>
+  <text class="s" x="160" y="522" font-size="10" text-anchor="middle">Swagger UI: /docs</text>
+  <text class="s" x="160" y="536" font-size="10" text-anchor="middle">ReDoc: /redoc · Schema: /openapi.json</text>
+
+  <!-- MIDDLE: FASTAPI ROUTING & SECURITY GATEWAY -->
+  <rect class="na" x="330" y="80" width="480" height="490" rx="8" stroke-width="1.5"/>
+  <text class="ta" x="350" y="106" font-size="14">FastAPI Application Gateway (Port 8015)</text>
+  <text class="s" x="350" y="124" font-size="11">CORS Middleware · Request Validation · Dual-Plane Authorization</text>
+
+  <!-- Platform Routes Box -->
+  <rect class="nb" x="350" y="140" width="440" height="95" rx="6" stroke-width="1.25"/>
+  <text class="tb" x="366" y="162" font-size="12">Platform Control Plane (/v1/platform/*)</text>
+  <text class="s" x="366" y="180" font-size="10">• POST /v1/platform/login → Issues typ: "platform" JWT token</text>
+  <text class="s" x="366" y="196" font-size="10">• GET/PATCH /v1/platform/tenants/{id} → Suspend, update plans, archive</text>
+  <text class="s" x="366" y="212" font-size="10">• POST /v1/platform/companies → Link legal entities or provision tenant</text>
+  <text class="s" x="366" y="226" font-size="10">• GET /v1/platform/audit-log → Query system administrative trail</text>
+
+  <!-- Tenant Routes Box -->
+  <rect class="n" x="350" y="250" width="440" height="150" rx="6" stroke-width="1.25"/>
+  <text class="t" x="366" y="272" font-size="12">Tenant Operations Plane (/v1/*)</text>
+  <text class="s" x="366" y="290" font-size="10">• Auth: POST /v1/auth/login, POST /v1/auth/register-company</text>
+  <text class="s" x="366" y="306" font-size="10">• People &amp; Org: /v1/people/employees, /v1/org/units, /v1/org/legal-entities</text>
+  <text class="s" x="366" y="322" font-size="10">• KYC &amp; Docs: /v1/kyc/records, POST /v1/kyc/records/{id}/documents</text>
+  <text class="s" x="366" y="338" font-size="10">• Time &amp; Attendance: POST /v1/time/punches, GET /v1/time/analysis</text>
+  <text class="s" x="366" y="354" font-size="10">• Policies &amp; Leaves: /v1/policy/templates, /v1/leave/applications, accrual/run</text>
+  <text class="s" x="366" y="370" font-size="10">• Corrections &amp; Reports: /v1/corrections/requests, /v1/reports/definitions</text>
+  <text class="s" x="366" y="386" font-size="10">• Dashboard KPIs: GET /v1/dashboard/hr, GET /v1/dashboard/manager</text>
+
+  <!-- Security Dependencies -->
+  <rect class="n" x="350" y="415" width="440" height="135" rx="6" stroke-width="1.25"/>
+  <text class="t" x="366" y="435" font-size="11">FastAPI Request Dependencies &amp; Isolation</text>
+  <text class="s" x="366" y="453" font-size="10">1. authn.py: Decodes Bearer token into Principal (tenant_id, sub, roles)</text>
+  <text class="s" x="366" y="469" font-size="10">2. database.py: get_session(tid) executes SET LOCAL app.tenant_id</text>
+  <text class="s" x="366" y="485" font-size="10">3. Live Revocation: SELECT status FROM tenants cuts off suspended companies</text>
+  <text class="s" x="366" y="501" font-size="10">4. Pre-Auth: get_anonymous_session() calls login_lookup() SECURITY DEFINER</text>
+  <text class="s" x="366" y="517" font-size="10">5. authz.py: Builds scoped SQL predicates from 6 data scopes</text>
+
+  <polyline class="e" points="275,155 328,155" marker-end="url(#ah-api)"/>
+  <polyline class="e" points="275,245 328,245" marker-end="url(#ah-api)"/>
+  <polyline class="e" points="275,335 328,335" marker-end="url(#ah-api)"/>
+  <polyline class="e" points="275,425 328,425" marker-end="url(#ah-api)"/>
+
+  <!-- RIGHT: DATABASE & EXECUTION -->
+  <rect class="g" x="840" y="80" width="330" height="490" rx="8" stroke-width="1.25"/>
+  <text class="t" x="855" y="106" font-size="13">Database Execution Layer</text>
+
+  <rect class="na" x="855" y="130" width="300" height="150" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="870" y="152" font-size="12">PostgreSQL 16 Engine</text>
+  <text class="s" x="870" y="172" font-size="10">• Connects as role: hrms_app</text>
+  <text class="s" x="870" y="188" font-size="10">• NOSUPERUSER, NOBYPASSRLS</text>
+  <text class="s" x="870" y="204" font-size="10">• Session variable:</text>
+  <text class="t" x="870" y="220" font-size="10">  current_setting('app.tenant_id')</text>
+  <text class="s" x="870" y="238" font-size="10">• RLS policy applied to every SELECT,</text>
+  <text class="s" x="870" y="254" font-size="10">  INSERT, UPDATE, DELETE</text>
+
+  <rect class="n" x="855" y="300" width="300" height="110" rx="6" stroke-width="1.25"/>
+  <text class="t" x="870" y="322" font-size="12">Storage &amp; Migrations</text>
+  <text class="s" x="870" y="342" font-size="10">• Alembic Migrations: 0001 to 0016</text>
+  <text class="s" x="870" y="358" font-size="10">• Composite keys: (tenant_id, id)</text>
+  <text class="s" x="870" y="374" font-size="10">• Volume: postgres_data</text>
+  <text class="s" x="870" y="390" font-size="10">• Local file store: /app/storage/kyc</text>
+
+  <rect class="n" x="855" y="430" width="300" height="120" rx="6" stroke-width="1.25"/>
+  <text class="t" x="870" y="452" font-size="12">Audit &amp; Observability</text>
+  <text class="s" x="870" y="472" font-size="10">• Structlog JSON formatted logs</text>
+  <text class="s" x="870" y="488" font-size="10">• Context carries tenant_id &amp; actor</text>
+  <text class="s" x="870" y="504" font-size="10">• platform_audit_log tracks changes</text>
+  <text class="s" x="870" y="520" font-size="10">• Replay and diagnostic ready</text>
+
+  <polyline class="e" points="810,325 838,325" marker-end="url(#ah-api)"/>
+
+  <text class="s" x="30" y="595" font-size="11">Standard REST API architecture: Contract-first, auto-generated OpenAPI documentation, and native PostgreSQL database enforcement.</text>
+</svg>

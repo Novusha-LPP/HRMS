@@ -1,14 +1,16 @@
 """Tests for Employee KYC workflows (both Employee Self-Service and HR Management)."""
 
-import pytest
-from httpx import AsyncClient, ASGITransport
+import os
 
-from hrms.main import app
+import pytest
+from httpx import AsyncClient
+
+pytestmark = pytest.mark.live_demo
 
 DEMO_PASSWORD = "Passw0rd!"
 
 
-BASE_URL = "http://localhost:8015"
+BASE_URL = os.environ.get("HRMS_DEMO_API_URL", "http://localhost:8015")
 
 
 @pytest.mark.asyncio
@@ -32,10 +34,13 @@ async def test_kyc_openapi_paths():
 async def test_employee_kyc_self_service():
     async with AsyncClient(base_url=BASE_URL) as ac:
         # 1. Login as Arjun (EMPLOYEE)
-        login_res = await ac.post("/v1/auth/login", json={
-            "email": "arjun.sharma@sfplgroup.in",
-            "password": DEMO_PASSWORD,
-        })
+        login_res = await ac.post(
+            "/v1/auth/login",
+            json={
+                "email": "arjun.sharma@sfplgroup.in",
+                "password": DEMO_PASSWORD,
+            },
+        )
         assert login_res.status_code == 200, f"Login failed: {login_res.text}"
         token = login_res.json()["access_token"]
         headers = {"Authorization": f"Bearer {token}"}
@@ -49,24 +54,34 @@ async def test_employee_kyc_self_service():
         assert data["completion_percentage"] > 0
 
         # 3. Update personal KYC details
-        patch_res = await ac.patch("/v1/kyc/me", headers=headers, json={
-            "emergency_contact_name": "Suresh Sharma Updated",
-            "emergency_contact_phone": "+91 98203 99999",
-            "blood_group": "B+",
-        })
+        patch_res = await ac.patch(
+            "/v1/kyc/me",
+            headers=headers,
+            json={
+                "emergency_contact_name": "Suresh Sharma Updated",
+                "emergency_contact_phone": "+91 98203 99999",
+                "blood_group": "B+",
+            },
+        )
         assert patch_res.status_code == 200
         assert patch_res.json()["emergency_contact_name"] == "Suresh Sharma Updated"
 
         # 4. Upload a document
         files = {
-            "file": ("experience_cert.pdf", b"%PDF-1.4 Mock Experience Certificate", "application/pdf"),
+            "file": (
+                "experience_cert.pdf",
+                b"%PDF-1.4 Mock Experience Certificate",
+                "application/pdf",
+            ),
         }
         form_data = {
             "document_type": "EXPERIENCE_LETTER",
             "document_title": "Relieving Letter from Previous Company",
             "document_number": "EXP-2021-098",
         }
-        upload_res = await ac.post("/v1/kyc/me/documents", headers=headers, data=form_data, files=files)
+        upload_res = await ac.post(
+            "/v1/kyc/me/documents", headers=headers, data=form_data, files=files
+        )
         assert upload_res.status_code == 200
         uploaded_doc = upload_res.json()
         assert uploaded_doc["document_type"] == "EXPERIENCE_LETTER"
@@ -83,10 +98,13 @@ async def test_employee_kyc_self_service():
 async def test_hr_kyc_management():
     async with AsyncClient(base_url=BASE_URL) as ac:
         # 1. Login as Rahul (HR_MANAGER)
-        hr_login = await ac.post("/v1/auth/login", json={
-            "email": "rahul.iyer@sfplgroup.in",
-            "password": DEMO_PASSWORD,
-        })
+        hr_login = await ac.post(
+            "/v1/auth/login",
+            json={
+                "email": "rahul.iyer@sfplgroup.in",
+                "password": DEMO_PASSWORD,
+            },
+        )
         assert hr_login.status_code == 200
         hr_token = hr_login.json()["access_token"]
         hr_headers = {"Authorization": f"Bearer {hr_token}"}
@@ -128,7 +146,11 @@ async def test_hr_kyc_management():
 
         # 6. HR uploads a document on Arjun's behalf
         files = {
-            "file": ("hr_uploaded_cert.pdf", b"%PDF-1.4 Mock Degree Certificate", "application/pdf"),
+            "file": (
+                "hr_uploaded_cert.pdf",
+                b"%PDF-1.4 Mock Degree Certificate",
+                "application/pdf",
+            ),
         }
         form_data = {
             "document_type": "EDUCATION_CERT",

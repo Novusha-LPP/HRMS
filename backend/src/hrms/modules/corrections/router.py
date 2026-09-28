@@ -16,11 +16,18 @@ always the caller (from the token), never a client-supplied query param.
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import text
 from sqlmodel import select
 
+from hrms.core.approvals import require_reviewer
 from hrms.core.authn import CurrentUser
-from hrms.core.authz import ScopeDep, authorize_employment, resolve_acting_employment_id
+from hrms.core.authz import (
+    ScopeDep,
+    authorize_employment,
+    authorize_write,
+    read_scope,
+    resolve_acting_employment_id,
+    visible_employment_ids,
+)
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import now_utc
 from hrms.core.ids import to_typed_id, to_uuid
@@ -37,7 +44,14 @@ from hrms.modules.corrections.schemas import (
     CorrectionResponse,
 )
 from hrms.modules.policy.engine import resolve_policy
-from hrms.modules.time.models import AttendanceDay, AttendanceStatus, apply_overtime
+from hrms.modules.time.models import Punch
+from hrms.modules.time.service import (
+    events_for_day,
+    lock_day,
+    recompute_day,
+    work_bounds,
+    work_date_for,
+)
 
 router = APIRouter(prefix="/v1/corrections", tags=["Attendance Corrections"])
 
@@ -51,6 +65,7 @@ async def list_corrections(
     employment_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
 ) -> list[CorrectionResponse]:
+    scope = read_scope(scope, "corrections.read", "corrections.approve")
     q = (
         select(AttendanceCorrectionRequest)
         .where(AttendanceCorrectionRequest.tenant_id == tenant_id)
@@ -61,25 +76,8 @@ async def list_corrections(
         await authorize_employment(session, tenant_id, scope, emp_uuid)
         q = q.where(AttendanceCorrectionRequest.employment_id == emp_uuid)
     elif not scope.is_all:
-        if scope.employment_ids is not None:
-            if not scope.employment_ids:
-                return []
-            q = q.where(AttendanceCorrectionRequest.employment_id.in_(scope.employment_ids))
-        elif scope.legal_entity_ids:
-            allowed = await session.execute(
-                text("""
-                    SELECT id FROM employments
-                    WHERE tenant_id = CAST(:tid AS uuid)
-                      AND legal_entity_id = ANY(CAST(:ids AS uuid[]))
-                """),
-                {"tid": str(tenant_id), "ids": [str(i) for i in scope.legal_entity_ids]},
-            )
-            allowed_ids = [r[0] for r in allowed]
-            if not allowed_ids:
-                return []
-            q = q.where(AttendanceCorrectionRequest.employment_id.in_(allowed_ids))
-        else:
-            return []
+        allowed_ids = await visible_employment_ids(session, tenant_id, scope)
+        q = q.where(AttendanceCorrectionRequest.employment_id.in_(allowed_ids))
     if status:
         q = q.where(AttendanceCorrectionRequest.status == status)
     rows = await session.execute(q.order_by(AttendanceCorrectionRequest.work_date.desc()))
@@ -102,11 +100,18 @@ async def create_correction(
     emp_uuid = resolve_acting_employment_id(principal, employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
 
+    await authorize_write(
+        session, tenant_id, scope, principal, emp_uuid, "corrections.write", "corrections.request"
+    )
     policy = await resolve_policy(emp_uuid, body.work_date, session, tenant_id)
     total_levels = policy.correction_approval_levels if policy.correction_requires_approval else 0
 
     uid = uuid4()
-    status = CorrectionStatus.PENDING_L1 if policy.correction_requires_approval else CorrectionStatus.APPROVED
+    status = (
+        CorrectionStatus.PENDING_L1
+        if policy.correction_requires_approval
+        else CorrectionStatus.APPROVED
+    )
     cor = AttendanceCorrectionRequest(
         tenant_id=tenant_id,
         id=uid,
@@ -140,17 +145,23 @@ async def approve_correction(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> CorrectionResponse:
-    scope.require("corrections.approve")
+    scope = scope.for_permission("corrections.approve")
     cor = await _get_cor(session, tenant_id, correction_id)
     await authorize_employment(session, tenant_id, scope, cor.employment_id)
     _assert_pending(cor)
-    approver_uuid = _require_approver(principal)
+    await _check_reviewer(session, tenant_id, principal, scope, cor)
 
     action = CorrectionApprovalAction(
-        tenant_id=tenant_id, id=uuid4(), correction_id=cor.id,
-        action="APPROVE", level=cor.current_level,
-        approver_employment_id=approver_uuid, comments=body.comments,
-        actioned_at=now_utc(), recorded_at=now_utc(),
+        tenant_id=tenant_id,
+        id=uuid4(),
+        correction_id=cor.id,
+        action="APPROVE",
+        level=cor.current_level,
+        approver_employment_id=principal.employment_id,
+        approver_user_account_id=principal.user_account_id,
+        comments=body.comments,
+        actioned_at=now_utc(),
+        recorded_at=now_utc(),
     )
     session.add(action)
 
@@ -160,7 +171,12 @@ async def approve_correction(
         await _apply_correction(session, tenant_id, cor, policy)
     else:
         cor.current_level += 1
-        next_statuses = [None, CorrectionStatus.PENDING_L1, CorrectionStatus.PENDING_L2, CorrectionStatus.PENDING_L3]
+        next_statuses = [
+            None,
+            CorrectionStatus.PENDING_L1,
+            CorrectionStatus.PENDING_L2,
+            CorrectionStatus.PENDING_L3,
+        ]
         cor.status = next_statuses[cor.current_level]
 
     session.add(cor)
@@ -177,17 +193,23 @@ async def reject_correction(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> CorrectionResponse:
-    scope.require("corrections.approve")
+    scope = scope.for_permission("corrections.approve")
     cor = await _get_cor(session, tenant_id, correction_id)
     await authorize_employment(session, tenant_id, scope, cor.employment_id)
     _assert_pending(cor)
-    approver_uuid = _require_approver(principal)
+    await _check_reviewer(session, tenant_id, principal, scope, cor)
 
     action = CorrectionApprovalAction(
-        tenant_id=tenant_id, id=uuid4(), correction_id=cor.id,
-        action="REJECT", level=cor.current_level,
-        approver_employment_id=approver_uuid, comments=body.comments,
-        actioned_at=now_utc(), recorded_at=now_utc(),
+        tenant_id=tenant_id,
+        id=uuid4(),
+        correction_id=cor.id,
+        action="REJECT",
+        level=cor.current_level,
+        approver_employment_id=principal.employment_id,
+        approver_user_account_id=principal.user_account_id,
+        comments=body.comments,
+        actioned_at=now_utc(),
+        recorded_at=now_utc(),
     )
     session.add(action)
     cor.status = CorrectionStatus.REJECTED
@@ -202,10 +224,24 @@ async def cancel_correction(
     scope: ScopeDep,
     tenant_id: TenantDep,
     session: SessionDep,
+    principal: CurrentUser,
 ) -> CorrectionResponse:
     cor = await _get_cor(session, tenant_id, correction_id)
-    await authorize_employment(session, tenant_id, scope, cor.employment_id)
-    if cor.status not in (CorrectionStatus.DRAFT, CorrectionStatus.PENDING_L1, CorrectionStatus.PENDING_L2, CorrectionStatus.PENDING_L3):
+    await authorize_write(
+        session,
+        tenant_id,
+        scope,
+        principal,
+        cor.employment_id,
+        "corrections.write",
+        "corrections.request",
+    )
+    if cor.status not in (
+        CorrectionStatus.DRAFT,
+        CorrectionStatus.PENDING_L1,
+        CorrectionStatus.PENDING_L2,
+        CorrectionStatus.PENDING_L3,
+    ):
         raise HTTPException(400, f"Cannot cancel correction in status {cor.status}")
     cor.status = CorrectionStatus.CANCELLED
     session.add(cor)
@@ -215,93 +251,68 @@ async def cancel_correction(
 
 # ─── Apply correction to attendance ───────────────────────────────────────────
 
+
 async def _apply_correction(session, tenant_id, cor: AttendanceCorrectionRequest, policy) -> None:
-    """
-    Once a correction is approved, update the AttendanceDay and Punch records.
-    All recalculation is driven by the resolved policy — no hard-coded rules.
-    """
-    from hrms.core.datetime_utils import compute_day
-    from uuid import uuid4
-
-    ad_row = await session.execute(
-        select(AttendanceDay)
-        .where(AttendanceDay.tenant_id == tenant_id)
-        .where(AttendanceDay.employment_id == cor.employment_id)
-        .where(AttendanceDay.work_date == cor.work_date)
-    )
-    ad = ad_row.scalars().first()
-    if ad is None:
-        ad = AttendanceDay(
-            tenant_id=tenant_id,
-            id=uuid4(),
-            employment_id=cor.employment_id,
-            work_date=cor.work_date,
-            status=AttendanceStatus.PENDING,
-            recorded_at=now_utc(),
-        )
-
+    ad = await lock_day(session, tenant_id, cor.employment_id, cor.work_date)
+    events = await events_for_day(session, tenant_id, cor.employment_id, cor.work_date, policy)
+    replacements = []
     if cor.correction_type == "MARK_ABSENT":
-        ad.status = AttendanceStatus.ABSENT
-        ad.first_punch_in = None
-        ad.last_punch_out = None
-        ad.gross_minutes = 0
-        ad.effective_minutes = 0
-        ad.late_by_minutes = 0
-        ad.early_departure_minutes = 0
-        apply_overtime(ad, 0)
-        session.add(ad)
-        return
-
-    if cor.correction_type == "MARK_PRESENT" and cor.requested_punch_in and cor.requested_punch_out:
-        punch_in = cor.requested_punch_in
-        punch_out = cor.requested_punch_out
-    elif cor.correction_type in ("PUNCH_IN", "MISSED_PUNCH", "REGULARIZE") and cor.requested_punch_in:
-        punch_in = cor.requested_punch_in
-        punch_out = cor.requested_punch_out or ad.last_punch_out
-    elif cor.correction_type == "PUNCH_OUT" and cor.requested_punch_out:
-        punch_in = ad.first_punch_in or cor.requested_punch_in
-        punch_out = cor.requested_punch_out
+        replacements = [("VOID", e.punched_at, e.id) for e in events]
     else:
-        session.add(ad)
-        return
-
-    if punch_in and punch_out:
-        result = compute_day(
-            punch_in=punch_in,
-            punch_out=punch_out,
-            break_minutes=policy.break_minutes,
-            expected_start=policy.expected_start_time,
-            expected_end=policy.expected_end_time,
-            grace_late_minutes=policy.grace_late_minutes,
-            grace_early_departure_minutes=policy.grace_early_departure_minutes,
-            half_day_threshold_pct=policy.half_day_threshold_pct,
-            ot_enabled=policy.ot_enabled,
-            ot_qualifying_minutes=policy.ot_qualifying_minutes,
-            ot_daily_cap_minutes=policy.ot_daily_cap_minutes,
-            tz_name=policy.timezone,
-            punch_rounding_minutes=policy.punch_rounding_minutes,
-            punch_rounding_direction=policy.punch_rounding_direction,
-            break_auto_deduct=policy.break_auto_deduct,
+        for kind, stamp in (("IN", cor.requested_punch_in), ("OUT", cor.requested_punch_out)):
+            if stamp:
+                start, end = work_bounds(cor.work_date, policy)
+                if not start <= stamp < end:
+                    raise HTTPException(422, "Punch is outside the requested work day")
+                if kind == "IN" and work_date_for(stamp, policy) != cor.work_date:
+                    raise HTTPException(422, "Punch IN is outside the requested work date")
+                existing = [e for e in events if e.punch_type == kind]
+                original = (existing[0] if kind == "IN" else existing[-1]) if existing else None
+                replacements.append((kind, stamp, original.id if original else None))
+    for kind, stamp, original in replacements:
+        session.add(
+            Punch(
+                tenant_id=tenant_id,
+                id=uuid4(),
+                employment_id=cor.employment_id,
+                work_date=cor.work_date,
+                punch_type=kind,
+                punched_at=stamp,
+                source="MANUAL",
+                is_corrected=True,
+                original_punch_id=original,
+                correction_reason=cor.reason[:255],
+                recorded_at=now_utc(),
+            )
         )
-        ad.first_punch_in = punch_in
-        ad.last_punch_out = punch_out
-        ad.gross_minutes = result.gross_minutes
-        ad.break_minutes = result.break_minutes
-        ad.effective_minutes = result.effective_minutes
-        ad.late_by_minutes = result.late_by_minutes
-        ad.early_departure_minutes = result.early_departure_minutes
-        ad.status = getattr(AttendanceStatus, result.status, AttendanceStatus.PRESENT)
-        apply_overtime(ad, result.ot_minutes)
+    await session.flush()
+    await recompute_day(session, tenant_id, cor.employment_id, cor.work_date, policy, ad)
 
-    session.add(ad)
+
+async def _check_reviewer(session, tenant_id, principal, scope, cor):
+    history = list(
+        (
+            await session.execute(
+                select(CorrectionApprovalAction)
+                .where(CorrectionApprovalAction.tenant_id == tenant_id)
+                .where(CorrectionApprovalAction.correction_id == cor.id)
+            )
+        ).scalars()
+    )
+    await require_reviewer(
+        session,
+        tenant_id,
+        principal,
+        scope,
+        cor.employment_id,
+        cor.current_level,
+        {a.approver_user_account_id for a in history},
+        {a.approver_employment_id for a in history},
+        "corrections.write",
+    )
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def _require_approver(principal: CurrentUser):
-    if principal.employment_id is None:
-        raise HTTPException(400, "This account has no employment record and cannot approve requests")
-    return principal.employment_id
 
 
 def _cor_resp(cor: AttendanceCorrectionRequest, history: list) -> CorrectionResponse:
@@ -327,6 +338,7 @@ async def _get_cor(session, tenant_id, cor_id: str) -> AttendanceCorrectionReque
         select(AttendanceCorrectionRequest)
         .where(AttendanceCorrectionRequest.tenant_id == tenant_id)
         .where(AttendanceCorrectionRequest.id == uid)
+        .with_for_update()
     )
     cor = row.scalars().first()
     if not cor:
@@ -347,7 +359,9 @@ async def _get_history(session, tenant_id, cor_id) -> list[CorrectionApprovalAct
             correction_id=to_typed_id("attendance_correction", a.correction_id),
             action=a.action,
             level=a.level,
-            approver_employment_id=to_typed_id("employment", a.approver_employment_id) if a.approver_employment_id else None,
+            approver_employment_id=to_typed_id("employment", a.approver_employment_id)
+            if a.approver_employment_id
+            else None,
             comments=a.comments,
             actioned_at=a.actioned_at,
         )
@@ -356,5 +370,9 @@ async def _get_history(session, tenant_id, cor_id) -> list[CorrectionApprovalAct
 
 
 def _assert_pending(cor: AttendanceCorrectionRequest) -> None:
-    if cor.status not in (CorrectionStatus.PENDING_L1, CorrectionStatus.PENDING_L2, CorrectionStatus.PENDING_L3):
+    if cor.status not in (
+        CorrectionStatus.PENDING_L1,
+        CorrectionStatus.PENDING_L2,
+        CorrectionStatus.PENDING_L3,
+    ):
         raise HTTPException(400, f"Correction not pending approval (status: {cor.status})")

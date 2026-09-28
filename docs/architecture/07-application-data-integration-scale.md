@@ -4,50 +4,39 @@
 
 **Why:** the employee journey (§36) is one chain of transactions that must stay consistent. A small team ships faster with one deployable, and hard module boundaries keep the option to extract services later. Microservices from day one would add distributed transactions and heavy operations before the domain has settled.
 
-| Area | Modules |
+| Area | Modules (Implemented in `backend/src/hrms/modules/`) |
 |---|---|
-| **Platform kernel** | Tenancy context, identity integration, authorization, configuration, workflow, obligations and Action Centre, exceptions, audit, documents and letters, notifications, numbering, custom fields, terminology and i18n, search, import/export, integration hub |
-| **Core HR** | Organisation (dimensions), people (person, employment, assignment), personnel actions, Employee 360 |
-| **Talent** | Manpower plans and requisitions, recruitment, onboarding |
-| **Time** | Shifts and rosters, attendance ingestion and computation, corrections, period close |
-| **Absence** | Leave types, policies, ledger and accruals; holiday calendars |
-| **Learning** | Programmes, sessions, feedback, certificates |
-| **Assets** | Register, assignments, returns |
-| **Separation** | Exit cases, clearance, F&F inputs, letters |
-| **Compliance** | Country packs, registrations, periodic obligations, evidence, exceptions |
-| **Service desk** | HR requests, SLAs |
-| **Policies** | Publication, audiences, acknowledgements |
-| **Compensation and payroll inputs** | Structures, revisions, payroll input snapshots; a payroll engine later |
-| **Analytics** | Semantic layer, standard reports, dashboards |
+| **Platform Plane** | `platform`: Platform admin directory, tenant provisioning (`bootstrap_tenant`), company linking, subscription tiers, platform audit log |
+| **Kernel & IAM** | `kernel`: Tenant models, user accounts, role definitions, role assignments, authentication routes (`/v1/auth/*`), RBAC scoping engine |
+| **Organization** | `org`: Legal entities, locations, org units (hierarchical department tree), jobs, grades, cost centres, positions |
+| **People & Lifecycle** | `people`: Person records, employments, effective-dated assignments, personnel actions, sequential employee ID formatting schemes |
+| **Compliance & KYC** | `kyc`: Statutory identifiers (PAN, Aadhaar, UAN, PF, ESI, Passport, DL), bank accounts, document storage, and multi-state verification workflows |
+| **Time & Attendance** | `time`: Raw punches (GPS/selfie/source), recomputable attendance days, holiday calendars, overtime lifecycle management |
+| **Policy Engine** | `policy`: Policy templates (work week bitmasks, alternate Saturday patterns), 4-tier hierarchical policy resolution fallback |
+| **Leave Management** | `leave`: Leave types, balances, multi-tier approval state machines, comp-off grants, leave encashment, monthly accruals |
+| **Corrections** | `corrections`: Attendance regularization requests, approval actions, automatic punch creation and attendance day recalculation |
+| **Onboarding** | `onboarding`: Configurable checklist templates, instantiated onboarding cases, task assignments across HR, IT, Manager, and Employee |
+| **Reports & Dashboard**| `reports`, `dashboard`: Saved dynamic report definitions with filter/column engines, CSV exports, executive & manager KPI dashboard metrics |
+| **Payroll Interface** | `payroll`: Compensation structures, payroll input snapshots, and period-close export contracts |
 
-**Separate services within each cell,** because their load profile differs: attendance ingestion, notification dispatch, the search indexer, document processing (scanning, previews, PDF rendering), report and export workers, and integration workers.
+![FastAPI Modular Monolith: 13 Domain Modules and Core Services](diagrams/monolith.svg)
 
-**Rules between modules:**
+*Figure 1: Modular monolith architecture — APIRouter interfaces, 13 domain modules, platform kernel services, and database persistence adapters.*
 
-- A module owns its tables. No module reads another module's tables.
-- Synchronous calls go through published module interfaces.
-- State changes publish domain events through a **transactional outbox** (the row and the event commit together) to the cell's event bus.
+**Frontend Architecture:**
 
-![A personnel action is approved, applied on its effective date, and published as an event that every other module consumes.](diagrams/flow.svg)
-
-*This is what "information entered once should flow through the employee journey" (§43) means in practice: one approved action, one transaction, one event, and every module updates itself.*
-
-**Frontend.**
-
-- A web SPA for the 16:9 HR desktop and a mobile app for self-service, each with its own BFF.
-- **Metadata-driven** where tenants differ: forms, custom fields, terminology, navigation and entitlements come from a configuration endpoint.
-- Tenant theming at runtime through this design system's CSS variables (UI 1).
+- Single-page application built on **React 19**, **TypeScript**, **Vite 8**, and **Tailwind CSS**.
+- **TanStack React Query v5** provides cache management, background synchronization, and optimistic mutation handling.
+- Unified application layout serving both the **Tenant HR Operations Portal** and the **Platform Control Console** (`/platform/*`) with route protection and token separation.
 
 ## Data architecture
 
-- **PostgreSQL per cell:** a primary with read replicas, a schema per module, `tenant_id` leading every primary key and index, UUIDv7 keys.
-- **Partitioned high-volume tables:** raw punches, attendance days, audit log, notifications and outbox, partitioned by month (and hashed by tenant in large pooled clusters). Old partitions move to cheaper storage on the retention schedule.
-- **Custom fields** in JSONB with GIN indexes; generated columns for fields that are filtered heavily.
-- **Search:** OpenSearch, a shared index with tenant routing for small tenants and dedicated indices for large ones. Documents are indexed with precomputed visibility tags and never include restricted fields.
-- **Files:** object storage with a per-tenant prefix, a per-tenant data key, versioning, and lifecycle rules for retention.
-- **Analytics:** change-data capture into a columnar store or warehouse, partitioned by tenant, with row policies. A **semantic layer** holds versioned metric definitions (Active Employee, New Joiner, Vacancy, Overdue, from §39), and dashboards, standard reports and exports all use it, so the numbers agree (§30).
-- **Caching:** per-tenant key prefixes, invalidated by events; never cache authorization decisions longer than their version stamp.
-- **Backups:** point-in-time recovery per cluster, plus per-tenant logical snapshots (the tenant mobility tooling), so one tenant can be restored without rolling back the others.
+- **PostgreSQL 16 Engine:** Multi-tenant shared database with native **Row-Level Security (RLS)** applied across all tenant tables via `FORCE ROW LEVEL SECURITY`.
+- **Dual-Role Model:** Migration scripts run as superuser `hrms`; the FastAPI application connects exclusively as unprivileged role `hrms_app` (`NOSUPERUSER`, `NOBYPASSRLS`).
+- **Keys & Primary Indexing:** Composite primary keys `(tenant_id, id)` prevent any possibility of cross-tenant foreign key linkage. UUIDv7 and ULID strategies ensure sortable distributed primary identifiers.
+- **Extensible Attributes:** JSONB columns for flexible custom fields (e.g. `Person.custom_fields`, `PlatformAuditLog.metadata_json`).
+- **Schema Evolution:** Managed through Alembic async migrations (revisions 0001 through 0016).
+- **Session Context:** Handled via FastAPI dependency injection: `get_session()` executes `SELECT set_config('app.tenant_id', :tid, true)` and performs real-time tenant status verification on every query. Anonymous flows use `get_anonymous_session()` and `login_lookup()` `SECURITY DEFINER` function.
 
 ## Payroll input contract (build this now, whatever §17 decides)
 
@@ -57,6 +46,10 @@ A **pay-period snapshot** per legal entity and pay group:
 - **Behaviour:** locked when the attendance period closes. Versioned, so a later correction produces a *delta*, not a silent change. Exported through the API and in file formats for external payroll, or consumed by an internal payroll engine later.
 
 ## Integration architecture
+
+![API Platform Architecture & OpenAPI Contracts](diagrams/apiplatform.svg)
+
+*Figure 2: API contracts, OpenAPI 3.1 specifications, dual-plane route separation, and PostgreSQL 16 RLS execution.*
 
 An **integration hub** runs in each cell. It provides a connector framework with per-tenant configuration and secrets, field mapping, schedules, retries and a dead-letter queue, idempotency keys, and per-tenant monitoring.
 

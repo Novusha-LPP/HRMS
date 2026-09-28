@@ -80,6 +80,10 @@ Three patterns recur in almost every module and should each be built once:
 - **Generalise.** The leave year is per tenant (calendar or April–March). Statutory minimums come from packs (for example, factory and shops-and-establishments rules differ by state). Leave types and policies are scoped and effective-dated.
 - **Open.** Leave year; negative-balance rules; how loss of pay reaches payroll.
 
+![Workflows & State Machines: Approvals, Application & Recomputation](diagrams/flow.svg)
+
+*Figure 1: Core state machine workflows — Attendance punch corrections with automated recomputation, and multi-tier leave balance debiting.*
+
 ## Employee Lifecycle (§14)
 
 - **Implies.** Each event is a personnel action with approval, a letter and due-date rules. **An inter-company transfer is legally a separation from one employer and a hire by another** (new appointment letter, PF transfer, a decision on gratuity continuity), so model it as two linked employments, not an attribute change (Architecture 4).

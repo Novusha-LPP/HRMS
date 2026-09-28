@@ -208,7 +208,10 @@ export function DailyAnalysisPage() {
           { label: "11:00", value: 0 },
         ];
 
-  const maxHourlyCount = Math.max(...hourlyPoints.map((h) => h.value), 5);
+  const peakHourlyCount = Math.max(...hourlyPoints.map((h) => h.value), 0);
+  // Axis top is a multiple of 4 (its four gridline steps) so every tick label is a whole number,
+  // with a floor so a near-empty day doesn't stretch one check-in to full height.
+  const maxHourlyCount = Math.max(Math.ceil(peakHourlyCount / 4) * 4, 4);
 
   // Unique departments for filter dropdown
   const allDepartments = Array.from(
@@ -352,7 +355,7 @@ export function DailyAnalysisPage() {
               <p className="card-desc">Check-in distribution and punch velocity by hour</p>
             </div>
             <span className="text-xs font-medium text-fg-subtle">
-              Peak: {maxHourlyCount} check-ins
+              {peakHourlyCount > 0 ? `Peak: ${peakHourlyCount} check-ins` : "No check-ins yet"}
             </span>
           </div>
           <div className="px-5 pb-5">

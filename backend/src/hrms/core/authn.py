@@ -36,7 +36,7 @@ async def get_current_principal(request: Request) -> Principal:
     if not auth_header.startswith("Bearer "):
         raise _unauthorized("Missing bearer token")
 
-    token = auth_header[len("Bearer "):].strip()
+    token = auth_header[len("Bearer ") :].strip()
     if not token:
         raise _unauthorized("Missing bearer token")
 
@@ -86,7 +86,7 @@ async def get_current_platform_principal(request: Request) -> PlatformPrincipal:
     if not auth_header.startswith("Bearer "):
         raise _unauthorized("Missing bearer token")
 
-    token = auth_header[len("Bearer "):].strip()
+    token = auth_header[len("Bearer ") :].strip()
     if not token:
         raise _unauthorized("Missing bearer token")
 

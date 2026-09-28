@@ -1,28 +1,28 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import type { ReactNode } from "react";
+import { lazy, Suspense, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { PlatformAuthProvider, usePlatformAuth } from "./context/PlatformAuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
 import { ToastProvider } from "./components/ui/Toast";
 import { AppShell } from "./components/layout/AppShell";
-import { LoginPage } from "./pages/LoginPage";
-import { RegisterCompanyPage } from "./pages/RegisterCompanyPage";
-import { PlatformLoginPage } from "./pages/PlatformLoginPage";
-import { PlatformForgotPasswordPage } from "./pages/PlatformForgotPasswordPage";
-import { PlatformResetPasswordPage } from "./pages/PlatformResetPasswordPage";
-import { PlatformConsolePage } from "./pages/PlatformConsolePage";
-import { DashboardPage } from "./pages/DashboardPage";
-import { EmployeePage } from "./pages/EmployeePage";
-import { AttendancePage } from "./pages/AttendancePage";
-import { LeavePage } from "./pages/LeavePage";
-import { CorrectionsPage } from "./pages/CorrectionsPage";
-import { PolicyPage } from "./pages/PolicyPage";
-import { OnboardingPage } from "./pages/OnboardingPage";
-import { ReportsPage } from "./pages/ReportsPage";
-import { OrganizationPage } from "./pages/OrganizationPage";
-import { ProfilePage } from "./pages/ProfilePage";
-import { DailyAnalysisPage } from "./pages/DailyAnalysisPage";
+const LoginPage = lazy(() => import("./pages/LoginPage").then(m => ({ default: m.LoginPage })));
+const RegisterCompanyPage = lazy(() => import("./pages/RegisterCompanyPage").then(m => ({ default: m.RegisterCompanyPage })));
+const PlatformLoginPage = lazy(() => import("./pages/PlatformLoginPage").then(m => ({ default: m.PlatformLoginPage })));
+const PlatformForgotPasswordPage = lazy(() => import("./pages/PlatformForgotPasswordPage").then(m => ({ default: m.PlatformForgotPasswordPage })));
+const PlatformResetPasswordPage = lazy(() => import("./pages/PlatformResetPasswordPage").then(m => ({ default: m.PlatformResetPasswordPage })));
+const PlatformConsolePage = lazy(() => import("./pages/PlatformConsolePage").then(m => ({ default: m.PlatformConsolePage })));
+const DashboardPage = lazy(() => import("./pages/DashboardPage").then(m => ({ default: m.DashboardPage })));
+const EmployeePage = lazy(() => import("./pages/EmployeePage").then(m => ({ default: m.EmployeePage })));
+const AttendancePage = lazy(() => import("./pages/AttendancePage").then(m => ({ default: m.AttendancePage })));
+const LeavePage = lazy(() => import("./pages/LeavePage").then(m => ({ default: m.LeavePage })));
+const CorrectionsPage = lazy(() => import("./pages/CorrectionsPage").then(m => ({ default: m.CorrectionsPage })));
+const PolicyPage = lazy(() => import("./pages/PolicyPage").then(m => ({ default: m.PolicyPage })));
+const OnboardingPage = lazy(() => import("./pages/OnboardingPage").then(m => ({ default: m.OnboardingPage })));
+const ReportsPage = lazy(() => import("./pages/ReportsPage").then(m => ({ default: m.ReportsPage })));
+const OrganizationPage = lazy(() => import("./pages/OrganizationPage").then(m => ({ default: m.OrganizationPage })));
+const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ default: m.ProfilePage })));
+const DailyAnalysisPage = lazy(() => import("./pages/DailyAnalysisPage").then(m => ({ default: m.DailyAnalysisPage })));
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
@@ -47,6 +47,7 @@ export default function App() {
         <AuthProvider>
           <ToastProvider>
             <BrowserRouter>
+              <Suspense fallback={<p role="status" className="p-6">Loading…</p>}>
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterCompanyPage />} />
@@ -89,6 +90,7 @@ export default function App() {
                   }
                 />
               </Routes>
+              </Suspense>
             </BrowserRouter>
           </ToastProvider>
         </AuthProvider>

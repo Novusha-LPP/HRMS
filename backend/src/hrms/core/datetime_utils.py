@@ -72,6 +72,7 @@ def apply_punch_rounding(dt: datetime, rounding_minutes: int, direction: str) ->
 
 # ─── Calculation results ───────────────────────────────────────────────────────
 
+
 class LatenessResult(NamedTuple):
     is_late: bool
     late_by_minutes: int
@@ -102,6 +103,7 @@ class DayComputeResult:
 
 # ─── Core calculations ─────────────────────────────────────────────────────────
 
+
 def calc_lateness(
     punch_in: datetime,
     expected_start: time,
@@ -110,8 +112,10 @@ def calc_lateness(
 ) -> LatenessResult:
     local = to_tz(punch_in, tz_name)
     expected = local.replace(
-        hour=expected_start.hour, minute=expected_start.minute,
-        second=0, microsecond=0,
+        hour=expected_start.hour,
+        minute=expected_start.minute,
+        second=0,
+        microsecond=0,
     )
     raw_late = max(0, int((local - expected).total_seconds() / 60))
     net_late = max(0, raw_late - grace_minutes)
@@ -126,8 +130,10 @@ def calc_early_departure(
 ) -> EarlyDepartureResult:
     local = to_tz(punch_out, tz_name)
     expected = local.replace(
-        hour=expected_end.hour, minute=expected_end.minute,
-        second=0, microsecond=0,
+        hour=expected_end.hour,
+        minute=expected_end.minute,
+        second=0,
+        microsecond=0,
     )
     raw_early = max(0, int((expected - local).total_seconds() / 60))
     net_early = max(0, raw_early - grace_minutes)
@@ -221,8 +227,11 @@ def is_working_day(d: date, work_days: str, saturday_pattern: str = "ALL") -> bo
 
 
 def working_days_between(
-    from_date: date, to_date: date, work_days: str,
-    holidays: set[date] | None = None, saturday_pattern: str = "ALL",
+    from_date: date,
+    to_date: date,
+    work_days: str,
+    holidays: set[date] | None = None,
+    saturday_pattern: str = "ALL",
 ) -> float:
     """
     Count working days between from_date and to_date inclusive.
@@ -234,7 +243,9 @@ def working_days_between(
     days = 0
     current = from_date
     while current <= to_date:
-        if is_working_day(current, work_days, saturday_pattern) and (not holidays or current not in holidays):
+        if is_working_day(current, work_days, saturday_pattern) and (
+            not holidays or current not in holidays
+        ):
             days += 1
         current += timedelta(days=1)
     return float(days)
@@ -274,7 +285,34 @@ def compute_day(
 
     late_res = calc_lateness(pi, expected_start, grace_late_minutes, tz_name)
     early_res = calc_early_departure(po, expected_end, grace_early_departure_minutes, tz_name)
-    ot_res = calc_overtime(effective, standard, ot_enabled, ot_qualifying_minutes, ot_daily_cap_minutes)
+    if expected_end <= expected_start:
+        local_in = to_tz(pi, tz_name)
+        boundary = (
+            (expected_start.hour * 60 + expected_start.minute)
+            + (expected_end.hour * 60 + expected_end.minute)
+        ) // 2
+        anchor = local_in.date() - timedelta(
+            days=int(local_in.hour * 60 + local_in.minute < boundary)
+        )
+        scheduled_start = localize_date(anchor, tz_name).replace(
+            hour=expected_start.hour, minute=expected_start.minute
+        )
+        scheduled_end = localize_date(anchor + timedelta(days=1), tz_name).replace(
+            hour=expected_end.hour, minute=expected_end.minute
+        )
+        late = max(
+            0, int((to_tz(pi, tz_name) - scheduled_start).total_seconds() / 60) - grace_late_minutes
+        )
+        early = max(
+            0,
+            int((scheduled_end - to_tz(po, tz_name)).total_seconds() / 60)
+            - grace_early_departure_minutes,
+        )
+        late_res = LatenessResult(late > 0, late)
+        early_res = EarlyDepartureResult(early > 0, early)
+    ot_res = calc_overtime(
+        effective, standard, ot_enabled, ot_qualifying_minutes, ot_daily_cap_minutes
+    )
 
     status = derive_attendance_status(
         punched_in=True,

@@ -6,28 +6,27 @@ always be recomputed. Period close marks an attendance period as locked.
 """
 
 import enum
-from datetime import date, datetime, timezone
-from typing import Optional
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
 
 
-class PunchType(str, enum.Enum):
+class PunchType(enum.StrEnum):
     IN = "IN"
     OUT = "OUT"
     BREAK_START = "BREAK_START"
     BREAK_END = "BREAK_END"
 
 
-class PunchSource(str, enum.Enum):
+class PunchSource(enum.StrEnum):
     WEB = "WEB"
     MOBILE = "MOBILE"
     DEVICE = "DEVICE"
     MANUAL = "MANUAL"  # HR correction
 
 
-class AttendanceStatus(str, enum.Enum):
+class AttendanceStatus(enum.StrEnum):
     PRESENT = "PRESENT"
     ABSENT = "ABSENT"
     HALF_DAY = "HALF_DAY"
@@ -39,7 +38,7 @@ class AttendanceStatus(str, enum.Enum):
     PENDING = "PENDING"  # punched in but not yet out
 
 
-class OvertimeStatus(str, enum.Enum):
+class OvertimeStatus(enum.StrEnum):
     NONE = "NONE"  # no OT computed for this day
     PENDING = "PENDING"
     APPROVED = "APPROVED"
@@ -54,18 +53,19 @@ class Holiday(SQLModel, table=True):
     (time/router.py) and by leave's working-day counting
     (core/datetime_utils.working_days_between).
     """
+
     __tablename__ = "holidays"
 
     tenant_id: UUID = Field(primary_key=True)
     id: UUID = Field(primary_key=True)
     holiday_date: date = Field()
     name: str = Field(max_length=200)
-    legal_entity_id: Optional[UUID] = Field(default=None)
+    legal_entity_id: UUID | None = Field(default=None)
     is_optional: bool = Field(default=False)
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    recorded_by: Optional[UUID] = Field(default=None)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)
-    archived_at: Optional[datetime] = Field(default=None)
+    archived_at: datetime | None = Field(default=None)
 
 
 class Punch(SQLModel, table=True):
@@ -73,6 +73,7 @@ class Punch(SQLModel, table=True):
     Raw punch event — immutable once created.
     HR corrections create a new punch with is_corrected=True and link to original.
     """
+
     __tablename__ = "punches"
 
     tenant_id: UUID = Field(primary_key=True)
@@ -80,19 +81,20 @@ class Punch(SQLModel, table=True):
     employment_id: UUID = Field(index=True)
     punch_type: str = Field(max_length=20)
     punched_at: datetime = Field()
+    work_date: date | None = Field(default=None, index=True)
     source: str = Field(default=PunchSource.WEB, max_length=20)
     # GPS
-    latitude: Optional[float] = Field(default=None)
-    longitude: Optional[float] = Field(default=None)
-    device_id: Optional[str] = Field(default=None, max_length=100)
+    latitude: float | None = Field(default=None)
+    longitude: float | None = Field(default=None)
+    device_id: str | None = Field(default=None, max_length=100)
     # S3 key for selfie image
-    selfie_key: Optional[str] = Field(default=None, max_length=500)
+    selfie_key: str | None = Field(default=None, max_length=500)
     # Correction chain
     is_corrected: bool = Field(default=False)
-    original_punch_id: Optional[UUID] = Field(default=None)
-    correction_reason: Optional[str] = Field(default=None, max_length=255)
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    recorded_by: Optional[UUID] = Field(default=None)
+    original_punch_id: UUID | None = Field(default=None)
+    correction_reason: str | None = Field(default=None, max_length=255)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    recorded_by: UUID | None = Field(default=None)
 
 
 class AttendanceDay(SQLModel, table=True):
@@ -100,14 +102,15 @@ class AttendanceDay(SQLModel, table=True):
     One row per employment per calendar day.
     Computed from punches + leave data; recomputable.
     """
+
     __tablename__ = "attendance_days"
 
     tenant_id: UUID = Field(primary_key=True)
     id: UUID = Field(primary_key=True)
     employment_id: UUID = Field(index=True)
     work_date: date = Field(index=True)
-    first_punch_in: Optional[datetime] = Field(default=None)
-    last_punch_out: Optional[datetime] = Field(default=None)
+    first_punch_in: datetime | None = Field(default=None)
+    last_punch_out: datetime | None = Field(default=None)
     # Minutes
     gross_minutes: int = Field(default=0)
     break_minutes: int = Field(default=0)
@@ -122,11 +125,11 @@ class AttendanceDay(SQLModel, table=True):
     # and corrections/router.py, the two places that write these fields.
     ot_minutes: int = Field(default=0)
     ot_status: str = Field(default=OvertimeStatus.NONE, max_length=20)
-    ot_reviewed_by: Optional[UUID] = Field(default=None)
-    ot_reviewed_at: Optional[datetime] = Field(default=None)
-    ot_review_notes: Optional[str] = Field(default=None, max_length=500)
+    ot_reviewed_by: UUID | None = Field(default=None)
+    ot_reviewed_at: datetime | None = Field(default=None)
+    ot_review_notes: str | None = Field(default=None, max_length=500)
     is_locked: bool = Field(default=False)  # locked by period close
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     version: int = Field(default=0)
 
 

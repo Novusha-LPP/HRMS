@@ -80,16 +80,31 @@ export interface PersonnelActionListItem {
   submitted_at: string | null;
 }
 
+// The list endpoints cap a single response at 200 rows. A group with more people
+// than that (a large tenant, or several companies together) would otherwise be
+// silently truncated, so walk the pages until one comes back short.
+const PAGE = 200;
+async function fetchAll<T>(page: (offset: number) => Promise<T[]>): Promise<T[]> {
+  const all: T[] = [];
+  for (let offset = 0; ; offset += PAGE) {
+    const rows = await page(offset);
+    all.push(...rows);
+    if (rows.length < PAGE) return all;
+  }
+}
+
 export const peopleApi = {
-  listEmployees: (status?: string, limit = 50) => {
-    const q = status ? `?filter[status]=${status}&limit=${limit}` : `?limit=${limit}`;
+  listEmployees: (status?: string, limit = 50, offset = 0) => {
+    const q = status ? `?filter[status]=${status}&limit=${limit}&offset=${offset}` : `?limit=${limit}&offset=${offset}`;
     return api.get<Employment[]>(`/v1/employees${q}`);
   },
+  listAllEmployees: () => fetchAll((offset) => peopleApi.listEmployees(undefined, PAGE, offset)),
   getEmployee: (id: string) => api.get<Employment>(`/v1/employees/${id}`),
-  listPersons: (limit = 200) => api.get<Person[]>(`/v1/persons?limit=${limit}`),
+  listPersons: (limit = 200, offset = 0) => api.get<Person[]>(`/v1/persons?limit=${limit}&offset=${offset}`),
+  listAllPersons: () => fetchAll((offset) => peopleApi.listPersons(PAGE, offset)),
   createPerson: (body: { legal_first_name: string; legal_last_name: string; preferred_name?: string }) =>
     api.post<Person>("/v1/persons", body),
-  createEmployment: (body: { person_id: string; legal_entity_id: string; employee_number: string; hire_date: string }) =>
+  createEmployment: (body: { person_id: string; legal_entity_id: string; employee_number?: string; hire_date: string }) =>
     api.post<Employment>("/v1/employees", body),
   getMyProfile: () => api.get<MyProfile>("/v1/persons/me"),
   updateMyProfile: (body: {

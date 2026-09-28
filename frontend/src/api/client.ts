@@ -41,8 +41,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
+  const requestToken = authToken;
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
 
+  if (requestToken !== authToken) throw new Error("Session changed");
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     if (res.status === 401 && path !== "/v1/auth/login") onUnauthorized?.();
@@ -50,7 +52,9 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
 
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const data = await res.json();
+  if (requestToken !== authToken) throw new Error("Session changed");
+  return data;
 }
 
 export const api = {

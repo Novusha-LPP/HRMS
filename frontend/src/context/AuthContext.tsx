@@ -1,6 +1,8 @@
-import { createContext, useContext, useEffect, useState } from "react";
+import { resetSessionCache } from "../lib/session";
+import { useQueryClient } from "@tanstack/react-query";
+import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type { ReactNode } from "react";
-import { api, ApiError, setAuthToken, setUnauthorizedHandler } from "../api/client";
+import { api, ApiError, getAuthToken, setAuthToken, setUnauthorizedHandler } from "../api/client";
 
 // The backend can grant several fine-grained roles per user (see
 // backend/src/hrms/core/authz.py — SUPER_ADMIN, HR_MANAGER, MANAGER,
@@ -82,19 +84,19 @@ function toAuthUser(m: MeResponse): AuthUser {
 }
 
 export function AuthProvider({ children }: { children: ReactNode }) {
+  const queryClient = useQueryClient();
+  const resetCache = () => resetSessionCache(queryClient);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(true);
+  const [loading, setLoading] = useState(() => !!localStorage.getItem(TOKEN_KEY));
 
   useEffect(() => {
     const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) {
-      setLoading(false);
-      return;
-    }
+    if (!token) return;
     setAuthToken(token);
     api.get<MeResponse>("/v1/auth/me")
-      .then((me) => setUser(toAuthUser(me)))
+      .then((me) => { if (getAuthToken() === token) setUser(toAuthUser(me)); })
       .catch(() => {
+        if (getAuthToken() !== token) return;
         // Expired/invalid token — drop it silently and fall back to the login page.
         localStorage.removeItem(TOKEN_KEY);
         setAuthToken(null);
@@ -105,6 +107,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const login = async (email: string, password: string) => {
     try {
       const res = await api.post<LoginResponse>("/v1/auth/login", { email, password });
+      resetCache();
       localStorage.setItem(TOKEN_KEY, res.access_token);
       setAuthToken(res.access_token);
       setUser(toAuthUser(res.user));
@@ -116,6 +119,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const registerCompany = async (body: { company_name: string; country_code?: string; admin_email: string; admin_password: string }) => {
     try {
       const res = await api.post<LoginResponse>("/v1/auth/register-company", body);
+      resetCache();
       localStorage.setItem(TOKEN_KEY, res.access_token);
       setAuthToken(res.access_token);
       setUser(toAuthUser(res.user));
@@ -124,16 +128,17 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     }
   };
 
-  const logout = () => {
+  const logout = useCallback(() => {
+    resetSessionCache(queryClient);
     localStorage.removeItem(TOKEN_KEY);
     setAuthToken(null);
     setUser(null);
-  };
+  }, [queryClient]);
 
   useEffect(() => {
     setUnauthorizedHandler(logout);
     return () => setUnauthorizedHandler(null);
-  }, []);
+  }, [logout]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, registerCompany, logout }}>

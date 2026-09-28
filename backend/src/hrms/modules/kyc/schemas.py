@@ -1,35 +1,35 @@
 """Pydantic schemas for Employee KYC API."""
 
 from datetime import date, datetime
-from typing import Optional
+
 from pydantic import BaseModel, Field
 
 
 class KycRecordUpdateRequest(BaseModel):
-    pan_number: Optional[str] = Field(default=None, max_length=20)
-    aadhaar_number: Optional[str] = Field(default=None, max_length=20)
-    uan_number: Optional[str] = Field(default=None, max_length=20)
-    pf_number: Optional[str] = Field(default=None, max_length=50)
-    esi_number: Optional[str] = Field(default=None, max_length=50)
-    passport_number: Optional[str] = Field(default=None, max_length=50)
-    passport_expiry: Optional[date] = None
-    driving_license: Optional[str] = Field(default=None, max_length=50)
-    voter_id: Optional[str] = Field(default=None, max_length=50)
+    pan_number: str | None = Field(default=None, max_length=20)
+    aadhaar_number: str | None = Field(default=None, max_length=20)
+    uan_number: str | None = Field(default=None, max_length=20)
+    pf_number: str | None = Field(default=None, max_length=50)
+    esi_number: str | None = Field(default=None, max_length=50)
+    passport_number: str | None = Field(default=None, max_length=50)
+    passport_expiry: date | None = None
+    driving_license: str | None = Field(default=None, max_length=50)
+    voter_id: str | None = Field(default=None, max_length=50)
 
-    bank_name: Optional[str] = Field(default=None, max_length=100)
-    account_holder_name: Optional[str] = Field(default=None, max_length=255)
-    account_number: Optional[str] = Field(default=None, max_length=50)
-    ifsc_code: Optional[str] = Field(default=None, max_length=20)
-    branch_name: Optional[str] = Field(default=None, max_length=100)
+    bank_name: str | None = Field(default=None, max_length=100)
+    account_holder_name: str | None = Field(default=None, max_length=255)
+    account_number: str | None = Field(default=None, max_length=50)
+    ifsc_code: str | None = Field(default=None, max_length=20)
+    branch_name: str | None = Field(default=None, max_length=100)
 
-    father_or_spouse_name: Optional[str] = Field(default=None, max_length=255)
-    marital_status: Optional[str] = Field(default=None, max_length=20)
-    blood_group: Optional[str] = Field(default=None, max_length=10)
-    emergency_contact_name: Optional[str] = Field(default=None, max_length=255)
-    emergency_contact_relation: Optional[str] = Field(default=None, max_length=50)
-    emergency_contact_phone: Optional[str] = Field(default=None, max_length=20)
-    current_address: Optional[str] = Field(default=None, max_length=500)
-    permanent_address: Optional[str] = Field(default=None, max_length=500)
+    father_or_spouse_name: str | None = Field(default=None, max_length=255)
+    marital_status: str | None = Field(default=None, max_length=20)
+    blood_group: str | None = Field(default=None, max_length=10)
+    emergency_contact_name: str | None = Field(default=None, max_length=255)
+    emergency_contact_relation: str | None = Field(default=None, max_length=50)
+    emergency_contact_phone: str | None = Field(default=None, max_length=20)
+    current_address: str | None = Field(default=None, max_length=500)
+    permanent_address: str | None = Field(default=None, max_length=500)
 
 
 class KycDocumentResponse(BaseModel):
@@ -37,15 +37,15 @@ class KycDocumentResponse(BaseModel):
     employment_id: str
     document_type: str
     document_title: str
-    document_number: Optional[str] = None
+    document_number: str | None = None
     file_name: str
     file_size: int
     mime_type: str
     status: str
-    rejection_reason: Optional[str] = None
-    comments: Optional[str] = None
+    rejection_reason: str | None = None
+    comments: str | None = None
     uploaded_at: datetime
-    verified_at: Optional[datetime] = None
+    verified_at: datetime | None = None
     download_url: str
     preview_url: str
 
@@ -53,44 +53,44 @@ class KycDocumentResponse(BaseModel):
 class KycRecordResponse(BaseModel):
     id: str
     employment_id: str
-    employee_name: Optional[str] = None
-    employee_number: Optional[str] = None
-    department: Optional[str] = None
-    designation: Optional[str] = None
+    employee_name: str | None = None
+    employee_number: str | None = None
+    department: str | None = None
+    designation: str | None = None
 
     # Identity
-    pan_number: Optional[str] = None
-    aadhaar_number: Optional[str] = None
-    uan_number: Optional[str] = None
-    pf_number: Optional[str] = None
-    esi_number: Optional[str] = None
-    passport_number: Optional[str] = None
-    passport_expiry: Optional[date] = None
-    driving_license: Optional[str] = None
-    voter_id: Optional[str] = None
+    pan_number: str | None = None
+    aadhaar_number: str | None = None
+    uan_number: str | None = None
+    pf_number: str | None = None
+    esi_number: str | None = None
+    passport_number: str | None = None
+    passport_expiry: date | None = None
+    driving_license: str | None = None
+    voter_id: str | None = None
 
     # Bank
-    bank_name: Optional[str] = None
-    account_holder_name: Optional[str] = None
-    account_number: Optional[str] = None
-    ifsc_code: Optional[str] = None
-    branch_name: Optional[str] = None
+    bank_name: str | None = None
+    account_holder_name: str | None = None
+    account_number: str | None = None
+    ifsc_code: str | None = None
+    branch_name: str | None = None
 
     # Personal & Family
-    father_or_spouse_name: Optional[str] = None
-    marital_status: Optional[str] = None
-    blood_group: Optional[str] = None
-    emergency_contact_name: Optional[str] = None
-    emergency_contact_relation: Optional[str] = None
-    emergency_contact_phone: Optional[str] = None
-    current_address: Optional[str] = None
-    permanent_address: Optional[str] = None
+    father_or_spouse_name: str | None = None
+    marital_status: str | None = None
+    blood_group: str | None = None
+    emergency_contact_name: str | None = None
+    emergency_contact_relation: str | None = None
+    emergency_contact_phone: str | None = None
+    current_address: str | None = None
+    permanent_address: str | None = None
 
     # Status
     status: str
-    submitted_at: Optional[datetime] = None
-    verified_at: Optional[datetime] = None
-    rejection_reason: Optional[str] = None
+    submitted_at: datetime | None = None
+    verified_at: datetime | None = None
+    rejection_reason: str | None = None
     updated_at: datetime
 
     documents: list[KycDocumentResponse] = []
@@ -101,13 +101,13 @@ class KycEmployeeListItem(BaseModel):
     employment_id: str
     employee_number: str
     employee_name: str
-    department: Optional[str] = None
-    designation: Optional[str] = None
+    department: str | None = None
+    designation: str | None = None
     kyc_status: str
     documents_count: int = 0
     verified_documents_count: int = 0
     completion_percentage: int = 0
-    updated_at: Optional[datetime] = None
+    updated_at: datetime | None = None
 
 
 class KycSummaryStats(BaseModel):
@@ -120,10 +120,10 @@ class KycSummaryStats(BaseModel):
 
 class VerifyDocumentRequest(BaseModel):
     status: str = Field(description="'VERIFIED' or 'REJECTED'")
-    rejection_reason: Optional[str] = None
-    comments: Optional[str] = None
+    rejection_reason: str | None = None
+    comments: str | None = None
 
 
 class VerifyOverallKycRequest(BaseModel):
     status: str = Field(description="'VERIFIED', 'REJECTED', or 'ACTION_REQUIRED'")
-    rejection_reason: Optional[str] = None
+    rejection_reason: str | None = None

@@ -4,7 +4,7 @@ version = "0.1.0"
 description = "HRMS Platform — multi-tenant HR SaaS backend"
 requires-python = ">=3.12"
 dependencies = [
-    "fastapi[standard]>=0.115.0",
+    "fastapi[standard]>=0.141.1",
     "sqlmodel>=0.0.21",
     "sqlalchemy>=2.0.36",
     "asyncpg>=0.30.0",
@@ -44,6 +44,9 @@ src = ["src"]
 [tool.ruff.lint]
 select = ["E", "F", "I", "UP", "B", "SIM"]
 
+[tool.ruff.lint.flake8-bugbear]
+extend-immutable-calls = ["fastapi.Query", "fastapi.File", "fastapi.Form", "hrms.core.platform_authz.require_platform_role"]
+
 [tool.mypy]
 python_version = "3.12"
 strict = true
@@ -52,3 +55,4 @@ plugins = ["pydantic.mypy"]
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]
+markers = ["database: isolated PostgreSQL tests", "live_demo: opt-in tests that mutate seeded demo data"]

@@ -1,5 +1,5 @@
 import type { ReactNode } from "react";
-import { Inbox, TriangleAlert, Info } from "lucide-react";
+import { Inbox, TriangleAlert, Info, UserX } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 
 export function EmptyState({ icon: Icon = Inbox, title, description, action, className = "" }: {
@@ -45,13 +45,20 @@ export function Skeleton({ className = "" }: { className?: string }) {
   return <div className={`skeleton ${className}`} />;
 }
 
-export function SampleTag() {
+/**
+ * Shown on self-service pages when the signed-in account has no employee
+ * record — e.g. a company administrator login created when the company was
+ * set up. Those accounts can configure the platform but have no personal
+ * attendance, leave or profile of their own.
+ */
+export function NoEmployeeRecord({ feature }: { feature: string }) {
   return (
-    <span
-      className="rounded-md border border-dashed border-line-strong px-1.5 py-px text-[10px] font-medium text-fg-subtle"
-      title="Not yet connected to the API — showing sample data"
-    >
-      Sample
-    </span>
+    <div className="card">
+      <EmptyState
+        icon={UserX}
+        title="This account isn’t linked to an employee record"
+        description={`You’re signed in with an administrator account that isn’t tied to an employee, so there’s no ${feature} to show. Ask HR to link an employee record if you also work here.`}
+      />
+    </div>
   );
 }

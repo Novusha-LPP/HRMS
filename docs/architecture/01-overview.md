@@ -44,24 +44,33 @@ This section and the seven after it turn the SURAJ Group HRMS business requireme
 
 ## Target architecture at a glance
 
+![System Context: Actors and external systems communicating with the dual-plane HRMS Platform](diagrams/context.svg)
+
+*Figure 1: System Context — Enterprise actors, internal dual planes, and external integrations.*
+
+![Container Architecture: React 19 SPA, FastAPI modular monolith, dual planes, and PostgreSQL 16 dual-role RLS](diagrams/containers.svg)
+
+*Figure 2: Container Architecture — High-performance React 19 frontend, FastAPI ASGI backend, and PostgreSQL 16 dual-role RLS persistence tier.*
+
 ![A request is resolved to one tenant at the edge, routed to that tenant's home cell, and carries the tenant context into every store.](diagrams/tenancy.svg)
 
-*A request is resolved to one tenant at the edge, routed to the tenant's home cell, and carries the tenant context into every store. Pooled and dedicated cells run the same code and schema (details in Architecture 3).*
+*Figure 3: Multi-tenant request resolution and database session isolation (details in Architecture 3).*
 
-## Suggested reference stack (to be confirmed)
+## Confirmed & Implemented Production Stack
 
-The architecture does not depend on these choices. They are sensible defaults to confirm against your team's skills (decision D8 in Architecture 8).
+The platform is implemented as a high-performance asynchronous modular monolith with native multi-tenancy:
 
-| Concern | Suggested default | Why |
+| Concern | Implemented Choice | Why / Technical Justification |
 |---|---|---|
-| Operational database | PostgreSQL 16 or later (managed) | Row-level security, range types and exclusion constraints for effective dating, JSONB for custom fields, partitioning |
-| Application | One modular monolith per cell, in TypeScript (NestJS), Kotlin/Java (Spring Boot) or C# (.NET) | Transactions that span the employee journey; one deployable unit per cell |
-| Web | React with TypeScript, consuming this design system's tokens and classes | Tenant theming through CSS variables at runtime |
-| Mobile self-service | React Native or Flutter; a PWA is acceptable for Phase 1 | One app with tenant discovery; white-label builds later |
-| Events | Transactional outbox, then Kafka/Redpanda or a managed equivalent per cell | Reliable fan-out without distributed transactions |
-| Durable timers and workflows | A DB-backed scheduler to start; Temporal if orchestration grows | Reminders, escalations, scheduled effective dates |
-| Search | OpenSearch with per-tenant routing | Global employee search with security trimming |
-| Identity | Keycloak (realm or organisation per tenant) or a managed CIAM with per-tenant SAML/OIDC and SCIM | Enterprise SSO per tenant |
-| Authorization | An in-house model (Architecture 5), optionally backed by OpenFGA or SpiceDB for relationships | Hierarchy-based access at scale |
-| Analytics | CDC (Debezium) into ClickHouse or a cloud warehouse, with a semantic layer | Consistent metric definitions (§30) |
-| Platform | Kubernetes, Terraform, GitOps, OpenTelemetry | Repeatable cells; per-tenant observability |
+| **Operational Database** | PostgreSQL 16 (`postgres:16-alpine`) | Native Row-Level Security (RLS) with `FORCE ROW LEVEL SECURITY`, JSONB for extensible attributes, composite primary keys `(tenant_id, id)`, and UUIDv7/ULID support. |
+| **Database Access Security** | Dual-role model: `hrms` (migrations) vs `hrms_app` (runtime) | `hrms_app` role connects with `NOSUPERUSER` and `NOBYPASSRLS`. Prevents any possibility of developer query bugs leaking cross-tenant data. |
+| **Backend Framework** | Python 3.12+ with FastAPI & Uvicorn | Asynchronous execution, native OpenAPI/Swagger generation (`/docs`), automated Pydantic v2 validation, and high throughput. |
+| **Data Layer & ORM** | SQLModel & SQLAlchemy 2.0 (asyncpg) | Combines Pydantic type validation with SQLAlchemy 2.0 async engine and query capabilities. |
+| **Schema Migrations** | Alembic (revisions 0001–0016) | Versioned, auditable DDL migrations with automated rollback support. |
+| **Web Frontend** | React 19 + TypeScript + Vite 8 + Tailwind CSS | Fast HMR dev server, optimized production bundling, type safety, and responsive utility styling. |
+| **Frontend State & Caching** | TanStack React Query v5 | Server-state caching, automatic background refetching, and mutation invalidation. |
+| **Authentication** | Dual-Plane JWT (Tenant vs Platform) | Separate token typing (`typ: "platform"` vs tenant tokens with `tenant_id` and `employment_id`), bcrypt password hashing, and live DB revocation checks. |
+| **Authorization** | In-house Role & Scope Resolution Engine | Role-based permission bundles (`SUPER_ADMIN`, `HR_MANAGER`, etc.) combined with 6 data scope types (`ALL`, `LEGAL_ENTITY`, `ORG_UNIT`, `SELF`, `DIRECT_REPORTS`, `ALL_REPORTS`). |
+| **Package Management** | `uv` (Python) and `npm` (Frontend) | Extremely fast Rust-based dependency resolution and virtual environments. |
+| **Containerization** | Docker & Docker Compose | Repeatable, isolated environments with persistent Postgres storage volumes. |
+

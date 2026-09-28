@@ -1,14 +1,13 @@
 """Employee KYC Models: Record and Document tables with tenant isolation."""
 
 import enum
-from datetime import date, datetime, timezone
-from typing import Optional
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
 
 
-class KycStatus(str, enum.Enum):
+class KycStatus(enum.StrEnum):
     NOT_SUBMITTED = "NOT_SUBMITTED"
     DRAFT = "DRAFT"
     SUBMITTED = "SUBMITTED"
@@ -17,7 +16,7 @@ class KycStatus(str, enum.Enum):
     ACTION_REQUIRED = "ACTION_REQUIRED"
 
 
-class DocumentType(str, enum.Enum):
+class DocumentType(enum.StrEnum):
     PAN_CARD = "PAN_CARD"
     AADHAAR_FRONT = "AADHAAR_FRONT"
     AADHAAR_BACK = "AADHAAR_BACK"
@@ -30,7 +29,7 @@ class DocumentType(str, enum.Enum):
     OTHER = "OTHER"
 
 
-class DocumentStatus(str, enum.Enum):
+class DocumentStatus(enum.StrEnum):
     PENDING = "PENDING"
     VERIFIED = "VERIFIED"
     REJECTED = "REJECTED"
@@ -42,44 +41,44 @@ class EmployeeKycRecord(SQLModel, table=True):
     tenant_id: UUID = Field(primary_key=True)
     id: UUID = Field(primary_key=True)
     employment_id: UUID = Field(index=True)
-    person_id: Optional[UUID] = Field(default=None, index=True)
+    person_id: UUID | None = Field(default=None, index=True)
 
     # Identity
-    pan_number: Optional[str] = Field(default=None, max_length=20)
-    aadhaar_number: Optional[str] = Field(default=None, max_length=20)
-    uan_number: Optional[str] = Field(default=None, max_length=20)
-    pf_number: Optional[str] = Field(default=None, max_length=50)
-    esi_number: Optional[str] = Field(default=None, max_length=50)
-    passport_number: Optional[str] = Field(default=None, max_length=50)
-    passport_expiry: Optional[date] = Field(default=None)
-    driving_license: Optional[str] = Field(default=None, max_length=50)
-    voter_id: Optional[str] = Field(default=None, max_length=50)
+    pan_number: str | None = Field(default=None, max_length=20)
+    aadhaar_number: str | None = Field(default=None, max_length=20)
+    uan_number: str | None = Field(default=None, max_length=20)
+    pf_number: str | None = Field(default=None, max_length=50)
+    esi_number: str | None = Field(default=None, max_length=50)
+    passport_number: str | None = Field(default=None, max_length=50)
+    passport_expiry: date | None = Field(default=None)
+    driving_license: str | None = Field(default=None, max_length=50)
+    voter_id: str | None = Field(default=None, max_length=50)
 
     # Bank
-    bank_name: Optional[str] = Field(default=None, max_length=100)
-    account_holder_name: Optional[str] = Field(default=None, max_length=255)
-    account_number: Optional[str] = Field(default=None, max_length=50)
-    ifsc_code: Optional[str] = Field(default=None, max_length=20)
-    branch_name: Optional[str] = Field(default=None, max_length=100)
+    bank_name: str | None = Field(default=None, max_length=100)
+    account_holder_name: str | None = Field(default=None, max_length=255)
+    account_number: str | None = Field(default=None, max_length=50)
+    ifsc_code: str | None = Field(default=None, max_length=20)
+    branch_name: str | None = Field(default=None, max_length=100)
 
     # Personal & Family
-    father_or_spouse_name: Optional[str] = Field(default=None, max_length=255)
-    marital_status: Optional[str] = Field(default=None, max_length=20)
-    blood_group: Optional[str] = Field(default=None, max_length=10)
-    emergency_contact_name: Optional[str] = Field(default=None, max_length=255)
-    emergency_contact_relation: Optional[str] = Field(default=None, max_length=50)
-    emergency_contact_phone: Optional[str] = Field(default=None, max_length=20)
-    current_address: Optional[str] = Field(default=None, max_length=500)
-    permanent_address: Optional[str] = Field(default=None, max_length=500)
+    father_or_spouse_name: str | None = Field(default=None, max_length=255)
+    marital_status: str | None = Field(default=None, max_length=20)
+    blood_group: str | None = Field(default=None, max_length=10)
+    emergency_contact_name: str | None = Field(default=None, max_length=255)
+    emergency_contact_relation: str | None = Field(default=None, max_length=50)
+    emergency_contact_phone: str | None = Field(default=None, max_length=20)
+    current_address: str | None = Field(default=None, max_length=500)
+    permanent_address: str | None = Field(default=None, max_length=500)
 
     # Status & Verification
     status: str = Field(default=KycStatus.NOT_SUBMITTED, max_length=50)
-    submitted_at: Optional[datetime] = Field(default=None)
-    verified_at: Optional[datetime] = Field(default=None)
-    verified_by: Optional[UUID] = Field(default=None)
-    rejection_reason: Optional[str] = Field(default=None, max_length=1000)
-    updated_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    updated_by: Optional[UUID] = Field(default=None)
+    submitted_at: datetime | None = Field(default=None)
+    verified_at: datetime | None = Field(default=None)
+    verified_by: UUID | None = Field(default=None)
+    rejection_reason: str | None = Field(default=None, max_length=1000)
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    updated_by: UUID | None = Field(default=None)
     version: int = Field(default=0)
 
 
@@ -92,7 +91,7 @@ class EmployeeKycDocument(SQLModel, table=True):
 
     document_type: str = Field(max_length=50)
     document_title: str = Field(max_length=255)
-    document_number: Optional[str] = Field(default=None, max_length=100)
+    document_number: str | None = Field(default=None, max_length=100)
 
     file_name: str = Field(max_length=255)
     file_size: int = Field()
@@ -100,11 +99,11 @@ class EmployeeKycDocument(SQLModel, table=True):
     storage_path: str = Field(max_length=500)
 
     status: str = Field(default=DocumentStatus.PENDING, max_length=50)
-    rejection_reason: Optional[str] = Field(default=None, max_length=1000)
-    comments: Optional[str] = Field(default=None, max_length=1000)
+    rejection_reason: str | None = Field(default=None, max_length=1000)
+    comments: str | None = Field(default=None, max_length=1000)
 
-    uploaded_by: Optional[UUID] = Field(default=None)
-    uploaded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    verified_by: Optional[UUID] = Field(default=None)
-    verified_at: Optional[datetime] = Field(default=None)
+    uploaded_by: UUID | None = Field(default=None)
+    uploaded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    verified_by: UUID | None = Field(default=None)
+    verified_at: datetime | None = Field(default=None)
     version: int = Field(default=0)

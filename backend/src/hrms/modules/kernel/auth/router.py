@@ -15,7 +15,7 @@ the login_lookup() SECURITY DEFINER function (migration 0005) rather than an
 ordinary RLS-scoped query — see core/database.get_anonymous_session.
 """
 
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from uuid import UUID
 
 from fastapi import APIRouter, HTTPException, status
@@ -43,8 +43,10 @@ router = APIRouter(prefix="/v1/auth", tags=["Auth"])
 @router.post("/login", response_model=LoginResponse, summary="Sign in with email and password")
 async def login(body: LoginRequest, session: AnonymousSessionDep) -> LoginResponse:
     row = (
-        await session.execute(text("SELECT * FROM login_lookup(:email)"), {"email": body.email})
-    ).mappings().first()
+        (await session.execute(text("SELECT * FROM login_lookup(:email)"), {"email": body.email}))
+        .mappings()
+        .first()
+    )
 
     invalid = HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
     if not row or row["status"] != "ACTIVE":
@@ -62,8 +64,15 @@ async def login(body: LoginRequest, session: AnonymousSessionDep) -> LoginRespon
     # actually stop logins for it to mean anything, not just change a
     # cosmetic badge.
     tenant_row = (
-        await session.execute(text("SELECT status, archived_at FROM tenants WHERE id = :tid"), {"tid": str(tenant_id)})
-    ).mappings().first()
+        (
+            await session.execute(
+                text("SELECT status, archived_at FROM tenants WHERE id = :tid"),
+                {"tid": str(tenant_id)},
+            )
+        )
+        .mappings()
+        .first()
+    )
     if not tenant_row or tenant_row["status"] != "ACTIVE" or tenant_row["archived_at"] is not None:
         raise HTTPException(status.HTTP_403_FORBIDDEN, "This company's account is suspended")
 
@@ -77,12 +86,14 @@ async def login(body: LoginRequest, session: AnonymousSessionDep) -> LoginRespon
             UPDATE user_accounts SET last_login_at = :now
             WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:uid AS uuid)
         """),
-        {"now": datetime.now(timezone.utc), "tid": str(tenant_id), "uid": str(account_id)},
+        {"now": datetime.now(UTC), "tid": str(tenant_id), "uid": str(account_id)},
     )
 
     principal = Principal(
-        tenant_id=tenant_id, user_account_id=account_id,
-        employment_id=employment_id, role_names=frozenset(),
+        tenant_id=tenant_id,
+        user_account_id=account_id,
+        employment_id=employment_id,
+        role_names=frozenset(),
     )
     scope = await resolve_scope(session, tenant_id, principal)
     user = await _build_me_response(session, tenant_id, account_id, employment_id, scope)
@@ -102,7 +113,9 @@ async def login(body: LoginRequest, session: AnonymousSessionDep) -> LoginRespon
 
 
 @router.post(
-    "/register-company", response_model=LoginResponse, status_code=status.HTTP_201_CREATED,
+    "/register-company",
+    response_model=LoginResponse,
+    status_code=status.HTTP_201_CREATED,
     summary="Register a brand-new company as its own isolated tenant",
 )
 async def register_company(body: TenantRegister, session: AnonymousSessionDep) -> LoginResponse:
@@ -118,18 +131,28 @@ async def register_company(body: TenantRegister, session: AnonymousSessionDep) -
     becoming that tenant's user themselves.
     """
     tenant_id, _legal_entity_id, account_id = await bootstrap_tenant(
-        session, company_name=body.company_name, country_code=body.country_code,
-        admin_email=body.admin_email, admin_password=body.admin_password,
+        session,
+        company_name=body.company_name,
+        country_code=body.country_code,
+        admin_email=body.admin_email,
+        admin_password=body.admin_password,
     )
 
-    principal = Principal(tenant_id=tenant_id, user_account_id=account_id, employment_id=None, role_names=frozenset())
+    principal = Principal(
+        tenant_id=tenant_id, user_account_id=account_id, employment_id=None, role_names=frozenset()
+    )
     scope = await resolve_scope(session, tenant_id, principal)
     user = await _build_me_response(session, tenant_id, account_id, None, scope)
 
     token = create_access_token(
-        user_account_id=account_id, tenant_id=tenant_id, employment_id=None, role_names=list(scope.role_names),
+        user_account_id=account_id,
+        tenant_id=tenant_id,
+        employment_id=None,
+        role_names=list(scope.role_names),
     )
-    return LoginResponse(access_token=token, expires_in=settings.access_token_expire_minutes * 60, user=user)
+    return LoginResponse(
+        access_token=token, expires_in=settings.access_token_expire_minutes * 60, user=user
+    )
 
 
 @router.get("/me", response_model=MeResponse, summary="The signed-in user's profile and access")
@@ -141,35 +164,57 @@ async def me(principal: CurrentUser, session: SessionDep) -> MeResponse:
 
 
 async def _build_me_response(
-    session: AsyncSession, tenant_id: UUID, account_id: UUID, employment_id: UUID | None, scope: Scope,
+    session: AsyncSession,
+    tenant_id: UUID,
+    account_id: UUID,
+    employment_id: UUID | None,
+    scope: Scope,
 ) -> MeResponse:
     account_row = (
-        await session.execute(
-            text("SELECT email FROM user_accounts WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:uid AS uuid)"),
-            {"tid": str(tenant_id), "uid": str(account_id)},
+        (
+            await session.execute(
+                text(
+                    "SELECT email FROM user_accounts WHERE tenant_id = CAST(:tid AS uuid) "
+                    "AND id = CAST(:uid AS uuid)"
+                ),
+                {"tid": str(tenant_id), "uid": str(account_id)},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     email = account_row["email"] if account_row else None
 
     tenant_row = (
-        await session.execute(
-            text("SELECT display_name FROM tenants WHERE id = CAST(:tid AS uuid)"), {"tid": str(tenant_id)}
+        (
+            await session.execute(
+                text("SELECT display_name FROM tenants WHERE id = CAST(:tid AS uuid)"),
+                {"tid": str(tenant_id)},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     tenant_name = tenant_row["display_name"] if tenant_row else "Workspace"
 
     name = email or "Unnamed user"
     if employment_id:
         person_row = (
-            await session.execute(
-                text("""
-                    SELECT COALESCE(p.preferred_name, p.legal_first_name) AS first, p.legal_last_name AS last
-                    FROM employments e JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+            (
+                await session.execute(
+                    text("""
+                    SELECT COALESCE(p.preferred_name, p.legal_first_name) AS first,
+                    p.legal_last_name AS last
+                    FROM employments e JOIN persons p ON p.tenant_id = e.tenant_id AND p.id =
+                    e.person_id
                     WHERE e.tenant_id = CAST(:tid AS uuid) AND e.id = CAST(:eid AS uuid)
                 """),
-                {"tid": str(tenant_id), "eid": str(employment_id)},
+                    {"tid": str(tenant_id), "eid": str(employment_id)},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if person_row:
             name = f"{person_row['first']} {person_row['last']}"
 

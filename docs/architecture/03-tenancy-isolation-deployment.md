@@ -34,15 +34,18 @@ Why not the alternatives as the default:
 
 ## Isolation mechanics, in layers
 
-1. **Edge resolution.** The tenant comes from the host (`kaveri.hrms.app` or a custom domain) and must match the tenant claim in the access token. A mismatch is rejected.
-2. **Context propagation.** One tenant-context object travels from request to service to database session to outbox event to background job to log line. Code that runs without it fails.
-3. **Row-level security.** Every tenant table has an RLS policy on `tenant_id = current_setting('app.tenant_id')::uuid`, with `FORCE ROW LEVEL SECURITY`. The application connects as a role that does not own the tables. The setting is made with `SET LOCAL` inside each transaction, which stays safe under transaction-mode connection pooling (PgBouncer). With no context, a query returns no rows.
-4. **Keys that cannot cross.** Primary keys, unique constraints and foreign keys all include `tenant_id` (composite foreign keys), so a row in one tenant cannot reference a row in another, even through an application bug.
-5. **Every other store.** Cache keys are prefixed `t:{tenant_id}:`. Search uses per-tenant routing or indices, plus a mandatory tenant filter. Object storage uses a per-tenant prefix, a per-tenant data key and short-lived signed URLs. Queue messages carry the tenant in the envelope.
-6. **Background jobs** are scheduled and executed per tenant. No job iterates a whole table.
-7. **Analytics** carries `tenant_id` on every fact, with row policies in the warehouse and the BI layer.
-8. **Tests.** CI includes cross-tenant leakage tests: two tenant fixtures, with every API endpoint called using the other tenant's IDs. A lint rule blocks raw SQL outside the tenant-aware data layer. Penetration tests target isolation specifically.
-9. **Observability.** Logs, traces and metrics are tagged with the tenant ID, and log scrubbing keeps personal data out of them.
+![Multi-Tenant Isolation Architecture & Dual-Role RLS Enforcement](diagrams/tenancy.svg)
+
+*Figure 1: Multi-tenant context flow from JWT Bearer token into PostgreSQL 16 RLS with dual-role least privilege.*
+
+1. **Edge resolution & Authn.** The tenant UUID is decoded directly from the verified JWT `Principal` (falling back to development headers only in test environments). A mismatch or forged tenant ID fails at authentication before route dispatch.
+2. **Context propagation.** The tenant ID is bound to the async request dependency `get_session(tenant_id)` in FastAPI. Every session executes `SELECT set_config('app.tenant_id', :tid, true)` prior to executing any SQL statement.
+3. **Row-level security & Dual Roles.** Every tenant table is protected by a PostgreSQL RLS policy on `tenant_id = current_setting('app.tenant_id')::uuid` with `FORCE ROW LEVEL SECURITY`. Crucially, migrations run as superuser `hrms`, while the application connects as `hrms_app` (migration 0005) with `NOSUPERUSER` and `NOBYPASSRLS`. Even if application-layer code omits `WHERE tenant_id = ...`, PostgreSQL itself rejects cross-tenant data access.
+4. **Anonymous Pre-Auth Isolation.** Pre-login endpoints (`POST /v1/auth/login`) connect via `AnonymousSessionDep` where `app.tenant_id` remains unset. Anonymous callers cannot query RLS tables; credential lookup occurs strictly through the `login_lookup()` `SECURITY DEFINER` function which exposes only authentication columns.
+5. **Real-Time Revocation Checks.** Rather than waiting out an 8-hour JWT expiration, `get_session()` queries `SELECT status, archived_at FROM tenants WHERE id = :tid` on every single request. Suspended or archived tenants are cut off immediately.
+6. **Keys that cannot cross.** Primary keys and foreign keys include `tenant_id` as composite keys (e.g. `(tenant_id, id)`), mathematically preventing a record in one tenant from linking to an entity in another.
+7. **Every other store.** Cache keys are prefixed `t:{tenant_id}:`. Object storage paths use `/app/storage/{module}/{tenant_id}/...`.
+8. **Observability.** Logs and traces (via `structlog`) are contextualized with `tenant_id`, and sensitive PII is masked.
 
 ## Shared resources and tenant resources
 
@@ -78,6 +81,10 @@ At run time a cell depends on the control plane only through cached configuratio
 - **Multi-location is not multi-region.** A tenant with branches across India lives in one region; latency is not an issue.
 - **Tenants spanning countries** get one home region by default. If a country later requires local storage, the options are a separate tenant in that region with limited federation, or a later "satellite data" feature. Decide before selling outside India (decision D4 in Architecture 8).
 - Disaster recovery replicates within the same jurisdiction. Recovery objectives are set per tier (suggested starting point: RPO 15 minutes and RTO 4 hours for pooled; tighter for dedicated).
+
+![AWS Production Deployment Architecture](diagrams/aws.svg)
+
+*Figure 2: Production cloud infrastructure topology — Mumbai primary VPC with Aurora Multi-AZ and Hyderabad DR replica.*
 
 ## Tenant lifecycle
 

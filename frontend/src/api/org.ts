@@ -44,6 +44,17 @@ export interface Job {
   version: number;
 }
 
+export interface EmployeeIdScheme {
+  id: string;
+  legal_entity_id: string | null;
+  legal_entity_name: string | null;
+  prefix: string;
+  separator: string;
+  number_digits: number;
+  next_number: number;
+  preview: string;
+}
+
 export const orgApi = {
   listLegalEntities: () => api.get<LegalEntity[]>("/v1/org/legal-entities"),
   createLegalEntity: (body: { name: string; short_name?: string; country_code?: string }) =>
@@ -64,4 +75,12 @@ export const orgApi = {
   listJobs: () => api.get<Job[]>("/v1/org/jobs"),
   createJob: (body: { title: string; code?: string; function?: string }) =>
     api.post<Job>("/v1/org/jobs", body),
+
+  listEmployeeIdSchemes: () => api.get<EmployeeIdScheme[]>("/v1/org/employee-id-schemes"),
+  createEmployeeIdScheme: (body: {
+    legal_entity_id?: string; prefix: string; separator?: string; number_digits?: number; next_number?: number;
+  }) => api.post<EmployeeIdScheme>("/v1/org/employee-id-schemes", body),
+  updateEmployeeIdScheme: (id: string, body: Partial<Pick<EmployeeIdScheme, "prefix" | "separator" | "number_digits" | "next_number">>) =>
+    api.patch<EmployeeIdScheme>(`/v1/org/employee-id-schemes/${id}`, body),
+  deleteEmployeeIdScheme: (id: string) => api.delete(`/v1/org/employee-id-schemes/${id}`),
 };

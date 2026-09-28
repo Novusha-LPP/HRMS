@@ -1,1 +1,91 @@
-<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 1000 440" width="1000" height="440" role="img" aria-label="Configuration resolves from the most general layer to the most specific; the most specific layer that sets a value wins, so two employees of the same tenant can get different values." font-family="'Segoe UI','Noto Sans',Helvetica,Arial,sans-serif"><defs><marker id="ah" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path d="M0,0 L10,5 L0,10 z" fill="#4f5e67"/></marker></defs><rect x="0.5" y="0.5" width="999" height="439" rx="10" fill="#ffffff" stroke="#d5dde1"/><text x="20" y="30" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Layer (general → specific)</text><text x="420" y="30" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Grace period set here</text><rect x="20" y="44" width="370" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="32" y="66.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Platform default</text><rect x="420" y="44" width="120" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="480.0" y="66.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="middle">0 min</text><rect x="20" y="90" width="370" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="32" y="112.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Country pack · India</text><rect x="420" y="90" width="120" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="480.0" y="112.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="middle">—</text><rect x="20" y="136" width="370" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="32" y="158.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Industry pack · Manufacturing</text><rect x="420" y="136" width="120" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="480.0" y="158.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="middle">5 min</text><rect x="20" y="182" width="370" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="32" y="204.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Tenant · Kaveri Group</text><rect x="420" y="182" width="120" height="36" rx="6" fill="#ddeaea" stroke="#0d6b6b" stroke-width="1.25"/><text x="480.0" y="204.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="middle">10 min</text><rect x="20" y="228" width="370" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="32" y="250.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Company · Kaveri Polymers</text><rect x="420" y="228" width="120" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="480.0" y="250.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="middle">—</text><rect x="20" y="274" width="370" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="32" y="296.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Location · Vadodara Plant</text><rect x="420" y="274" width="120" height="36" rx="6" fill="#ddeaea" stroke="#0d6b6b" stroke-width="1.25"/><text x="480.0" y="296.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="middle">5 min</text><rect x="20" y="320" width="370" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="32" y="342.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="start">Employee group · Shift workers</text><rect x="420" y="320" width="120" height="36" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="480.0" y="342.0" font-size="12" font-weight="600" fill="#16222a" text-anchor="middle">—</text><text x="20" y="420" font-size="12" font-weight="400" fill="#4f5e67" text-anchor="start">Most specific published value wins · the effective date picks the version · a layer can lock a value (e.g. a statutory minimum) so lower layers cannot override it</text><rect x="680" y="120" width="300" height="64" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="830.0" y="148.0" font-size="13" font-weight="600" fill="#16222a" text-anchor="middle">Priya · Pune office · Sales</text><text x="830.0" y="164.0" font-size="12" font-weight="400" fill="#4f5e67" text-anchor="middle">resolves to 10 min (Tenant)</text><rect x="680" y="250" width="300" height="64" rx="6" fill="#f4f6f7" stroke="#7b8a92" stroke-width="1.25"/><text x="830.0" y="278.0" font-size="13" font-weight="600" fill="#16222a" text-anchor="middle">Imran · Vadodara Plant · shift worker</text><text x="830.0" y="294.0" font-size="12" font-weight="400" fill="#4f5e67" text-anchor="middle">resolves to 5 min (Location)</text><polyline points="540,200 610,200 610,152 678,152" fill="none" stroke="#4f5e67" stroke-width="1.5" marker-end="url(#ah)"/><text x="616" y="168" font-size="12" fill="#4f5e67" text-anchor="start">wins for</text><polyline points="540,292 610,292 610,282 678,282" fill="none" stroke="#4f5e67" stroke-width="1.5" marker-end="url(#ah)"/><text x="616" y="276" font-size="12" fill="#4f5e67" text-anchor="start">wins for</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1050 480" width="1050" height="480" role="img" aria-label="Hierarchical Policy Resolution Engine: Employee, Department ancestor tree, Legal Entity, and Tenant Default fallback." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif">
+  <style>
+    .bg{fill:#ffffff;stroke:#d5dde1}
+    .n{fill:#f4f6f7;stroke:#7b8a92}
+    .na{fill:#ddeaea;stroke:#0d6b6b}
+    .nb{fill:#eff6ff;stroke:#3b82f6}
+    .g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}
+    .t{fill:#16222a;font-weight:600}
+    .s{fill:#4f5e67}
+    .ta{fill:#0d6b6b;font-weight:600}
+    .tb{fill:#1e40af;font-weight:600}
+    .e{fill:none;stroke:#4f5e67;stroke-width:1.5}
+    .ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}
+    .ah{fill:#4f5e67}
+  </style>
+  <defs>
+    <marker id="ah-config" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0.5" y="0.5" width="1049" height="479" rx="10"/>
+
+  <text class="t" x="30" y="32" font-size="14">Hierarchical Policy Resolution Engine (`resolve_policy()` in `modules/policy`)</text>
+  <text class="s" x="30" y="50" font-size="12">How work schedules, alternate Saturdays, grace periods, and overtime rules resolve hierarchically per employee.</text>
+
+  <!-- 4 TIERS BOX -->
+  <text class="t" x="30" y="85" font-size="12">Resolution Priority (Most Specific → Broadest Fallback)</text>
+  <text class="t" x="480" y="85" font-size="12">Resolved Policy Parameters</text>
+
+  <!-- Tier 1: Employee Specific -->
+  <rect class="na" x="30" y="100" width="420" height="64" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="44" y="124" font-size="12">Tier 1: Employee-Specific Assignment (`employment_id`)</text>
+  <text class="s" x="44" y="142" font-size="10">Explicit override targeting one individual (e.g. customized working hours or special shift).</text>
+  <text class="s" x="44" y="154" font-size="10">Checked FIRST. If matching active assignment exists, its parameters win.</text>
+
+  <!-- Tier 2: Org Unit / Dept Tree -->
+  <rect class="n" x="30" y="174" width="420" height="64" rx="6" stroke-width="1.25"/>
+  <text class="t" x="44" y="198" font-size="12">Tier 2: Department Tree Ancestor Chain (`org_unit_id`)</text>
+  <text class="s" x="44" y="216" font-size="10">Walks up the employee's organizational hierarchy (e.g. QA Team → Engineering → R&amp;D).</text>
+  <text class="s" x="44" y="228" font-size="10">The closest ancestor department with an active policy assignment applies.</text>
+
+  <!-- Tier 3: Legal Entity -->
+  <rect class="n" x="30" y="248" width="420" height="64" rx="6" stroke-width="1.25"/>
+  <text class="t" x="44" y="272" font-size="12">Tier 3: Legal Entity Company Tier (`legal_entity_id`)</text>
+  <text class="s" x="44" y="290" font-size="10">Whole-company policy (migration 0014). Guaranteed to exist for every employment.</text>
+  <text class="s" x="44" y="302" font-size="10">Allows sister companies in the same tenant to have different factory vs corporate rules.</text>
+
+  <!-- Tier 4: Tenant Default -->
+  <rect class="n" x="30" y="322" width="420" height="64" rx="6" stroke-width="1.25"/>
+  <text class="t" x="44" y="346" font-size="12">Tier 4: Tenant Default Template (`is_default = true`)</text>
+  <text class="s" x="44" y="364" font-size="10">Standard baseline template created during tenant onboarding.</text>
+  <text class="s" x="44" y="376" font-size="10">Catches any employee without specific employee, department, or company assignments.</text>
+
+  <!-- Resolution Flow Arrows -->
+  <polyline class="e" points="240,164 240,172" marker-end="url(#ah-config)"/>
+  <polyline class="e" points="240,238 240,246" marker-end="url(#ah-config)"/>
+  <polyline class="e" points="240,312 240,320" marker-end="url(#ah-config)"/>
+
+  <!-- RIGHT SIDE: RESOLVED PARAMETERS CARD -->
+  <rect class="nb" x="480" y="100" width="540" height="286" rx="6" stroke-width="1.25"/>
+  <text class="tb" x="500" y="128" font-size="13">Active Policy Configuration (`PolicyTemplate` &amp; Overrides)</text>
+
+  <!-- Working Days & Saturday Patterns -->
+  <rect class="n" x="500" y="142" width="500" height="60" rx="4"/>
+  <text class="t" x="514" y="162" font-size="11">Work Schedule &amp; Alternate Saturday Pattern:</text>
+  <text class="s" x="514" y="178" font-size="10">• work_days: 7-char mask ("1111100" Mon–Fri, "1111110" Mon–Sat)</text>
+  <text class="s" x="514" y="192" font-size="10">• saturday_pattern: ALL, SECOND_FOURTH_OFF, or FIRST_THIRD_OFF (migration 0013)</text>
+
+  <!-- Timing & Grace Periods -->
+  <rect class="n" x="500" y="210" width="500" height="60" rx="4"/>
+  <text class="t" x="514" y="230" font-size="11">Work Hours &amp; Leniency:</text>
+  <text class="s" x="514" y="246" font-size="10">• expected_start_time: 09:00:00 · expected_end_time: 18:00:00</text>
+  <text class="s" x="514" y="260" font-size="10">• grace_late_minutes: 15 min · grace_early_departure_minutes: 15 min · break_minutes: 60 min</text>
+
+  <!-- Overtime Rules -->
+  <rect class="n" x="500" y="278" width="500" height="60" rx="4"/>
+  <text class="t" x="514" y="298" font-size="11">Overtime &amp; Regularization Rules:</text>
+  <text class="s" x="514" y="314" font-size="10">• ot_enabled: True · ot_qualifying_minutes: 30 min · ot_rate: 1.5x · ot_daily_cap_minutes: 120</text>
+  <text class="s" x="514" y="328" font-size="10">• correction_approval_levels: 1 to 3 approvers required</text>
+
+  <polyline class="e" points="450,132 478,132" marker-end="url(#ah-config)"/>
+  <polyline class="e" points="450,206 478,206" marker-end="url(#ah-config)"/>
+  <polyline class="e" points="450,280 478,280" marker-end="url(#ah-config)"/>
+  <polyline class="e" points="450,354 478,354" marker-end="url(#ah-config)"/>
+
+  <!-- BOTTOM FOOTER -->
+  <text class="s" x="30" y="425" font-size="11">Single source of truth: `resolve_policy()` in `backend/src/hrms/modules/policy/engine.py` evaluated on every punch and attendance recomputation.</text>
+  <text class="s" x="30" y="445" font-size="11">Overrides on employee assignment (`ot_qualifying_minutes_override`, `grace_late_minutes_override`) take precedence over template values.</text>
+</svg>

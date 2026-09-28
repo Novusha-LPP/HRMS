@@ -15,7 +15,7 @@ import { PunchClock } from "../components/attendance/PunchClock";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { Segmented } from "../components/ui/Tabs";
-import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
+import { EmptyState, Notice, NoEmployeeRecord, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 
 const DOT: Record<string, string> = {
@@ -51,7 +51,21 @@ export function AttendancePage() {
     enabled: !!user?.employmentId,
   });
 
-  if (!user || !user.employmentId) return null;
+  if (!user) return null;
+  if (!user.employmentId) {
+    const canReview = ["HR", "SUPER_ADMIN", "MANAGER"].includes(user.role);
+    return (
+      <>
+        <PageHeader
+          title="Attendance"
+          description="Your check-ins, working hours and monthly record."
+          actions={canReview ? <Link to="/daily-analysis" className="btn-secondary"><CalendarCheck size={15} /> Daily Analysis</Link> : undefined}
+        />
+        {canReview && <div className="mb-4"><OvertimeApprovals /></div>}
+        <NoEmployeeRecord feature="attendance record" />
+      </>
+    );
+  }
 
   const days = data ?? [];
   const byDate = new Map(days.map((d) => [d.work_date.slice(0, 10), d]));

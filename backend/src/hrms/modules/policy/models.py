@@ -1,7 +1,6 @@
 from __future__ import annotations
 
 from datetime import date, datetime, time
-from typing import Optional
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
@@ -12,13 +11,13 @@ class PolicyTemplate(SQLModel, table=True):
 
     tenant_id: UUID = Field(primary_key=True)
     id: UUID = Field(primary_key=True)
-    recorded_at: Optional[datetime] = Field(default=None)
-    recorded_by: Optional[UUID] = Field(default=None)
+    recorded_at: datetime | None = Field(default=None)
+    recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)
-    archived_at: Optional[datetime] = Field(default=None)
+    archived_at: datetime | None = Field(default=None)
 
     name: str = Field(max_length=100)
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=500)
     is_default: bool = Field(default=False)
     timezone: str = Field(default="UTC", max_length=50)
 
@@ -42,7 +41,7 @@ class PolicyTemplate(SQLModel, table=True):
     ot_enabled: bool = Field(default=True)
     ot_qualifying_minutes: int = Field(default=30, ge=0)
     ot_rate: float = Field(default=1.5, ge=1.0)
-    ot_daily_cap_minutes: Optional[int] = Field(default=None)
+    ot_daily_cap_minutes: int | None = Field(default=None)
 
     punch_rounding_minutes: int = Field(default=0, ge=0)
     punch_rounding_direction: str = Field(default="NONE", max_length=10)
@@ -63,24 +62,25 @@ class EmployeePolicyAssignment(SQLModel, table=True):
     even if no org_unit tree has been set up yet), then falls back to the
     tenant default template.
     """
+
     __tablename__ = "employee_policy_assignments"
 
     tenant_id: UUID = Field(primary_key=True)
     id: UUID = Field(primary_key=True)
-    recorded_at: Optional[datetime] = Field(default=None)
-    recorded_by: Optional[UUID] = Field(default=None)
+    recorded_at: datetime | None = Field(default=None)
+    recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)
-    archived_at: Optional[datetime] = Field(default=None)
+    archived_at: datetime | None = Field(default=None)
 
-    employment_id: Optional[UUID] = Field(default=None, index=True)
-    org_unit_id: Optional[UUID] = Field(default=None, index=True)
-    legal_entity_id: Optional[UUID] = Field(default=None, index=True)
+    employment_id: UUID | None = Field(default=None, index=True)
+    org_unit_id: UUID | None = Field(default=None, index=True)
+    legal_entity_id: UUID | None = Field(default=None, index=True)
     policy_template_id: UUID = Field(index=True)
     effective_from: date
-    effective_to: Optional[date] = Field(default=None)
+    effective_to: date | None = Field(default=None)
 
-    ot_qualifying_minutes_override: Optional[int] = Field(default=None)
-    grace_late_minutes_override: Optional[int] = Field(default=None)
-    grace_early_departure_minutes_override: Optional[int] = Field(default=None)
-    ot_enabled_override: Optional[bool] = Field(default=None)
-    ot_rate_override: Optional[float] = Field(default=None)
+    ot_qualifying_minutes_override: int | None = Field(default=None)
+    grace_late_minutes_override: int | None = Field(default=None)
+    grace_early_departure_minutes_override: int | None = Field(default=None)
+    ot_enabled_override: bool | None = Field(default=None)
+    ot_rate_override: float | None = Field(default=None)

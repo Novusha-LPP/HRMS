@@ -1,23 +1,30 @@
-# HRMS Platform: pre-implementation docs
+# HRMS Platform — Architecture & System Design Documentation
 
-Architecture analysis for building the SURAJ Group HRMS requirements (v2.0, 17 Sep 2026) as a multi-tenant enterprise platform. SURAJ Group is the first tenant. Performance/KPI is excluded from this analysis.
+Authoritative system design and architecture specifications for the HRMS Platform, aligned with the running codebase (`backend/` and `frontend/`).
 
-The same content, plus design tokens, component styles and live previews, is published as the design system artifact: https://claude.ai/artifact/8aT6uK81pa21ku7f1H2Zjv
+---
+
+## Authoritative Specifications
+
+| Document | Description |
+|---|---|
+| [System Design Specification](system-design/README.md) | **Primary System Design Document**: Component & container architecture, multi-tenant dual planes (Platform vs Tenant), dual-role PostgreSQL RLS security, 13 domain modules breakdown, and Alembic schema evolution (0001–0016). |
+| [Technology Stack Reference](TECH_STACK.md) | Concrete inventory of frameworks, runtimes, ORMs, libraries, and dev tools across backend, frontend, database, and DevOps. |
+
+---
+
+## Architectural Deep-Dives
 
 | File | Contents |
 |---|---|
-| [architecture/01-overview.md](architecture/01-overview.md) | Conclusions, principles, requirement-to-mechanism map, suggested stack |
-| [architecture/02-requirements-analysis.md](architecture/02-requirements-analysis.md) | Module-by-module analysis, findings, gaps, phasing issues |
-| [architecture/03-tenancy-isolation-deployment.md](architecture/03-tenancy-isolation-deployment.md) | Tenant definition, isolation tiers and mechanics, shared resources, control plane, regions, tenant lifecycle |
-| [architecture/04-organization-people-history.md](architecture/04-organization-people-history.md) | Organisation dimensions, person/employment/assignment, personnel actions, effective dating |
-| [architecture/05-identity-access-security.md](architecture/05-identity-access-security.md) | Identity, authorization layers, data classes, audit, security, DPDP |
-| [architecture/06-configuration-workflow-rules.md](architecture/06-configuration-workflow-rules.md) | Configuration layers, workflow engine, obligations, exceptions, notifications, extensibility |
-| [architecture/07-application-data-integration-scale.md](architecture/07-application-data-integration-scale.md) | Modular monolith, data, payroll input contract, integrations, scalability |
-| [architecture/08-assumptions-risks-decisions.md](architecture/08-assumptions-risks-decisions.md) | Assumptions, risks, scalability concerns, future expansion, decisions, revised phasing |
-| [ui/](ui/) | Tenant theming, terminology and locale, status vocabulary, restricted data on screen |
+| [architecture/01-overview.md](architecture/01-overview.md) | Architectural principles, multi-tenant foundations, and confirmed production technology stack |
+| [architecture/02-requirements-analysis.md](architecture/02-requirements-analysis.md) | Domain requirements analysis, enterprise capabilities, and functional scope |
+| [architecture/03-tenancy-isolation-deployment.md](architecture/03-tenancy-isolation-deployment.md) | Tenant definition, PostgreSQL RLS, dual-role least privilege (`hrms_app`), and real-time revocation |
+| [architecture/04-organization-people-history.md](architecture/04-organization-people-history.md) | Entity dimensions, Person vs Employment vs UserAccount, effective dating, and personnel actions |
+| [architecture/05-identity-access-security.md](architecture/05-identity-access-security.md) | Identity management, RBAC with 6 data scopes, audit logging, and data classification |
+| [architecture/06-configuration-workflow-rules.md](architecture/06-configuration-workflow-rules.md) | 4-tier policy resolution, multi-level approval workflows, and business rules |
+| [architecture/07-application-data-integration-scale.md](architecture/07-application-data-integration-scale.md) | FastAPI modular monolith architecture, React 19 SPA, and database schema conventions |
+| [architecture/08-assumptions-risks-decisions.md](architecture/08-assumptions-risks-decisions.md) | Architectural decisions, risk mitigations, and scalability strategy |
+| [payroll-design.md](payroll-design.md) | Compensation schemas, salary component structures, and payroll export interfaces |
+| [erp-integration-plan.md](erp-integration-plan.md) | Integration contracts, attendance snapshots, and external ERP synchronization |
 
-Section references such as §12 point to the requirements document.
-
-## System design
-
-[system-design/README.md](system-design/README.md) is the complete system design for the platform and the public API product: capability map, containers, data model, events, integrations, API standards and catalogue, AWS topology, delivery, security, technology stack and roadmap. Diagrams are in [system-design/diagrams/](system-design/diagrams/), and the Mermaid diagrams render on GitHub. Published version: https://claude.ai/artifact/F7VaQJo7B7Sd5sD7qFhSbZ

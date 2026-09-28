@@ -56,6 +56,7 @@ async def wipe_tenant(session) -> None:
         "attendance_days", "punches",
         "personnel_actions", "assignment_managers", "assignments",
         "employments", "persons",
+        "employee_id_schemes",
         "positions", "cost_centres", "grades", "jobs", "org_units", "locations", "legal_entities",
         "role_assignments", "roles", "user_accounts",
     ]

@@ -1,0 +1,138 @@
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1240 760" width="1240" height="760" role="img" aria-label="AWS Deployment Architecture: Route 53, CloudFront for React 19 SPA, ECS/EKS for FastAPI backend, RDS/Aurora PostgreSQL 16 with RLS, S3 for KYC document storage, and Secrets Manager." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif">
+  <style>
+    .bg{fill:#ffffff;stroke:#d5dde1}
+    .n{fill:#f4f6f7;stroke:#7b8a92}
+    .na{fill:#ddeaea;stroke:#0d6b6b}
+    .nb{fill:#eff6ff;stroke:#3b82f6}
+    .np{fill:#eceff1;stroke:#7b8a92}
+    .g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}
+    .t{fill:#16222a;font-weight:600}
+    .s{fill:#4f5e67}
+    .ta{fill:#0d6b6b;font-weight:600}
+    .tb{fill:#1e40af;font-weight:600}
+    .e{fill:none;stroke:#4f5e67;stroke-width:1.5}
+    .ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}
+    .ah{fill:#4f5e67}
+  </style>
+  <defs>
+    <marker id="ah-aws" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0.5" y="0.5" width="1239" height="759" rx="10"/>
+
+  <!-- GLOBAL EDGE TIER -->
+  <rect class="g" x="20" y="16" width="1200" height="96" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="36" font-size="13">1. Global Edge &amp; Delivery Layer</text>
+
+  <rect class="n" x="40" y="46" width="260" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="170" y="68" font-size="13" text-anchor="middle">Amazon Route 53</text>
+  <text class="s" x="170" y="84" font-size="11" text-anchor="middle">DNS Routing · Health Checks · SSL/TLS</text>
+
+  <rect class="nb" x="330" y="46" width="410" height="52" rx="6" stroke-width="1.25"/>
+  <text class="tb" x="535" y="68" font-size="13" text-anchor="middle">CloudFront CDN + AWS WAF</text>
+  <text class="s" x="535" y="84" font-size="11" text-anchor="middle">Serves React 19 SPA Static Assets · Rate Limiting · DDoS Defense</text>
+
+  <rect class="n" x="770" y="46" width="430" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="985" y="68" font-size="13" text-anchor="middle">Application Load Balancer (ALB)</text>
+  <text class="s" x="985" y="84" font-size="11" text-anchor="middle">Routes API traffic (/v1/*) to FastAPI backend cluster</text>
+
+  <polyline class="e" points="300,72 328,72" marker-end="url(#ah-aws)"/>
+  <polyline class="e" points="740,72 768,72" marker-end="url(#ah-aws)"/>
+
+  <!-- PRIMARY REGION: MUMBAI (ap-south-1) -->
+  <rect class="g" x="20" y="128" width="820" height="600" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="148" font-size="14">2. Primary Region · AWS Mumbai (ap-south-1) VPC</text>
+
+  <!-- Public Subnet / Ingress -->
+  <rect class="np" x="40" y="165" width="780" height="50" rx="6" stroke-width="1.25"/>
+  <text class="t" x="54" y="185" font-size="12">Public Subnets (Multi-AZ):</text>
+  <text class="s" x="54" y="202" font-size="11">Internet Gateway · Dual-AZ ALB Listener (HTTPS Port 443) · NAT Gateways</text>
+
+  <!-- Application Compute Layer -->
+  <rect class="na" x="40" y="230" width="780" height="155" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="54" y="252" font-size="13">Compute Layer · AWS ECS Fargate or EKS Node Groups</text>
+  <text class="s" x="54" y="270" font-size="11">FastAPI Modular Monolith Containers (`backend/Dockerfile`, Python 3.12-slim + `uv`)</text>
+
+  <rect class="n" x="60" y="284" width="225" height="85" rx="4"/>
+  <text class="t" x="172" y="306" font-size="11" text-anchor="middle">Task / Pod AZ-a</text>
+  <text class="s" x="172" y="324" font-size="10" text-anchor="middle">Uvicorn Port 8015</text>
+  <text class="s" x="172" y="338" font-size="10" text-anchor="middle">Platform Plane + Tenant Plane</text>
+  <text class="s" x="172" y="352" font-size="10" text-anchor="middle">Connects via hrms_app role</text>
+
+  <rect class="n" x="315" y="284" width="225" height="85" rx="4"/>
+  <text class="t" x="427" y="306" font-size="11" text-anchor="middle">Task / Pod AZ-b</text>
+  <text class="s" x="427" y="324" font-size="10" text-anchor="middle">Uvicorn Port 8015</text>
+  <text class="s" x="427" y="338" font-size="10" text-anchor="middle">Platform Plane + Tenant Plane</text>
+  <text class="s" x="427" y="352" font-size="10" text-anchor="middle">Connects via hrms_app role</text>
+
+  <rect class="n" x="570" y="284" width="230" height="85" rx="4"/>
+  <text class="t" x="685" y="306" font-size="11" text-anchor="middle">Alembic Migration Task</text>
+  <text class="s" x="685" y="324" font-size="10" text-anchor="middle">One-off CI/CD release task</text>
+  <text class="s" x="685" y="338" font-size="10" text-anchor="middle">Runs: alembic upgrade head</text>
+  <text class="s" x="685" y="352" font-size="10" text-anchor="middle">Connects as superuser: hrms</text>
+
+  <polyline class="e" points="430,215 430,228" marker-end="url(#ah-aws)"/>
+
+  <!-- Database & Storage Subnets -->
+  <rect class="g" x="40" y="400" width="780" height="195" rx="6" stroke-width="1.25"/>
+  <text class="t" x="54" y="420" font-size="13">Database &amp; Persistence Tier (Isolated Private Subnets)</text>
+
+  <rect class="na" x="60" y="435" width="345" height="145" rx="4"/>
+  <text class="ta" x="232" y="456" font-size="12" text-anchor="middle">Amazon Aurora / RDS PostgreSQL 16 (Primary)</text>
+  <text class="s" x="74" y="476" font-size="10">• Multi-AZ synchronous standby (Port 5432)</text>
+  <text class="s" x="74" y="492" font-size="10">• Native Row-Level Security (FORCE ROW LEVEL SECURITY)</text>
+  <text class="s" x="74" y="508" font-size="10">• hrms superuser (DDL) vs hrms_app (runtime query)</text>
+  <text class="s" x="74" y="524" font-size="10">• Connection pooling via asyncpg</text>
+  <text class="s" x="74" y="540" font-size="10">• Automated point-in-time backups &amp; KMS encryption</text>
+
+  <rect class="n" x="435" y="435" width="365" height="145" rx="4"/>
+  <text class="t" x="617" y="456" font-size="12" text-anchor="middle">Object Storage, Security &amp; Config</text>
+  <text class="s" x="449" y="476" font-size="10">• Amazon S3: KYC Document Store (PAN, Aadhaar proofs)</text>
+  <text class="s" x="449" y="492" font-size="10">  Path prefix: s3://hrms-storage/{tenant_id}/kyc/...</text>
+  <text class="s" x="449" y="508" font-size="10">• AWS Secrets Manager: Database credentials, JWT secret keys</text>
+  <text class="s" x="449" y="524" font-size="10">• AWS KMS: Server-side data encryption keys</text>
+  <text class="s" x="449" y="540" font-size="10">• Amazon CloudWatch: Structlog JSON logs &amp; alarm metrics</text>
+
+  <polyline class="e" points="430,385 430,398" marker-end="url(#ah-aws)"/>
+
+  <text class="s" x="40" y="618" font-size="11">Security Group Controls: ALB allows 443 from internet; ECS allows 8015 only from ALB; PostgreSQL allows 5432 only from ECS.</text>
+  <text class="s" x="40" y="634" font-size="11">Strict Zero-Trust isolation ensures the database is completely inaccessible from the public internet.</text>
+
+  <!-- DR STANDBY: HYDERABAD (ap-south-2) -->
+  <rect class="g" x="860" y="128" width="360" height="600" rx="8" stroke-width="1.25"/>
+  <text class="t" x="874" y="148" font-size="13">3. Disaster Recovery · Hyderabad (ap-south-2)</text>
+
+  <rect class="n" x="880" y="175" width="320" height="110" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="200" font-size="12" text-anchor="middle">Aurora Cross-Region Replica</text>
+  <text class="s" x="895" y="222" font-size="10">• Asynchronous storage replication</text>
+  <text class="s" x="895" y="238" font-size="10">• Sub-second typical lag</text>
+  <text class="s" x="895" y="254" font-size="10">• Promotable to standalone writer in minutes</text>
+  <text class="s" x="895" y="270" font-size="10">• Meets enterprise RPO &lt; 5 min, RTO &lt; 1 h</text>
+
+  <rect class="n" x="880" y="305" width="320" height="95" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="330" font-size="12" text-anchor="middle">S3 Cross-Region Replication</text>
+  <text class="s" x="895" y="352" font-size="10">• Automatic replication of KYC proofs</text>
+  <text class="s" x="895" y="368" font-size="10">• Versioning &amp; Object Lock enabled</text>
+  <text class="s" x="895" y="384" font-size="10">• Disaster-resilient document backup</text>
+
+  <rect class="n" x="880" y="420" width="320" height="95" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="445" font-size="12" text-anchor="middle">Pilot-Light ECS Standby</text>
+  <text class="s" x="895" y="467" font-size="10">• Container images pre-pushed to ECR</text>
+  <text class="s" x="895" y="483" font-size="10">• Minimal or zero-scale standby tasks</text>
+  <text class="s" x="895" y="499" font-size="10">• Spun up automatically upon regional failover</text>
+
+  <rect class="n" x="880" y="535" width="320" height="85" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="560" font-size="12" text-anchor="middle">Route 53 Automated Failover</text>
+  <text class="s" x="895" y="582" font-size="10">• Health checks monitor Mumbai ALB</text>
+  <text class="s" x="895" y="598" font-size="10">• Automatically redirects DNS on outage</text>
+
+  <!-- Cross-Region Replication Lines -->
+  <polyline class="ed" points="405,510 850,225 878,225" marker-end="url(#ah-aws)"/>
+  <polyline class="ed" points="800,480 850,350 878,350" marker-end="url(#ah-aws)"/>
+
+  <!-- Footer note -->
+  <text class="s" x="860" y="650" font-size="11">In-country disaster recovery conforms to Indian DPDP data residency guidelines.</text>
+</svg>

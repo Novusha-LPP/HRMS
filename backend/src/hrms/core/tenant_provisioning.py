@@ -26,7 +26,12 @@ def slugify(name: str) -> str:
 
 
 async def bootstrap_tenant(
-    session: AsyncSession, *, company_name: str, country_code: str, admin_email: str, admin_password: str,
+    session: AsyncSession,
+    *,
+    company_name: str,
+    country_code: str,
+    admin_email: str,
+    admin_password: str,
 ) -> tuple[UUID, UUID, UUID]:
     """
     Runs on a session with no tenant bound yet (AnonymousSessionDep, or the
@@ -42,22 +47,32 @@ async def bootstrap_tenant(
         await session.execute(text("SELECT 1 FROM login_lookup(:email)"), {"email": admin_email})
     ).first()
     if existing:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, "An account with this email already exists")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, "An account with this email already exists"
+        )
 
     slug = slugify(company_name)
     for candidate in (slug, f"{slug}-{uuid4().hex[:6]}"):
-        taken = (await session.execute(text("SELECT 1 FROM tenants WHERE slug = :slug"), {"slug": candidate})).first()
+        taken = (
+            await session.execute(
+                text("SELECT 1 FROM tenants WHERE slug = :slug"), {"slug": candidate}
+            )
+        ).first()
         if not taken:
             slug = candidate
             break
     else:
-        raise HTTPException(status.HTTP_409_CONFLICT, "Could not allocate a unique identifier — try again")
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, "Could not allocate a unique identifier — try again"
+        )
 
     tenant_id = uuid4()
     # Bind this session to the tenant we're about to create. RLS only checks
     # equality against tenant_id, so this is fine even before the tenants
     # row exists — every insert below just needs to carry the same value.
-    await session.execute(text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)})
+    await session.execute(
+        text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tenant_id)}
+    )
 
     tenant = Tenant(id=tenant_id, slug=slug, display_name=company_name, country_code=country_code)
     session.add(tenant)
@@ -67,23 +82,39 @@ async def bootstrap_tenant(
     for name, desc in ROLE_DESCRIPTIONS.items():
         role_id = uuid4()
         role_ids[name] = role_id
-        session.add(Role(tenant_id=tenant_id, id=role_id, name=name, description=desc, is_system=True))
+        session.add(
+            Role(tenant_id=tenant_id, id=role_id, name=name, description=desc, is_system=True)
+        )
 
     legal_entity_id = uuid4()
-    session.add(LegalEntity(tenant_id=tenant_id, id=legal_entity_id, name=company_name, country_code=country_code))
+    session.add(
+        LegalEntity(
+            tenant_id=tenant_id, id=legal_entity_id, name=company_name, country_code=country_code
+        )
+    )
     await session.flush()
 
     account_id = uuid4()
-    session.add(UserAccount(
-        tenant_id=tenant_id, id=account_id, email=admin_email,
-        password_hash=hash_password(admin_password), status="ACTIVE",
-    ))
+    session.add(
+        UserAccount(
+            tenant_id=tenant_id,
+            id=account_id,
+            email=admin_email,
+            password_hash=hash_password(admin_password),
+            status="ACTIVE",
+        )
+    )
     await session.flush()
 
-    session.add(RoleAssignment(
-        tenant_id=tenant_id, id=uuid4(), user_account_id=account_id,
-        role_id=role_ids["SUPER_ADMIN"], scope_type="ALL",
-    ))
+    session.add(
+        RoleAssignment(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            user_account_id=account_id,
+            role_id=role_ids["SUPER_ADMIN"],
+            scope_type="ALL",
+        )
+    )
     await session.flush()
 
     return tenant_id, legal_entity_id, account_id

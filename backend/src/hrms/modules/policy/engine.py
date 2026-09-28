@@ -12,7 +12,6 @@ from __future__ import annotations
 
 from dataclasses import dataclass
 from datetime import date, time
-from typing import Optional
 from uuid import UUID
 
 from sqlalchemy import text
@@ -25,6 +24,7 @@ from hrms.modules.policy.models import EmployeePolicyAssignment, PolicyTemplate
 @dataclass
 class ResolvedPolicy:
     """Fully merged policy ready for calculations — no further DB lookups needed."""
+
     timezone: str
     expected_start_time: time
     expected_end_time: time
@@ -39,7 +39,7 @@ class ResolvedPolicy:
     ot_enabled: bool
     ot_qualifying_minutes: int
     ot_rate: float
-    ot_daily_cap_minutes: Optional[int]
+    ot_daily_cap_minutes: int | None
     punch_rounding_minutes: int
     punch_rounding_direction: str
     correction_requires_approval: bool
@@ -92,9 +92,7 @@ def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment) -> Re
         else template.grace_early_departure_minutes
     )
     ot_rate = (
-        assignment.ot_rate_override
-        if assignment.ot_rate_override is not None
-        else template.ot_rate
+        assignment.ot_rate_override if assignment.ot_rate_override is not None else template.ot_rate
     )
     std_mins = compute_standard_minutes(
         template.expected_start_time, template.expected_end_time, template.break_minutes
@@ -123,7 +121,10 @@ def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment) -> Re
 
 
 async def _resolve_department_assignment(
-    session, tenant_id: UUID, employment_id: UUID, work_date: date,
+    session,
+    tenant_id: UUID,
+    employment_id: UUID,
+    work_date: date,
 ) -> EmployeePolicyAssignment | None:
     """
     An employee's department-level policy, if any: find their current
@@ -136,10 +137,11 @@ async def _resolve_department_assignment(
         text("""
             SELECT org_unit_id FROM assignments
             WHERE tenant_id = CAST(:tid AS uuid) AND employment_id = CAST(:eid AS uuid)
-              AND effective_to IS NULL
-            LIMIT 1
+              AND effective_from <= :work_date
+              AND (effective_to IS NULL OR effective_to > :work_date)
+            ORDER BY effective_from DESC LIMIT 1
         """),
-        {"tid": str(tenant_id), "eid": str(employment_id)},
+        {"tid": str(tenant_id), "eid": str(employment_id), "work_date": work_date},
     )
     org_unit_id = org_unit_row.scalar()
     if org_unit_id is None:
@@ -182,7 +184,10 @@ async def _resolve_department_assignment(
 
 
 async def _resolve_legal_entity_assignment(
-    session, tenant_id: UUID, employment_id: UUID, work_date: date,
+    session,
+    tenant_id: UUID,
+    employment_id: UUID,
+    work_date: date,
 ) -> EmployeePolicyAssignment | None:
     """
     An employee's company-wide policy, if any. Unlike org_unit_id, every
@@ -196,7 +201,7 @@ async def _resolve_legal_entity_assignment(
             SELECT legal_entity_id FROM employments
             WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:eid AS uuid)
         """),
-        {"tid": str(tenant_id), "eid": str(employment_id)},
+        {"tid": str(tenant_id), "eid": str(employment_id), "work_date": work_date},
     )
     legal_entity_id = entity_row.scalar()
     if legal_entity_id is None:
@@ -248,10 +253,14 @@ async def resolve_policy(
     assignment: EmployeePolicyAssignment | None = asgn_row.scalars().first()
 
     if assignment is None:
-        assignment = await _resolve_department_assignment(session, tenant_id, employment_id, work_date)
+        assignment = await _resolve_department_assignment(
+            session, tenant_id, employment_id, work_date
+        )
 
     if assignment is None:
-        assignment = await _resolve_legal_entity_assignment(session, tenant_id, employment_id, work_date)
+        assignment = await _resolve_legal_entity_assignment(
+            session, tenant_id, employment_id, work_date
+        )
 
     if assignment is None:
         # Try the tenant's default template
@@ -265,7 +274,9 @@ async def resolve_policy(
         tpl = tpl_row.scalars().first()
         if tpl is None:
             return _DEFAULT_POLICY
-        std_mins = compute_standard_minutes(tpl.expected_start_time, tpl.expected_end_time, tpl.break_minutes)
+        std_mins = compute_standard_minutes(
+            tpl.expected_start_time, tpl.expected_end_time, tpl.break_minutes
+        )
         return ResolvedPolicy(
             timezone=tpl.timezone,
             expected_start_time=tpl.expected_start_time,
