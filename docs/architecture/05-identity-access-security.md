@@ -44,6 +44,10 @@
 - **Access reviews:** a quarterly certification report per tenant listing who holds which role and scope, with sign-off.
 - **The access matrix is tenant data.** §33 says HR approves it, so every change to roles or grants is itself an audited, approvable change.
 
+![Multi-Tenant Isolation Architecture & Dual-Role RLS Enforcement](diagrams/tenancy.svg)
+
+*Figure 1: Data access enforcement — JWT Principal decoding, real-time status revocation, and PostgreSQL 16 RLS policy execution.*
+
 ## Data classification
 
 | Class | Examples | Default visibility | Protection |

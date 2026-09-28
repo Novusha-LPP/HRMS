@@ -4,15 +4,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
-# Import all models so Alembic sees the metadata
-from hrms.modules.kernel.models import Tenant, UserAccount, Role, RoleAssignment  # noqa: F401
-from hrms.modules.org.models import (  # noqa: F401
-    LegalEntity, Location, OrgUnit, Job, Grade, Position, CostCentre
-)
-from hrms.modules.people.models import (  # noqa: F401
-    Person, Employment, Assignment, AssignmentManager, PersonnelAction
-)
-from sqlmodel import SQLModel
+from hrms.model_registry import metadata
 
 import os
 
@@ -25,7 +17,7 @@ db_url = os.environ.get("HRMS_DATABASE_URL")
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 
-target_metadata = SQLModel.metadata
+target_metadata = metadata
 
 
 def run_migrations_offline() -> None:

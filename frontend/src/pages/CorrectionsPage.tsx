@@ -13,7 +13,7 @@ import { StatusBadge } from "../components/ui/StatusBadge";
 import { Avatar } from "../components/ui/Avatar";
 import { Sheet } from "../components/ui/Overlay";
 import { ApprovalTimeline } from "../components/ui/Timeline";
-import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
+import { EmptyState, Notice, NoEmployeeRecord, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { usePeopleDirectory } from "../lib/usePeopleDirectory";
 
@@ -40,10 +40,13 @@ function times(c: AttendanceCorrection) {
   return parts.join(" · ");
 }
 
+/** The picker gives a wall-clock time in the user's own timezone; the API needs an unambiguous instant. */
+const localToIso = (date: string, time: string) => new Date(`${date}T${time}:00`).toISOString();
+
 export function CorrectionsPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
-  const isApprover = !!user && user.role !== "EMPLOYEE";
+  const isApprover = !!user && (user.permissions.includes("*") || user.permissions.includes("corrections.approve"));
 
   const tab = params.get("tab") === "approvals" && isApprover ? "approvals" : "all";
   const newOpen = params.get("new") === "1";
@@ -61,11 +64,24 @@ export function CorrectionsPage() {
   const cors = useQuery<AttendanceCorrection[]>({
     queryKey: ["corrections"],
     queryFn: () => correctionsApi.list(isApprover ? undefined : (user!.employmentId ?? undefined)),
-    enabled: !!user?.employmentId,
+    // Approvers review the whole queue without needing an employee record of their own.
+    enabled: !!user && (isApprover || !!user.employmentId),
   });
   const people = usePeopleDirectory(isApprover);
 
-  if (!user || !user.employmentId) return null;
+  if (!user) return null;
+  const employmentId = user.employmentId;
+  if (!employmentId && !isApprover) {
+    return (
+      <>
+        <PageHeader
+          title="Attendance corrections"
+          description="Fix missed punches or wrong times. Approved corrections update the attendance record."
+        />
+        <NoEmployeeRecord feature="attendance history to correct" />
+      </>
+    );
+  }
 
   const all = cors.data ?? [];
   const pending = all.filter((c) => PENDING.includes(c.status));
@@ -77,7 +93,7 @@ export function CorrectionsPage() {
       <PageHeader
         title="Attendance corrections"
         description="Fix missed punches or wrong times. Approved corrections update the attendance record."
-        actions={<button className="btn-primary" onClick={() => setNewOpen(true)}><Plus size={15} /> Request correction</button>}
+        actions={employmentId ? <button className="btn-primary" onClick={() => setNewOpen(true)}><Plus size={15} /> Request correction</button> : undefined}
       />
 
       {cors.isError && (
@@ -153,11 +169,11 @@ export function CorrectionsPage() {
         )}
       </div>
 
-      <NewCorrectionSheet open={newOpen} onClose={closeNew} employmentId={user.employmentId} />
+      {employmentId && <NewCorrectionSheet open={newOpen} onClose={closeNew} employmentId={employmentId} />}
       <CorrectionDetailSheet
         cor={selected}
         onClose={() => setOpenId(null)}
-        actorId={user.employmentId}
+        actorId={employmentId}
         isApprover={isApprover}
         requester={selected ? people.get(selected.employment_id) : undefined}
       />
@@ -178,8 +194,8 @@ function NewCorrectionSheet({ open, onClose, employmentId }: { open: boolean; on
     mutationFn: () => correctionsApi.create(employmentId, {
       work_date: workDate,
       correction_type: type,
-      requested_punch_in: NEEDS_IN.has(type) && punchIn ? `${workDate}T${punchIn}:00` : undefined,
-      requested_punch_out: NEEDS_OUT.has(type) && punchOut ? `${workDate}T${punchOut}:00` : undefined,
+      requested_punch_in: NEEDS_IN.has(type) && punchIn ? localToIso(workDate, punchIn) : undefined,
+      requested_punch_out: NEEDS_OUT.has(type) && punchOut ? localToIso(workDate, punchOut) : undefined,
       reason: reason.trim(),
     }),
     onSuccess: () => {
@@ -249,7 +265,8 @@ function NewCorrectionSheet({ open, onClose, employmentId }: { open: boolean; on
 function CorrectionDetailSheet({ cor, onClose, actorId, isApprover, requester }: {
   cor: AttendanceCorrection | null;
   onClose: () => void;
-  actorId: string;
+  /** null for an admin-only account: it can decide requests but has none of its own to withdraw. */
+  actorId: string | null;
   isApprover: boolean;
   requester?: string;
 }) {
@@ -260,8 +277,8 @@ function CorrectionDetailSheet({ cor, onClose, actorId, isApprover, requester }:
   const act = useMutation({
     mutationFn: (kind: "approve" | "reject" | "cancel") => {
       const id = cor!.id;
-      if (kind === "approve") return correctionsApi.approve(id, actorId, comments || undefined);
-      if (kind === "reject") return correctionsApi.reject(id, actorId, comments || undefined);
+      if (kind === "approve") return correctionsApi.approve(id, comments || undefined);
+      if (kind === "reject") return correctionsApi.reject(id, comments || undefined);
       return correctionsApi.cancel(id);
     },
     onSuccess: (_, kind) => {
@@ -277,7 +294,7 @@ function CorrectionDetailSheet({ cor, onClose, actorId, isApprover, requester }:
 
   const isPending = PENDING.includes(cor.status);
   const canDecide = isApprover && isPending;
-  const canWithdraw = (isPending || cor.status === "DRAFT") && cor.employment_id === actorId;
+  const canWithdraw = (isPending || cor.status === "DRAFT") && !!actorId && cor.employment_id === actorId;
   const level = Number(cor.status.match(/L(\d)$/)?.[1] ?? cor.current_level);
 
   const footer = canDecide ? (

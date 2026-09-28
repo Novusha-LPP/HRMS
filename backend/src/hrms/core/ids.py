@@ -14,6 +14,8 @@ import base64
 import uuid
 from uuid import UUID
 
+from fastapi import HTTPException
+
 try:
     from uuid7 import uuid7  # type: ignore[import-untyped]
 except ImportError:
@@ -33,6 +35,7 @@ _PREFIX_MAP: dict[str, str] = {
     "cost_centre": "cc",
     "person": "per",
     "employment": "emp",
+    "employee_id_scheme": "eis",
     "assignment": "asgn",
     "personnel_action": "pa",
     "user": "usr",
@@ -69,10 +72,13 @@ def new_id(resource: str) -> str:
 
 
 def to_uuid(typed_id: str) -> UUID:
-    parts = typed_id.split("_", 1)
-    if len(parts) != 2:
-        raise ValueError(f"Invalid typed ID: {typed_id!r}")
-    return _decode(parts[1])
+    try:
+        parts = typed_id.split("_", 1)
+        if len(parts) != 2:
+            raise ValueError("Missing type prefix")
+        return _decode(parts[1])
+    except (ValueError, TypeError) as exc:
+        raise HTTPException(422, "Invalid resource identifier") from exc
 
 
 def to_typed_id(resource: str, uid: UUID) -> str:

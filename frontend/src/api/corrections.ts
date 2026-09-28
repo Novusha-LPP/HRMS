@@ -41,11 +41,12 @@ export const correctionsApi = {
     reason: string;
   }) => api.post<AttendanceCorrection>(`/v1/corrections?employment_id=${employmentId}`, body),
 
-  approve: (id: string, approverEmpId: string, comments?: string) =>
-    api.post<AttendanceCorrection>(`/v1/corrections/${id}/approve?approver_employment_id=${approverEmpId}`, { action: "APPROVE", comments }),
+  // The approver is always the signed-in account (from the token) — no id is passed.
+  approve: (id: string, comments?: string) =>
+    api.post<AttendanceCorrection>(`/v1/corrections/${id}/approve`, { action: "APPROVE", comments }),
 
-  reject: (id: string, approverEmpId: string, comments?: string) =>
-    api.post<AttendanceCorrection>(`/v1/corrections/${id}/reject?approver_employment_id=${approverEmpId}`, { action: "REJECT", comments }),
+  reject: (id: string, comments?: string) =>
+    api.post<AttendanceCorrection>(`/v1/corrections/${id}/reject`, { action: "REJECT", comments }),
 
   cancel: (id: string) =>
     api.post<AttendanceCorrection>(`/v1/corrections/${id}/cancel`, {}),

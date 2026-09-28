@@ -1,1 +1,195 @@
-<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="Inside the core platform app: interfaces on top, twelve domain modules, twelve platform-kernel modules, and infrastructure adapters; modules talk through published interfaces and events, never shared tables." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif"><style>.bg{fill:#ffffff;stroke:#d5dde1}.n{fill:#f4f6f7;stroke:#7b8a92}.na{fill:#ddeaea;stroke:#0d6b6b}.nx{fill:#ffffff;stroke:#7b8a92;stroke-dasharray:5 4}.np{fill:#eceff1;stroke:#7b8a92}.g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}.gs{fill:#f9fbfb;stroke:#9aa7ae}.t{fill:#16222a;font-weight:600}.s{fill:#4f5e67}.ta{fill:#0d6b6b;font-weight:600}.e{fill:none;stroke:#4f5e67;stroke-width:1.5}.ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}.ah{fill:#4f5e67}.l{fill:none;stroke:#b4c0c7;stroke-width:1.25;stroke-dasharray:4 4}</style><defs><marker id="ah-monolith" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="bg" x="0.5" y="0.5" width="1199" height="639" rx="10"/><rect class="g" x="20" y="20" width="1160" height="98" rx="8" stroke-width="1.25"/><text class="t" x="32" y="40" font-size="13">Interfaces</text><rect class="n" x="40.0" y="52" width="214.4" height="48" rx="6" stroke-width="1.25"/><text class="t" x="147.2" y="80.5" font-size="12" text-anchor="middle">Public REST API v1</text><rect class="n" x="266.4" y="52" width="214.4" height="48" rx="6" stroke-width="1.25"/><text class="t" x="373.59999999999997" y="80.5" font-size="12" text-anchor="middle">Experience API (web, mobile)</text><rect class="n" x="492.8" y="52" width="214.4" height="48" rx="6" stroke-width="1.25"/><text class="t" x="600.0" y="80.5" font-size="12" text-anchor="middle">SCIM 2.0</text><rect class="n" x="719.2" y="52" width="214.4" height="48" rx="6" stroke-width="1.25"/><text class="t" x="826.4000000000001" y="80.5" font-size="12" text-anchor="middle">Admin and configuration API</text><rect class="n" x="945.6" y="52" width="214.4" height="48" rx="6" stroke-width="1.25"/><text class="t" x="1052.8" y="80.5" font-size="12" text-anchor="middle">Event consumers (Kafka)</text><rect class="g" x="20" y="140" width="1160" height="156" rx="8" stroke-width="1.25"/><text class="t" x="32" y="160" font-size="13">Domain modules (bounded contexts)</text><rect class="na" x="40.0" y="172" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="128.33333333333331" y="200.5" font-size="12" text-anchor="middle">Organisation</text><rect class="na" x="228.66666666666666" y="172" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="317.0" y="200.5" font-size="12" text-anchor="middle">People and actions</text><rect class="na" x="417.3333333333333" y="172" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="505.66666666666663" y="200.5" font-size="12" text-anchor="middle">Talent</text><rect class="na" x="606.0" y="172" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="694.3333333333334" y="200.5" font-size="12" text-anchor="middle">Time</text><rect class="na" x="794.6666666666666" y="172" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="883.0" y="200.5" font-size="12" text-anchor="middle">Absence</text><rect class="na" x="983.3333333333333" y="172" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="1071.6666666666665" y="200.5" font-size="12" text-anchor="middle">Learning</text><rect class="na" x="40.0" y="230" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="128.33333333333331" y="258.5" font-size="12" text-anchor="middle">Assets</text><rect class="na" x="228.66666666666666" y="230" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="317.0" y="258.5" font-size="12" text-anchor="middle">Separation</text><rect class="na" x="417.3333333333333" y="230" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="505.66666666666663" y="258.5" font-size="12" text-anchor="middle">Compliance packs</text><rect class="na" x="606.0" y="230" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="694.3333333333334" y="258.5" font-size="12" text-anchor="middle">Service desk</text><rect class="na" x="794.6666666666666" y="230" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="883.0" y="258.5" font-size="12" text-anchor="middle">Policies</text><rect class="na" x="983.3333333333333" y="230" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="ta" x="1071.6666666666665" y="258.5" font-size="12" text-anchor="middle">Comp. and payroll inputs</text><rect class="g" x="20" y="318" width="1160" height="156" rx="8" stroke-width="1.25"/><text class="t" x="32" y="338" font-size="13">Platform kernel (shared by every module)</text><rect class="n" x="40.0" y="350" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="128.33333333333331" y="378.5" font-size="12" text-anchor="middle">Tenancy context</text><rect class="n" x="228.66666666666666" y="350" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="317.0" y="378.5" font-size="12" text-anchor="middle">Authorization</text><rect class="n" x="417.3333333333333" y="350" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="505.66666666666663" y="378.5" font-size="12" text-anchor="middle">Config and rules (CEL)</text><rect class="n" x="606.0" y="350" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="694.3333333333334" y="378.5" font-size="12" text-anchor="middle">Workflow (Temporal)</text><rect class="n" x="794.6666666666666" y="350" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="883.0" y="378.5" font-size="12" text-anchor="middle">Obligations and tasks</text><rect class="n" x="983.3333333333333" y="350" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="1071.6666666666665" y="378.5" font-size="12" text-anchor="middle">Exceptions</text><rect class="n" x="40.0" y="408" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="128.33333333333331" y="436.5" font-size="12" text-anchor="middle">Audit</text><rect class="n" x="228.66666666666666" y="408" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="317.0" y="436.5" font-size="12" text-anchor="middle">Documents and letters</text><rect class="n" x="417.3333333333333" y="408" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="505.66666666666663" y="436.5" font-size="12" text-anchor="middle">Notifications</text><rect class="n" x="606.0" y="408" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="694.3333333333334" y="436.5" font-size="12" text-anchor="middle">Numbering</text><rect class="n" x="794.6666666666666" y="408" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="883.0" y="436.5" font-size="12" text-anchor="middle">Custom fields, forms</text><rect class="n" x="983.3333333333333" y="408" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="1071.6666666666665" y="436.5" font-size="12" text-anchor="middle">Terminology, i18n</text><rect class="g" x="20" y="496" width="1160" height="98" rx="8" stroke-width="1.25"/><text class="t" x="32" y="516" font-size="13">Infrastructure adapters</text><rect class="n" x="40.0" y="528" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="128.33333333333331" y="556.5" font-size="12" text-anchor="middle">PostgreSQL + RLS</text><rect class="n" x="228.66666666666666" y="528" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="317.0" y="556.5" font-size="12" text-anchor="middle">Outbox → Kafka</text><rect class="n" x="417.3333333333333" y="528" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="505.66666666666663" y="556.5" font-size="12" text-anchor="middle">Temporal SDK</text><rect class="n" x="606.0" y="528" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="694.3333333333334" y="556.5" font-size="12" text-anchor="middle">OpenSearch client</text><rect class="n" x="794.6666666666666" y="528" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="883.0" y="556.5" font-size="12" text-anchor="middle">S3 and KMS</text><rect class="n" x="983.3333333333333" y="528" width="176.66666666666666" height="48" rx="6" stroke-width="1.25"/><text class="t" x="1071.6666666666665" y="556.5" font-size="12" text-anchor="middle">Cache (Valkey)</text><polyline class="e" points="600,118 600,138" marker-end="url(#ah-monolith)"/><polyline class="e" points="600,296 600,316" marker-end="url(#ah-monolith)"/><polyline class="e" points="600,474 600,494" marker-end="url(#ah-monolith)"/><text class="s" x="20" y="622" font-size="12" text-anchor="start">Each module owns its tables and publishes events; the build fails if a module reads another module's tables (Spring Modulith + ArchUnit checks).</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1200 660" width="1200" height="660" role="img" aria-label="Inside the FastAPI Modular Monolith: Interfaces, 13 Domain Modules, Core Infrastructure, and Persistence Adapters." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif">
+  <style>
+    .bg{fill:#ffffff;stroke:#d5dde1}
+    .n{fill:#f4f6f7;stroke:#7b8a92}
+    .na{fill:#ddeaea;stroke:#0d6b6b}
+    .nb{fill:#eff6ff;stroke:#3b82f6}
+    .np{fill:#eceff1;stroke:#7b8a92}
+    .g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}
+    .t{fill:#16222a;font-weight:600}
+    .s{fill:#4f5e67}
+    .ta{fill:#0d6b6b;font-weight:600}
+    .tb{fill:#1e40af;font-weight:600}
+    .e{fill:none;stroke:#4f5e67;stroke-width:1.5}
+    .ah{fill:#4f5e67}
+  </style>
+  <defs>
+    <marker id="ah-monolith" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0.5" y="0.5" width="1199" height="659" rx="10"/>
+
+  <!-- LAYER 1: INTERFACES (ROUTERS) -->
+  <rect class="g" x="20" y="16" width="1160" height="98" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="36" font-size="13">1. Interface Layer · FastAPI APIRouters (OpenAPI 3.1 &amp; Swagger Docs at /docs)</text>
+
+  <rect class="nb" x="40" y="48" width="214" height="52" rx="6" stroke-width="1.25"/>
+  <text class="tb" x="147" y="70" font-size="12" text-anchor="middle">Platform Router</text>
+  <text class="s" x="147" y="87" font-size="10" text-anchor="middle">/v1/platform/* (Admins, Tenants)</text>
+
+  <rect class="n" x="266" y="48" width="214" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="373" y="70" font-size="12" text-anchor="middle">Auth &amp; Users Routers</text>
+  <text class="s" x="373" y="87" font-size="10" text-anchor="middle">/v1/auth/*, /v1/users/*</text>
+
+  <rect class="n" x="492" y="48" width="214" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="599" y="70" font-size="12" text-anchor="middle">Org &amp; People Routers</text>
+  <text class="s" x="599" y="87" font-size="10" text-anchor="middle">/v1/org/*, /v1/people/*</text>
+
+  <rect class="n" x="718" y="48" width="214" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="825" y="70" font-size="12" text-anchor="middle">Time, Policy &amp; Leave</text>
+  <text class="s" x="825" y="87" font-size="10" text-anchor="middle">/v1/time/*, /v1/policy/*, /v1/leave/*</text>
+
+  <rect class="n" x="944" y="48" width="216" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1052" y="70" font-size="12" text-anchor="middle">KYC, Reports, Corrections</text>
+  <text class="s" x="1052" y="87" font-size="10" text-anchor="middle">/v1/kyc/*, /v1/reports/*, /v1/corrections/*</text>
+
+  <!-- Connector -->
+  <polyline class="e" points="600,114 600,132" marker-end="url(#ah-monolith)"/>
+
+  <!-- LAYER 2: 13 DOMAIN MODULES -->
+  <rect class="g" x="20" y="134" width="1160" height="170" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="154" font-size="13">2. Domain Modules · 13 Bounded Contexts (`backend/src/hrms/modules`)</text>
+
+  <!-- Row 1 of Modules -->
+  <rect class="nb" x="40" y="166" width="156" height="54" rx="6" stroke-width="1.25"/>
+  <text class="tb" x="118" y="187" font-size="11" text-anchor="middle">platform</text>
+  <text class="s" x="118" y="202" font-size="9" text-anchor="middle">Tenant Provisioning</text>
+  <text class="s" x="118" y="213" font-size="9" text-anchor="middle">Plans &amp; Platform Audit</text>
+
+  <rect class="n" x="206" y="166" width="156" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="284" y="187" font-size="11" text-anchor="middle">kernel</text>
+  <text class="s" x="284" y="202" font-size="9" text-anchor="middle">Tenant, Users &amp; Roles</text>
+  <text class="s" x="284" y="213" font-size="9" text-anchor="middle">login_lookup() definer</text>
+
+  <rect class="na" x="372" y="166" width="156" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="450" y="187" font-size="11" text-anchor="middle">org</text>
+  <text class="s" x="450" y="202" font-size="9" text-anchor="middle">Legal Entities, Locations</text>
+  <text class="s" x="450" y="213" font-size="9" text-anchor="middle">Org Units Tree, Jobs, Grades</text>
+
+  <rect class="na" x="538" y="166" width="156" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="616" y="187" font-size="11" text-anchor="middle">people</text>
+  <text class="s" x="616" y="202" font-size="9" text-anchor="middle">Persons, Employments</text>
+  <text class="s" x="616" y="213" font-size="9" text-anchor="middle">Assignments, ID Schemes</text>
+
+  <rect class="na" x="704" y="166" width="156" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="782" y="187" font-size="11" text-anchor="middle">kyc</text>
+  <text class="s" x="782" y="202" font-size="9" text-anchor="middle">PAN, Aadhaar, Bank Details</text>
+  <text class="s" x="782" y="213" font-size="9" text-anchor="middle">Verification Workflow</text>
+
+  <rect class="na" x="870" y="166" width="156" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="948" y="187" font-size="11" text-anchor="middle">time</text>
+  <text class="s" x="948" y="202" font-size="9" text-anchor="middle">Punches (GPS/Selfie)</text>
+  <text class="s" x="948" y="213" font-size="9" text-anchor="middle">Daily Status &amp; Overtime</text>
+
+  <rect class="na" x="1036" y="166" width="130" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="1101" y="187" font-size="11" text-anchor="middle">policy</text>
+  <text class="s" x="1101" y="202" font-size="9" text-anchor="middle">4-Tier Fallback</text>
+  <text class="s" x="1101" y="213" font-size="9" text-anchor="middle">Alternate Saturdays</text>
+
+  <!-- Row 2 of Modules -->
+  <rect class="na" x="40" y="232" width="180" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="130" y="253" font-size="11" text-anchor="middle">leave</text>
+  <text class="s" x="130" y="268" font-size="9" text-anchor="middle">Types, Balances, Multi-tier</text>
+  <text class="s" x="130" y="279" font-size="9" text-anchor="middle">Comp-Off, Monthly Accruals</text>
+
+  <rect class="na" x="230" y="232" width="180" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="320" y="253" font-size="11" text-anchor="middle">corrections</text>
+  <text class="s" x="320" y="268" font-size="9" text-anchor="middle">Punch Regularization</text>
+  <text class="s" x="320" y="279" font-size="9" text-anchor="middle">Auto Attendance Recalculation</text>
+
+  <rect class="na" x="420" y="232" width="180" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="510" y="253" font-size="11" text-anchor="middle">onboarding</text>
+  <text class="s" x="510" y="268" font-size="9" text-anchor="middle">Templates &amp; Checklists</text>
+  <text class="s" x="510" y="279" font-size="9" text-anchor="middle">New Hire Tasks</text>
+
+  <rect class="na" x="610" y="232" width="180" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="700" y="253" font-size="11" text-anchor="middle">reports</text>
+  <text class="s" x="700" y="268" font-size="9" text-anchor="middle">Custom Column/Filter Engine</text>
+  <text class="s" x="700" y="279" font-size="9" text-anchor="middle">CSV/JSON Export</text>
+
+  <rect class="na" x="800" y="232" width="180" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="890" y="253" font-size="11" text-anchor="middle">dashboard</text>
+  <text class="s" x="890" y="268" font-size="9" text-anchor="middle">HR &amp; Manager KPI Metrics</text>
+  <text class="s" x="890" y="279" font-size="9" text-anchor="middle">Today's Headcount &amp; Approvals</text>
+
+  <rect class="na" x="990" y="232" width="176" height="54" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="1078" y="253" font-size="11" text-anchor="middle">payroll</text>
+  <text class="s" x="1078" y="268" font-size="9" text-anchor="middle">Salary Components</text>
+  <text class="s" x="1078" y="279" font-size="9" text-anchor="middle">Period-Close Snapshots</text>
+
+  <!-- Connector -->
+  <polyline class="e" points="600,304 600,322" marker-end="url(#ah-monolith)"/>
+
+  <!-- LAYER 3: CORE SUBSYSTEMS -->
+  <rect class="g" x="20" y="324" width="1160" height="170" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="344" font-size="13">3. Platform Kernel &amp; Core Infrastructure (`backend/src/hrms/core`)</text>
+
+  <rect class="n" x="40" y="356" width="214" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="147" y="377" font-size="11" text-anchor="middle">database.py</text>
+  <text class="s" x="147" y="392" font-size="9" text-anchor="middle">get_session() / get_anonymous_session()</text>
+  <text class="s" x="147" y="403" font-size="9" text-anchor="middle">SET LOCAL app.tenant_id + Status Check</text>
+
+  <rect class="n" x="266" y="356" width="214" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="373" y="377" font-size="11" text-anchor="middle">tenancy.py &amp; authn.py</text>
+  <text class="s" x="373" y="392" font-size="9" text-anchor="middle">JWT Verification · Tenant Principal</text>
+  <text class="s" x="373" y="403" font-size="9" text-anchor="middle">Platform Token Isolation (typ: platform)</text>
+
+  <rect class="n" x="492" y="356" width="214" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="599" y="377" font-size="11" text-anchor="middle">authz.py &amp; platform_authz.py</text>
+  <text class="s" x="599" y="392" font-size="9" text-anchor="middle">RBAC + 6 Data Scopes Compiler</text>
+  <text class="s" x="599" y="403" font-size="9" text-anchor="middle">Live DB Admin Context (ADMIN/VIEWER)</text>
+
+  <rect class="n" x="718" y="356" width="214" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="825" y="377" font-size="11" text-anchor="middle">datetime_utils.py</text>
+  <text class="s" x="825" y="392" font-size="9" text-anchor="middle">Work Days Mask · Alternate Saturdays</text>
+  <text class="s" x="825" y="403" font-size="9" text-anchor="middle">Attendance &amp; OT Computation</text>
+
+  <rect class="n" x="944" y="356" width="216" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1052" y="377" font-size="11" text-anchor="middle">tenant_provisioning.py</text>
+  <text class="s" x="1052" y="392" font-size="9" text-anchor="middle">bootstrap_tenant() Atomic Flow</text>
+  <text class="s" x="1052" y="403" font-size="9" text-anchor="middle">Roles, Legal Entity &amp; Admin User</text>
+
+  <rect class="n" x="40" y="422" width="370" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="225" y="443" font-size="11" text-anchor="middle">security.py</text>
+  <text class="s" x="225" y="458" font-size="9" text-anchor="middle">Passlib bcrypt password hashing · JWT Token Encoding</text>
+  <text class="s" x="225" y="469" font-size="9" text-anchor="middle">Secure Reset Token Hashes</text>
+
+  <rect class="n" x="420" y="422" width="370" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="605" y="443" font-size="11" text-anchor="middle">audit.py</text>
+  <text class="s" x="605" y="458" font-size="9" text-anchor="middle">record_audit() on platform_audit_log</text>
+  <text class="s" x="605" y="469" font-size="9" text-anchor="middle">Immutable history for all platform administrative actions</text>
+
+  <rect class="n" x="800" y="422" width="360" height="54" rx="6" stroke-width="1.25"/>
+  <text class="t" x="980" y="443" font-size="11" text-anchor="middle">ids.py &amp; config.py</text>
+  <text class="s" x="980" y="458" font-size="9" text-anchor="middle">UUIDv7 &amp; ULID Conversion · Pydantic Settings</text>
+  <text class="s" x="980" y="469" font-size="9" text-anchor="middle">Environment variables &amp; CORS parsing</text>
+
+  <!-- Connector -->
+  <polyline class="e" points="600,494 600,512" marker-end="url(#ah-monolith)"/>
+
+  <!-- LAYER 4: INFRASTRUCTURE ADAPTERS -->
+  <rect class="g" x="20" y="514" width="1160" height="98" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="534" font-size="13">4. Infrastructure &amp; Persistence Adapters</text>
+
+  <rect class="na" x="40" y="546" width="270" height="52" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="175" y="568" font-size="12" text-anchor="middle">PostgreSQL 16 + RLS</text>
+  <text class="s" x="175" y="584" font-size="10" text-anchor="middle">asyncpg · SQLAlchemy 2.0 / SQLModel</text>
+
+  <rect class="n" x="325" y="546" width="270" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="460" y="568" font-size="12" text-anchor="middle">Alembic Migrations</text>
+  <text class="s" x="460" y="584" font-size="10" text-anchor="middle">16 Schema Revisions (0001–0016)</text>
+
+  <rect class="n" x="610" y="546" width="270" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="745" y="568" font-size="12" text-anchor="middle">Structlog Engine</text>
+  <text class="s" x="745" y="584" font-size="10" text-anchor="middle">Contextual JSON logging with tenant tags</text>
+
+  <rect class="n" x="895" y="546" width="265" height="52" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1027" y="568" font-size="12" text-anchor="middle">Document Storage</text>
+  <text class="s" x="1027" y="584" font-size="10" text-anchor="middle">/app/storage/kyc (Secured uploads)</text>
+
+  <!-- Bottom note -->
+  <text class="s" x="20" y="640" font-size="11" text-anchor="start">Asynchronous Python 3.12+ modular monolith with strict domain boundaries and runtime tenant isolation enforced in PostgreSQL.</text>
+</svg>

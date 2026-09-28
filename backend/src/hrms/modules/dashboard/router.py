@@ -16,14 +16,19 @@ overridden AND authorized by their scope, and every aggregate query is
 filtered to the legal entities / employments the caller's scope covers.
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 
 from fastapi import APIRouter, Query
 from sqlalchemy import func, text
 from sqlmodel import select
 
 from hrms.core.authn import CurrentUser
-from hrms.core.authz import ScopeDep, authorize_employment, require_permission, resolve_acting_employment_id
+from hrms.core.authz import (
+    ScopeDep,
+    authorize_employment,
+    require_permission,
+    resolve_acting_employment_id,
+)
 from hrms.core.database import SessionDep
 from hrms.core.tenancy import TenantDep
 from hrms.modules.onboarding.models import CaseStatus, OnboardingCase, OnboardingItem
@@ -34,6 +39,7 @@ router = APIRouter(prefix="/v1/dashboard", tags=["Dashboard"])
 
 
 # ─── Employee dashboard ───────────────────────────────────────────────────────
+
 
 @router.get("/employee", summary="Employee self-service dashboard")
 async def employee_dashboard(
@@ -74,7 +80,9 @@ async def employee_dashboard(
         .where(AttendanceDay.work_date <= today)
     )
     month_days = list(month_rows.scalars())
-    present = sum(1 for d in month_days if d.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE))
+    present = sum(
+        1 for d in month_days if d.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE)
+    )
     absent = sum(1 for d in month_days if d.status == AttendanceStatus.ABSENT)
     late = sum(1 for d in month_days if d.status == AttendanceStatus.LATE)
 
@@ -114,7 +122,9 @@ async def employee_dashboard(
         "today": {
             "date": today.isoformat(),
             "is_punched_in": is_punched_in,
-            "punch_in_time": today_ad.first_punch_in.isoformat() if today_ad and today_ad.first_punch_in else None,
+            "punch_in_time": today_ad.first_punch_in.isoformat()
+            if today_ad and today_ad.first_punch_in
+            else None,
             "effective_minutes": today_ad.effective_minutes if today_ad else 0,
             "status": today_ad.status if today_ad else "ABSENT",
         },
@@ -131,13 +141,16 @@ async def employee_dashboard(
 
 # ─── Manager dashboard ────────────────────────────────────────────────────────
 
+
 @router.get("/manager", summary="Manager dashboard — team attendance and approvals")
 async def manager_dashboard(
     principal: CurrentUser,
     scope: ScopeDep,
     tenant_id: TenantDep,
     session: SessionDep,
-    manager_employment_id: str | None = Query(default=None, description="Defaults to your own employment"),
+    manager_employment_id: str | None = Query(
+        default=None, description="Defaults to your own employment"
+    ),
 ) -> dict:
     mgr_uuid = resolve_acting_employment_id(principal, manager_employment_id)
     await authorize_employment(session, tenant_id, scope, mgr_uuid)
@@ -202,8 +215,12 @@ async def manager_dashboard(
         "today": {"date": today.isoformat(), **attendance_summary},
         "team": team,
         "pending_approvals": [
-            {"id": str(pa.id), "employment_id": str(pa.employment_id), "type": pa.type,
-             "effective_date": pa.effective_date.isoformat()}
+            {
+                "id": str(pa.id),
+                "employment_id": str(pa.employment_id),
+                "type": pa.type,
+                "effective_date": pa.effective_date.isoformat(),
+            }
             for pa in pending
         ],
     }
@@ -211,14 +228,18 @@ async def manager_dashboard(
 
 # ─── HR dashboard ─────────────────────────────────────────────────────────────
 
+
 @router.get("/hr", summary="HR admin dashboard", dependencies=[require_permission("dashboard.hr")])
 async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDep) -> dict:
+    scope = scope.for_permission("dashboard.hr")
     today = date.today()
     month_start = today.replace(day=1)
     entity_clause, entity_params = scope.employment_filter_sql("employments")
 
-    hc = (await session.execute(
-        text(f"""
+    hc = (
+        (
+            await session.execute(
+                text(f"""
             SELECT COUNT(*) AS total,
                    COUNT(*) FILTER (WHERE employment_state = 'ACTIVE') AS active,
                    COUNT(*) FILTER (WHERE employment_state = 'PROBATION') AS probation,
@@ -228,12 +249,18 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
               AND employment_state != 'SEPARATED'
               {entity_clause}
         """),
-        {"tid": str(tenant_id), **entity_params},
-    )).mappings().first()
+                {"tid": str(tenant_id), **entity_params},
+            )
+        )
+        .mappings()
+        .first()
+    )
 
     att_join, att_params = scope.employment_filter_sql("e")
-    att = (await session.execute(
-        text(f"""
+    att = (
+        (
+            await session.execute(
+                text(f"""
             SELECT
                 COUNT(*) FILTER (WHERE ad.status IN ('PRESENT','LATE')) AS present,
                 COUNT(*) FILTER (WHERE ad.status = 'ABSENT')           AS absent,
@@ -243,8 +270,12 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
             WHERE ad.tenant_id = CAST(:tid AS uuid) AND ad.work_date = CAST(:today AS date)
               {att_join}
         """),
-        {"tid": str(tenant_id), "today": today, **att_params},
-    )).mappings().first()
+                {"tid": str(tenant_id), "today": today, **att_params},
+            )
+        )
+        .mappings()
+        .first()
+    )
 
     new_hires_q = (
         select(func.count(Employment.id))
@@ -259,30 +290,37 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
     new_hire_count = (await session.execute(new_hires_q)).scalar() or 0
 
     pa_join, pa_params = scope.employment_filter_sql("e")
-    pending_pa_count = (await session.execute(
-        text(f"""
+    pending_pa_count = (
+        await session.execute(
+            text(f"""
             SELECT COUNT(*) FROM personnel_actions pa
             JOIN employments e ON e.tenant_id = pa.tenant_id AND e.id = pa.employment_id
             WHERE pa.tenant_id = CAST(:tid AS uuid) AND pa.status = 'PENDING_APPROVAL'
               {pa_join}
         """),
-        {"tid": str(tenant_id), **pa_params},
-    )).scalar() or 0
+            {"tid": str(tenant_id), **pa_params},
+        )
+    ).scalar() or 0
 
     ob_join, ob_params = scope.employment_filter_sql("e")
-    open_ob_count = (await session.execute(
-        text(f"""
+    open_ob_count = (
+        await session.execute(
+            text(f"""
             SELECT COUNT(*) FROM onboarding_cases oc
             JOIN employments e ON e.tenant_id = oc.tenant_id AND e.id = oc.employment_id
             WHERE oc.tenant_id = CAST(:tid AS uuid) AND oc.status = 'IN_PROGRESS'
               {ob_join}
         """),
-        {"tid": str(tenant_id), **ob_params},
-    )).scalar() or 0
+            {"tid": str(tenant_id), **ob_params},
+        )
+    ).scalar() or 0
 
     return {
         "role": "HR",
-        "scope": {"is_all": scope.is_all, "legal_entity_count": len(scope.legal_entity_ids) if not scope.is_all else None},
+        "scope": {
+            "is_all": scope.is_all,
+            "legal_entity_count": len(scope.legal_entity_ids) if not scope.is_all else None,
+        },
         "headcount": {
             "total": hc["total"] if hc else 0,
             "active": hc["active"] if hc else 0,
@@ -302,18 +340,21 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
 
 # ─── Super admin dashboard ────────────────────────────────────────────────────
 
+
 @router.get(
-    "/super-admin", summary="Super admin / platform dashboard",
+    "/super-admin",
+    summary="Super admin / platform dashboard",
     dependencies=[require_permission("dashboard.hr")],
 )
 async def super_admin_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDep) -> dict:
     """Extends HR dashboard with system-health indicators."""
+    scope = scope.for_permission("dashboard.hr")
     hr_data = await hr_dashboard(scope=scope, tenant_id=tenant_id, session=session)
 
     system = {
         "api_status": "HEALTHY",
         "db_status": "HEALTHY",
-        "last_checked": datetime.now(timezone.utc).isoformat(),
+        "last_checked": datetime.now(UTC).isoformat(),
     }
 
     return {**hr_data, "role": "SUPER_ADMIN", "system": system}

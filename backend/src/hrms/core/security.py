@@ -8,7 +8,7 @@ employment id. See core/authn.py for how the token is turned into a Principal.
 
 import hashlib
 import secrets
-from datetime import datetime, timedelta, timezone
+from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
 
@@ -56,7 +56,7 @@ def create_access_token(
     role_names: list[str],
     expires_minutes: int | None = None,
 ) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_minutes = expires_minutes or settings.access_token_expire_minutes
     claims: dict[str, Any] = {
         "typ": TOKEN_TYPE,
@@ -81,7 +81,7 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
 
 def create_platform_token(*, admin_id: UUID, expires_minutes: int | None = None) -> str:
-    now = datetime.now(timezone.utc)
+    now = datetime.now(UTC)
     expires_minutes = expires_minutes or settings.access_token_expire_minutes
     claims: dict[str, Any] = {
         "typ": PLATFORM_TOKEN_TYPE,

@@ -14,6 +14,7 @@ class TenantRegister(BaseModel):
     company to an existing group is POST /v1/org/legal-entities instead,
     which requires already being signed in as that tenant's admin.
     """
+
     company_name: str = Field(min_length=2, max_length=255)
     country_code: str = Field(default="IN", min_length=2, max_length=2)
     admin_email: EmailStr

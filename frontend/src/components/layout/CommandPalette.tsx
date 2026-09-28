@@ -125,7 +125,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       <div className="flex items-center gap-4 border-t border-line bg-panel px-4 py-2.5 text-[11px] text-fg-subtle">
         <span className="flex items-center gap-1"><kbd className="kbd">↑</kbd><kbd className="kbd">↓</kbd> Navigate</span>
         <span className="flex items-center gap-1"><kbd className="kbd"><CornerDownLeft size={10} /></kbd> Open</span>
-        <span className="ml-auto">SFPL HRMS</span>
+        <span className="ml-auto">HRMS</span>
       </div>
     </div>
   );

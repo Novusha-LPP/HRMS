@@ -1,1 +1,123 @@
-<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="System context: six groups of people use the HRMS Platform through the HR console, employee app, admin console, careers portal, API and ops console; the platform exchanges data with identity providers, attendance devices, payroll and ERP systems, messaging providers, job boards and verification services, customer SIEM and iPaaS tools, billing, and government portals." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif"><style>.bg{fill:#ffffff;stroke:#d5dde1}.n{fill:#f4f6f7;stroke:#7b8a92}.na{fill:#ddeaea;stroke:#0d6b6b}.nx{fill:#ffffff;stroke:#7b8a92;stroke-dasharray:5 4}.np{fill:#eceff1;stroke:#7b8a92}.g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}.gs{fill:#f9fbfb;stroke:#9aa7ae}.t{fill:#16222a;font-weight:600}.s{fill:#4f5e67}.ta{fill:#0d6b6b;font-weight:600}.e{fill:none;stroke:#4f5e67;stroke-width:1.5}.ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}.ah{fill:#4f5e67}.l{fill:none;stroke:#b4c0c7;stroke-width:1.25;stroke-dasharray:4 4}</style><defs><marker id="ah-context" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="bg" x="0.5" y="0.5" width="1199" height="639" rx="10"/><rect class="na" x="440" y="230" width="320" height="150" rx="6" stroke-width="1.25"/><text class="ta" x="600.0" y="285.5" font-size="15" text-anchor="middle">HRMS Platform</text><text class="s" x="600.0" y="301.5" font-size="12" text-anchor="middle">multi-tenant SaaS, one home region per tenant</text><text class="s" x="600.0" y="317.5" font-size="12" text-anchor="middle">HR console · employee app · admin console</text><text class="s" x="600.0" y="333.5" font-size="12" text-anchor="middle">public API · webhooks · developer portal</text><rect class="np" x="20" y="30" width="250" height="70" rx="14" stroke-width="1.25"/><text class="t" x="145.0" y="53.5" font-size="13" text-anchor="middle">Employees and managers</text><text class="s" x="145.0" y="69.5" font-size="12" text-anchor="middle">self-service, approvals</text><text class="s" x="145.0" y="85.5" font-size="12" text-anchor="middle">employee app, web</text><polyline class="e" points="270,65 438,252" marker-end="url(#ah-context)"/><rect class="np" x="20" y="128" width="250" height="70" rx="14" stroke-width="1.25"/><text class="t" x="145.0" y="151.5" font-size="13" text-anchor="middle">HR, Accounts, Admin/IT</text><text class="s" x="145.0" y="167.5" font-size="12" text-anchor="middle">run HR operations</text><text class="s" x="145.0" y="183.5" font-size="12" text-anchor="middle">HR console</text><polyline class="e" points="270,163 438,272" marker-end="url(#ah-context)"/><rect class="np" x="20" y="226" width="250" height="70" rx="14" stroke-width="1.25"/><text class="t" x="145.0" y="249.5" font-size="13" text-anchor="middle">Tenant administrators</text><text class="s" x="145.0" y="265.5" font-size="12" text-anchor="middle">configure, integrate, audit</text><text class="s" x="145.0" y="281.5" font-size="12" text-anchor="middle">admin console</text><polyline class="e" points="270,261 438,292" marker-end="url(#ah-context)"/><rect class="np" x="20" y="324" width="250" height="70" rx="14" stroke-width="1.25"/><text class="t" x="145.0" y="347.5" font-size="13" text-anchor="middle">Candidates</text><text class="s" x="145.0" y="363.5" font-size="12" text-anchor="middle">apply, submit documents</text><text class="s" x="145.0" y="379.5" font-size="12" text-anchor="middle">careers and pre-joining portal</text><polyline class="e" points="270,359 438,312" marker-end="url(#ah-context)"/><rect class="np" x="20" y="422" width="250" height="70" rx="14" stroke-width="1.25"/><text class="t" x="145.0" y="445.5" font-size="13" text-anchor="middle">Integration developers</text><text class="s" x="145.0" y="461.5" font-size="12" text-anchor="middle">customer IT, ISVs, iPaaS</text><text class="s" x="145.0" y="477.5" font-size="12" text-anchor="middle">REST API, webhooks, portal</text><polyline class="e" points="270,457 438,332" marker-end="url(#ah-context)"/><rect class="np" x="20" y="520" width="250" height="70" rx="14" stroke-width="1.25"/><text class="t" x="145.0" y="543.5" font-size="13" text-anchor="middle">Platform operators</text><text class="s" x="145.0" y="559.5" font-size="12" text-anchor="middle">SRE, support, billing</text><text class="s" x="145.0" y="575.5" font-size="12" text-anchor="middle">ops console, JIT access</text><polyline class="e" points="270,555 438,352" marker-end="url(#ah-context)"/><rect class="nx" x="930" y="18" width="250" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1055.0" y="38.5" font-size="13" text-anchor="middle">Identity providers</text><text class="s" x="1055.0" y="54.5" font-size="12" text-anchor="middle">Entra ID · Google · Okta</text><text class="s" x="1055.0" y="70.5" font-size="12" text-anchor="middle">SSO and SCIM, both ways</text><polyline class="e" points="762,244 928,50" marker-end="url(#ah-context)" marker-start="url(#ah-context)"/><rect class="nx" x="930" y="94" width="250" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1055.0" y="114.5" font-size="13" text-anchor="middle">Attendance devices</text><text class="s" x="1055.0" y="130.5" font-size="12" text-anchor="middle">biometric terminals, site agents</text><text class="s" x="1055.0" y="146.5" font-size="12" text-anchor="middle">push punches in</text><polyline class="e" points="928,126 762,262" marker-end="url(#ah-context)"/><rect class="nx" x="930" y="170" width="250" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1055.0" y="190.5" font-size="13" text-anchor="middle">Payroll, ERP, accounting</text><text class="s" x="1055.0" y="206.5" font-size="12" text-anchor="middle">SAP · Tally · others</text><text class="s" x="1055.0" y="222.5" font-size="12" text-anchor="middle">receive payroll inputs, journals</text><polyline class="e" points="762,280 928,202" marker-end="url(#ah-context)"/><rect class="nx" x="930" y="246" width="250" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1055.0" y="266.5" font-size="13" text-anchor="middle">Messaging providers</text><text class="s" x="1055.0" y="282.5" font-size="12" text-anchor="middle">email · SMS (DLT) · WhatsApp · push</text><text class="s" x="1055.0" y="298.5" font-size="12" text-anchor="middle">deliver notifications</text><polyline class="e" points="762,298 928,278" marker-end="url(#ah-context)"/><rect class="nx" x="930" y="322" width="250" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1055.0" y="342.5" font-size="13" text-anchor="middle">Job boards and verification</text><text class="s" x="1055.0" y="358.5" font-size="12" text-anchor="middle">Naukri · LinkedIn · BGV · e-sign</text><text class="s" x="1055.0" y="374.5" font-size="12" text-anchor="middle">post jobs, verify, sign</text><polyline class="e" points="762,316 928,354" marker-end="url(#ah-context)"/><rect class="nx" x="930" y="398" width="250" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1055.0" y="418.5" font-size="13" text-anchor="middle">Customer SIEM and iPaaS</text><text class="s" x="1055.0" y="434.5" font-size="12" text-anchor="middle">Splunk · Sentinel · Workato</text><text class="s" x="1055.0" y="450.5" font-size="12" text-anchor="middle">receive audit and events</text><polyline class="e" points="762,334 928,430" marker-end="url(#ah-context)"/><rect class="nx" x="930" y="474" width="250" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1055.0" y="494.5" font-size="13" text-anchor="middle">Billing and payments</text><text class="s" x="1055.0" y="510.5" font-size="12" text-anchor="middle">Chargebee · Razorpay</text><text class="s" x="1055.0" y="526.5" font-size="12" text-anchor="middle">usage, invoices, GST</text><polyline class="e" points="762,352 928,506" marker-end="url(#ah-context)"/><rect class="nx" x="930" y="550" width="250" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1055.0" y="570.5" font-size="13" text-anchor="middle">Government portals</text><text class="s" x="1055.0" y="586.5" font-size="12" text-anchor="middle">EPFO · ESIC</text><text class="s" x="1055.0" y="602.5" font-size="12" text-anchor="middle">links out; evidence kept here</text><polyline class="e" points="762,370 928,582" marker-end="url(#ah-context)"/></svg>
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1200 640" width="1200" height="640" role="img" aria-label="System Context: Actors and external systems communicating with the dual-plane HRMS Platform." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif">
+  <style>
+    .bg{fill:#ffffff;stroke:#d5dde1}
+    .n{fill:#f4f6f7;stroke:#7b8a92}
+    .na{fill:#ddeaea;stroke:#0d6b6b}
+    .nb{fill:#eff6ff;stroke:#3b82f6}
+    .nx{fill:#ffffff;stroke:#7b8a92;stroke-dasharray:5 4}
+    .np{fill:#eceff1;stroke:#7b8a92}
+    .g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}
+    .t{fill:#16222a;font-weight:600}
+    .s{fill:#4f5e67}
+    .ta{fill:#0d6b6b;font-weight:600}
+    .tb{fill:#1e40af;font-weight:600}
+    .e{fill:none;stroke:#4f5e67;stroke-width:1.5}
+    .ah{fill:#4f5e67}
+  </style>
+  <defs>
+    <marker id="ah-context" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0.5" y="0.5" width="1199" height="639" rx="10"/>
+
+  <!-- CENTER: HRMS PLATFORM -->
+  <rect class="na" x="420" y="210" width="360" height="190" rx="8" stroke-width="1.5"/>
+  <text class="ta" x="600" y="245" font-size="16" text-anchor="middle">HRMS Platform</text>
+  <text class="t" x="600" y="268" font-size="12" text-anchor="middle">FastAPI Asynchronous Modular Monolith</text>
+  <text class="s" x="600" y="286" font-size="11" text-anchor="middle">PostgreSQL 16 with Native Row-Level Security</text>
+  
+  <rect class="nb" x="435" y="300" width="160" height="50" rx="4"/>
+  <text class="tb" x="515" y="320" font-size="11" text-anchor="middle">Platform Control Plane</text>
+  <text class="s" x="515" y="335" font-size="9" text-anchor="middle">/v1/platform/* · Admins</text>
+
+  <rect class="n" x="605" y="300" width="160" height="50" rx="4"/>
+  <text class="t" x="685" y="320" font-size="11" text-anchor="middle">Tenant Operations Plane</text>
+  <text class="s" x="685" y="335" font-size="9" text-anchor="middle">/v1/* · Multi-Company HR</text>
+
+  <text class="s" x="600" y="375" font-size="10" text-anchor="middle">React 19 SPA · OpenAPI 3.1 (/docs) · Uvicorn (Port 8015)</text>
+
+  <!-- LEFT COLUMN: ACTORS -->
+  <!-- 1. Employees & Line Managers -->
+  <rect class="np" x="20" y="30" width="260" height="70" rx="12" stroke-width="1.25"/>
+  <text class="t" x="150" y="54" font-size="13" text-anchor="middle">Employees &amp; Line Managers</text>
+  <text class="s" x="150" y="70" font-size="11" text-anchor="middle">Self-service punches, KYC submission</text>
+  <text class="s" x="150" y="85" font-size="11" text-anchor="middle">Leave applications, punch corrections</text>
+  <polyline class="e" points="280,65 418,245" marker-end="url(#ah-context)"/>
+
+  <!-- 2. HR Managers & Executives -->
+  <rect class="np" x="20" y="140" width="260" height="70" rx="12" stroke-width="1.25"/>
+  <text class="t" x="150" y="164" font-size="13" text-anchor="middle">HR Managers &amp; Operations</text>
+  <text class="s" x="150" y="180" font-size="11" text-anchor="middle">Employee lifecycle, KYC verification</text>
+  <text class="s" x="150" y="195" font-size="11" text-anchor="middle">Policy configuration, daily analysis, reports</text>
+  <polyline class="e" points="280,175 418,275" marker-end="url(#ah-context)"/>
+
+  <!-- 3. Tenant Super Admins -->
+  <rect class="np" x="20" y="250" width="260" height="70" rx="12" stroke-width="1.25"/>
+  <text class="t" x="150" y="274" font-size="13" text-anchor="middle">Tenant Super Admins</text>
+  <text class="s" x="150" y="290" font-size="11" text-anchor="middle">Company hierarchy, user role assignments</text>
+  <text class="s" x="150" y="305" font-size="11" text-anchor="middle">Data scope definitions (ALL, LEGAL_ENTITY)</text>
+  <polyline class="e" points="280,285 418,300" marker-end="url(#ah-context)"/>
+
+  <!-- 4. Payroll & Accounts Staff -->
+  <rect class="np" x="20" y="360" width="260" height="70" rx="12" stroke-width="1.25"/>
+  <text class="t" x="150" y="384" font-size="13" text-anchor="middle">Payroll &amp; Accounts Officers</text>
+  <text class="s" x="150" y="400" font-size="11" text-anchor="middle">Overtime sign-off, monthly accruals</text>
+  <text class="s" x="150" y="415" font-size="11" text-anchor="middle">Pay-period close, statutory exports</text>
+  <polyline class="e" points="280,395 418,335" marker-end="url(#ah-context)"/>
+
+  <!-- 5. Platform Administrators -->
+  <rect class="nb" x="20" y="470" width="260" height="70" rx="12" stroke-width="1.25"/>
+  <text class="tb" x="150" y="494" font-size="13" text-anchor="middle">Platform Administrators</text>
+  <text class="s" x="150" y="510" font-size="11" text-anchor="middle">Tenant provisioning (`bootstrap_tenant`)</text>
+  <text class="s" x="150" y="525" font-size="11" text-anchor="middle">Sister-company linking, suspension, audit</text>
+  <polyline class="e" points="280,505 418,365" marker-end="url(#ah-context)"/>
+
+  <!-- RIGHT COLUMN: INTEGRATION & EXTERNAL SYSTEMS -->
+  <!-- 1. Biometric Terminals & Devices -->
+  <rect class="nx" x="910" y="40" width="260" height="65" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="62" font-size="12" text-anchor="middle">Biometric Attendance Devices</text>
+  <text class="s" x="1040" y="78" font-size="10" text-anchor="middle">Site agents, fingerprint &amp; facial terminals</text>
+  <text class="s" x="1040" y="92" font-size="10" text-anchor="middle">Pushes raw punch events into /v1/time/punches</text>
+  <polyline class="e" points="908,72 782,260" marker-end="url(#ah-context)"/>
+
+  <!-- 2. ERP & External Payroll -->
+  <rect class="nx" x="910" y="130" width="260" height="65" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="152" font-size="12" text-anchor="middle">ERP &amp; External Payroll Systems</text>
+  <text class="s" x="1040" y="168" font-size="10" text-anchor="middle">SAP, Tally, QuickBooks, Custom ERPs</text>
+  <text class="s" x="1040" y="182" font-size="10" text-anchor="middle">Receives period close attendance snapshots</text>
+  <polyline class="e" points="782,285 908,162" marker-end="url(#ah-context)"/>
+
+  <!-- 3. Statutory & Government Regimes -->
+  <rect class="nx" x="910" y="220" width="260" height="65" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="242" font-size="12" text-anchor="middle">Statutory &amp; Regulatory Bodies</text>
+  <text class="s" x="1040" y="258" font-size="10" text-anchor="middle">EPFO (PF), ESIC, Income Tax (PAN), UIDAI</text>
+  <text class="s" x="1040" y="272" font-size="10" text-anchor="middle">Captured in EmployeeKycRecord</text>
+  <polyline class="e" points="782,305 908,252" marker-end="url(#ah-context)"/>
+
+  <!-- 4. Banking & Direct Deposit -->
+  <rect class="nx" x="910" y="310" width="260" height="65" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="332" font-size="12" text-anchor="middle">Banking &amp; Financial Networks</text>
+  <text class="s" x="1040" y="348" font-size="10" text-anchor="middle">Bank IFSC verification, branch lookups</text>
+  <text class="s" x="1040" y="362" font-size="10" text-anchor="middle">Salary payment advice exports</text>
+  <polyline class="e" points="782,325 908,342" marker-end="url(#ah-context)"/>
+
+  <!-- 5. Document Storage Volume -->
+  <rect class="nx" x="910" y="400" width="260" height="65" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="422" font-size="12" text-anchor="middle">Secure Document Storage</text>
+  <text class="s" x="1040" y="438" font-size="10" text-anchor="middle">Mounted volume: /app/storage/kyc</text>
+  <text class="s" x="1040" y="452" font-size="10" text-anchor="middle">Encrypted statutory document proof files</text>
+  <polyline class="e" points="782,345 908,432" marker-end="url(#ah-context)"/>
+
+  <!-- 6. Notifications & Messaging -->
+  <rect class="nx" x="910" y="490" width="260" height="65" rx="6" stroke-width="1.25"/>
+  <text class="t" x="1040" y="512" font-size="12" text-anchor="middle">Email &amp; Messaging Relays</text>
+  <text class="s" x="1040" y="528" font-size="10" text-anchor="middle">SMTP, SMS gateways, reset tokens</text>
+  <text class="s" x="1040" y="542" font-size="10" text-anchor="middle">Password reset &amp; approval notifications</text>
+  <polyline class="e" points="782,365 908,522" marker-end="url(#ah-context)"/>
+
+  <!-- FOOTER -->
+  <text class="s" x="20" y="615" font-size="11">Single unified system context: All actors communicate via typed REST interfaces; multi-tenancy is maintained unconditionally across all interactions.</text>
+</svg>

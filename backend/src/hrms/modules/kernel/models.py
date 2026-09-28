@@ -6,13 +6,13 @@ The tenant table lives in the public schema and is NOT row-level-secured
 User accounts and roles are tenant-scoped.
 """
 
-from datetime import datetime, timezone
-from typing import Any, Optional
+from datetime import UTC, datetime
+from typing import Any
 from uuid import UUID
 
-from sqlmodel import Field, SQLModel
 from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlmodel import Field, SQLModel
 
 
 class Tenant(SQLModel, table=True):
@@ -21,12 +21,12 @@ class Tenant(SQLModel, table=True):
     id: UUID = Field(primary_key=True)
     slug: str = Field(max_length=63, unique=True, index=True)
     display_name: str = Field(max_length=255)
-    industry: Optional[str] = Field(default=None, max_length=100)
+    industry: str | None = Field(default=None, max_length=100)
     country_code: str = Field(max_length=2, default="IN")
     status: str = Field(default="ACTIVE", max_length=50)
     plan: str = Field(default="STARTER", max_length=50)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    archived_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    archived_at: datetime | None = Field(default=None)
 
 
 class UserAccount(SQLModel, table=True):
@@ -34,20 +34,20 @@ class UserAccount(SQLModel, table=True):
 
     tenant_id: UUID = Field(foreign_key="tenants.id", primary_key=True)
     id: UUID = Field(primary_key=True)
-    email: Optional[str] = Field(default=None, max_length=320, index=True)
+    email: str | None = Field(default=None, max_length=320, index=True)
     # For employees without email: code + mobile OTP login
-    employee_code: Optional[str] = Field(default=None, max_length=50)
-    mobile: Optional[str] = Field(default=None, max_length=20)
+    employee_code: str | None = Field(default=None, max_length=50)
+    mobile: str | None = Field(default=None, max_length=20)
     # bcrypt hash (passlib). Null means the account cannot log in with a
     # password yet (e.g. provisioned but not activated).
-    password_hash: Optional[str] = Field(default=None, max_length=255)
+    password_hash: str | None = Field(default=None, max_length=255)
     # The employment this login IS — drives "my dashboard", "my leave", etc.
     # Separate from role_assignments, which grant visibility into OTHER
     # employees' data (a shared accountant, a group HR manager, ...).
-    employment_id: Optional[UUID] = Field(default=None)
+    employment_id: UUID | None = Field(default=None)
     status: str = Field(default="ACTIVE", max_length=50)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_login_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    last_login_at: datetime | None = Field(default=None)
     version: int = Field(default=0)
 
 
@@ -57,7 +57,7 @@ class Role(SQLModel, table=True):
     tenant_id: UUID = Field(foreign_key="tenants.id", primary_key=True)
     id: UUID = Field(primary_key=True)
     name: str = Field(max_length=100)
-    description: Optional[str] = Field(default=None, max_length=500)
+    description: str | None = Field(default=None, max_length=500)
     is_system: bool = Field(default=False)
     version: int = Field(default=0)
 
@@ -68,6 +68,7 @@ class PlatformAdmin(SQLModel, table=True):
     0006). Its login issues a distinctly-typed JWT so it can never be mixed
     up with a tenant-scoped user_accounts login.
     """
+
     __tablename__ = "platform_admins"
 
     id: UUID = Field(primary_key=True)
@@ -78,8 +79,8 @@ class PlatformAdmin(SQLModel, table=True):
     # every tenant/admin but every mutating endpoint rejects it.
     role: str = Field(default="ADMIN", max_length=50)
     status: str = Field(default="ACTIVE", max_length=50)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    last_login_at: Optional[datetime] = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    last_login_at: datetime | None = Field(default=None)
 
 
 class PlatformAuditLog(SQLModel, table=True):
@@ -89,17 +90,20 @@ class PlatformAuditLog(SQLModel, table=True):
     anything currently writes a null actor) so a future system-initiated
     action wouldn't need a schema change.
     """
+
     __tablename__ = "platform_audit_log"
 
     id: UUID = Field(primary_key=True)
-    actor_admin_id: Optional[UUID] = Field(default=None, foreign_key="platform_admins.id")
+    actor_admin_id: UUID | None = Field(default=None, foreign_key="platform_admins.id")
     actor_name: str = Field(max_length=255)
     action: str = Field(max_length=100)
     target_type: str = Field(max_length=50)
-    target_id: Optional[UUID] = Field(default=None)
+    target_id: UUID | None = Field(default=None)
     target_label: str = Field(max_length=255)
-    metadata_json: Optional[dict[str, Any]] = Field(default=None, sa_column=Column("metadata_json", JSONB))
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    metadata_json: dict[str, Any] | None = Field(
+        default=None, sa_column=Column("metadata_json", JSONB)
+    )
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class PlatformPasswordResetToken(SQLModel, table=True):
@@ -109,8 +113,8 @@ class PlatformPasswordResetToken(SQLModel, table=True):
     admin_id: UUID = Field(foreign_key="platform_admins.id")
     token_hash: str = Field(max_length=64, unique=True)
     expires_at: datetime = Field()
-    used_at: Optional[datetime] = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
+    used_at: datetime | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
 
 
 class RoleAssignment(SQLModel, table=True):
@@ -122,6 +126,6 @@ class RoleAssignment(SQLModel, table=True):
     role_id: UUID = Field()
     # Data scope: which org units / employees are visible
     scope_type: str = Field(default="ALL", max_length=50)
-    scope_value: Optional[str] = Field(default=None, max_length=500)
-    granted_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    expires_at: Optional[datetime] = Field(default=None)
+    scope_value: str | None = Field(default=None, max_length=500)
+    granted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    expires_at: datetime | None = Field(default=None)

@@ -14,8 +14,7 @@ Key design points (from the architecture):
 """
 
 import enum
-from datetime import date, datetime, timezone
-from typing import Optional
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import Column
@@ -23,7 +22,7 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 
-class EmploymentState(str, enum.Enum):
+class EmploymentState(enum.StrEnum):
     ACTIVE = "ACTIVE"
     PROBATION = "PROBATION"
     NOTICE = "NOTICE"
@@ -31,7 +30,7 @@ class EmploymentState(str, enum.Enum):
     SEPARATED = "SEPARATED"
 
 
-class PersonnelActionStatus(str, enum.Enum):
+class PersonnelActionStatus(enum.StrEnum):
     DRAFT = "DRAFT"
     PENDING_APPROVAL = "PENDING_APPROVAL"
     APPROVED = "APPROVED"
@@ -41,7 +40,7 @@ class PersonnelActionStatus(str, enum.Enum):
     SCHEDULED = "SCHEDULED"
 
 
-class PersonnelActionType(str, enum.Enum):
+class PersonnelActionType(enum.StrEnum):
     HIRE = "HIRE"
     TRANSFER = "TRANSFER"
     PROMOTION = "PROMOTION"
@@ -62,22 +61,23 @@ class Person(SQLModel, table=True):
     Contains only non-sensitive personal information.
     Sensitive identifiers (PAN, Aadhaar, UAN, bank account) are in PersonIdentifier.
     """
+
     __tablename__ = "persons"
 
     tenant_id: UUID = Field(primary_key=True)
     id: UUID = Field(primary_key=True)
     legal_first_name: str = Field(max_length=100)
     legal_last_name: str = Field(max_length=100)
-    preferred_name: Optional[str] = Field(default=None, max_length=100)
-    date_of_birth: Optional[date] = Field(default=None)
-    gender: Optional[str] = Field(default=None, max_length=20)
-    nationality: Optional[str] = Field(default=None, max_length=2)
+    preferred_name: str | None = Field(default=None, max_length=100)
+    date_of_birth: date | None = Field(default=None)
+    gender: str | None = Field(default=None, max_length=20)
+    nationality: str | None = Field(default=None, max_length=2)
     # custom_fields is a JSON dict validated against the tenant's field registry
-    custom_fields: Optional[dict] = Field(default=None, sa_column=Column("custom_fields", JSONB))
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    recorded_by: Optional[UUID] = Field(default=None)
+    custom_fields: dict | None = Field(default=None, sa_column=Column("custom_fields", JSONB))
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)
-    archived_at: Optional[datetime] = Field(default=None)
+    archived_at: datetime | None = Field(default=None)
 
 
 class Employment(SQLModel, table=True):
@@ -85,6 +85,7 @@ class Employment(SQLModel, table=True):
     One employment per legal entity per period.
     A person can have multiple employments (multi-company, rehire after gap).
     """
+
     __tablename__ = "employments"
 
     tenant_id: UUID = Field(primary_key=True)
@@ -93,14 +94,14 @@ class Employment(SQLModel, table=True):
     legal_entity_id: UUID = Field()
     employee_number: str = Field(max_length=50, index=True)
     hire_date: date = Field()
-    separation_date: Optional[date] = Field(default=None)
+    separation_date: date | None = Field(default=None)
     employment_state: str = Field(default=EmploymentState.PROBATION, max_length=50)
     # Service stage (e.g. INTERN, CONTRACT, PERMANENT)
-    service_stage: Optional[str] = Field(default=None, max_length=50)
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    recorded_by: Optional[UUID] = Field(default=None)
+    service_stage: str | None = Field(default=None, max_length=50)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)
-    archived_at: Optional[datetime] = Field(default=None)
+    archived_at: datetime | None = Field(default=None)
 
 
 class Assignment(SQLModel, table=True):
@@ -112,24 +113,25 @@ class Assignment(SQLModel, table=True):
     A GIST exclusion constraint on (tenant_id, employment_id, daterange) prevents gaps
     and overlaps — applied in the Alembic migration.
     """
+
     __tablename__ = "assignments"
 
     tenant_id: UUID = Field(primary_key=True)
     id: UUID = Field(primary_key=True)
     employment_id: UUID = Field(index=True)
     effective_from: date = Field()
-    effective_to: Optional[date] = Field(default=None)
+    effective_to: date | None = Field(default=None)
     org_unit_id: UUID = Field()
     location_id: UUID = Field()
     job_id: UUID = Field()
-    grade_id: Optional[UUID] = Field(default=None)
-    position_id: Optional[UUID] = Field(default=None)
-    cost_centre_id: Optional[UUID] = Field(default=None)
+    grade_id: UUID | None = Field(default=None)
+    position_id: UUID | None = Field(default=None)
+    cost_centre_id: UUID | None = Field(default=None)
     # FTE and worker type
     fte: float = Field(default=1.0)
     worker_type: str = Field(default="PERMANENT", max_length=50)
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    recorded_by: Optional[UUID] = Field(default=None)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)
 
 
@@ -138,6 +140,7 @@ class AssignmentManager(SQLModel, table=True):
     Reporting lines for an assignment.  A single assignment can have multiple
     managers of different types (LINE, FUNCTIONAL, DOTTED).
     """
+
     __tablename__ = "assignment_managers"
 
     tenant_id: UUID = Field(primary_key=True)
@@ -146,7 +149,7 @@ class AssignmentManager(SQLModel, table=True):
     manager_employment_id: UUID = Field()
     manager_type: str = Field(default="LINE", max_length=50)
     effective_from: date = Field()
-    effective_to: Optional[date] = Field(default=None)
+    effective_to: date | None = Field(default=None)
 
 
 class PersonnelAction(SQLModel, table=True):
@@ -157,21 +160,22 @@ class PersonnelAction(SQLModel, table=True):
     `changes` is a JSON patch describing the delta: new values for whichever
     fields the action type modifies.
     """
+
     __tablename__ = "personnel_actions"
 
     tenant_id: UUID = Field(primary_key=True)
     id: UUID = Field(primary_key=True)
     employment_id: UUID = Field(index=True)
     type: str = Field(max_length=50)
-    reason_code: Optional[str] = Field(default=None, max_length=100)
+    reason_code: str | None = Field(default=None, max_length=100)
     effective_date: date = Field()
     # JSON: the fields being changed and their new values
-    changes: Optional[dict] = Field(default=None, sa_column=Column("changes", JSONB))
+    changes: dict | None = Field(default=None, sa_column=Column("changes", JSONB))
     status: str = Field(default=PersonnelActionStatus.DRAFT, max_length=50)
     # Idempotency key from the API caller
-    idempotency_key: Optional[str] = Field(default=None, max_length=100, index=True)
-    submitted_at: Optional[datetime] = Field(default=None)
-    applied_at: Optional[datetime] = Field(default=None)
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now(timezone.utc))
-    recorded_by: Optional[UUID] = Field(default=None)
+    idempotency_key: str | None = Field(default=None, max_length=100, index=True)
+    submitted_at: datetime | None = Field(default=None)
+    applied_at: datetime | None = Field(default=None)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)

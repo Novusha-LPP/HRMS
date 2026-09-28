@@ -27,9 +27,12 @@ cd frontend && npm run dev
 
 App: http://localhost:5173 · API/Swagger: http://localhost:8015/docs
 
-Login with any seeded account (password `Passw0rd!` for all) — the login
-page has one-click tiles. If the DB was wiped, re-seed first:
-`cd backend && uv run python scripts/seed_demo.py`.
+Sign in with your company account on the login page. A platform admin
+(`/platform/login`) creates tenants — seed the first one with
+`cd backend && uv run python scripts/seed_platform_admin.py`. To get the
+throwaway SFPL Group demo data back for development, run
+`uv run python scripts/seed_demo.py` (demo accounts use password `Passw0rd!`;
+the login page no longer has one-click tiles for them — type the email in).
 
 ---
 
@@ -188,8 +191,7 @@ demonstrate a different access-scope pattern — a platform admin, a group-wide
 HR manager, an HR manager scoped to just two companies, a shared accountant
 scoped to two companies, a manager with direct reports, and two plain
 employees in different companies. Every account's password is `Passw0rd!`;
-the script prints the full table on completion. The frontend login page has
-one-click tiles for all seven.
+the script prints the full table on completion.
 
 Re-run the script any time to reset the demo tenant back to this clean state
 — it wipes and recreates everything for that tenant id.
@@ -442,6 +444,42 @@ the entered hours, OT already measures against it.
 
 ---
 
+## Configurable Employee IDs
+
+`employee_number` used to be a plain required string on `POST
+/v1/employees` — HR typed every employee ID by hand, no generation, no
+format enforced. `EmployeeIdScheme` (`org/models.py`, migration `0015`)
+makes it optional and auto-generated: **prefix + separator + zero-padded
+running number** (e.g. `SFPL-0001`, or `EMP_001` with a `_` separator and
+3 digits — both the separator and digit-padding are configurable per
+scheme, not fixed).
+
+Two scopes, same shape as policy assignment: a scheme with
+`legal_entity_id` set applies to that one company only; one with it `NULL`
+applies tenant-wide. Resolution in `people/router.py:_generate_employee_number`
+tries the hiring company's own scheme first, then the tenant-wide one,
+then — if neither exists — falls back to today's behavior (manual entry
+required). Setting the tenant-wide scheme requires `org.write` **and**
+`scope.is_all` (same bar as creating a legal entity); a company's own
+scheme just needs that company in the caller's scope.
+
+The counter increment is a single `UPDATE ... RETURNING`, not a
+read-modify-write, so two employees hired at the same instant still get
+distinct numbers. At most one active scheme per company and at most one
+active tenant-wide scheme are enforced by partial unique indexes in the
+database, not application logic. `POST /v1/employees` still accepts an
+explicit `employee_number` to override generation entirely — needed for
+preserving historical IDs when importing from a legacy system (see
+[`docs/erp-integration-plan.md`](docs/erp-integration-plan.md)).
+
+UI: **Organization → Employee IDs** tab (list, add, edit, remove, with a
+live preview of the next ID as you configure prefix/separator/digits); the
+**Add employee** sheet on the Employees page shows the field as optional
+with an `Auto: SFPL-0001`-style placeholder once a scheme resolves for the
+selected company.
+
+---
+
 ## Overtime
 
 `PolicyTemplate` has always had `ot_enabled`/`ot_qualifying_minutes`/
@@ -531,6 +569,15 @@ grant form, an encashment form, and a manual "Run accrual" button.
 handoff point for it (see its docstring), but salary/CTC/bank data doesn't
 exist anywhere in this codebase yet — it's a from-scratch subsystem, not a
 gap-fill. Scoping doc: [`docs/payroll-design.md`](docs/payroll-design.md).
+
+**ERP integration (Suraj Group / Sharanga Production) is planned, not
+implemented** — bringing two legacy systems in as tenants with dual login
+(ERP SSO + direct email/mobile/employee-code login). Blocked on the real
+legal-entity list for Suraj Group; see
+[`docs/erp-integration-plan.md`](docs/erp-integration-plan.md) for what's
+confirmed vs. still open. The source files
+(`exim.users.json`, `Sharanga_Production.*.json`) contain real employee PII
+and are gitignored — never commit them.
 
 ---
 

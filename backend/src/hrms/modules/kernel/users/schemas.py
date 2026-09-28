@@ -1,5 +1,5 @@
 from datetime import datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
@@ -12,27 +12,27 @@ class UserCreate(BaseModel):
     role: str
     scope_type: ScopeType
     # Required when scope_type == "LEGAL_ENTITY" — typed legal_entity ids.
-    legal_entity_ids: Optional[list[str]] = None
+    legal_entity_ids: list[str] | None = None
     # Required when scope_type in (SELF, DIRECT_REPORTS, ALL_REPORTS): the
     # employee this login IS. Optional otherwise (an admin-only account with
     # no personal employment record, e.g. a company's HR admin login).
-    employment_id: Optional[str] = None
+    employment_id: str | None = None
 
 
 class RoleResponse(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     permissions: list[str]
 
 
 class UserResponse(BaseModel):
     id: str
-    email: Optional[str] = None
+    email: str | None = None
     status: str
     role: str
     scope_type: str
     legal_entity_ids: list[str] = []
-    employment_id: Optional[str] = None
-    employee_name: Optional[str] = None
+    employment_id: str | None = None
+    employee_name: str | None = None
     created_at: datetime
-    last_login_at: Optional[datetime] = None
+    last_login_at: datetime | None = None

@@ -6,7 +6,7 @@ import { differenceInMonths, format } from "date-fns";
 import {
   Download, Plus, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Users,
   Mail, MapPin, Briefcase, Building2, CalendarDays, Hash, UserRound, SearchX, ArrowLeftRight,
-  ShieldCheck,
+  ShieldCheck, Landmark,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
@@ -20,7 +20,6 @@ import { StatusBadge } from "../components/ui/StatusBadge";
 import { Sheet } from "../components/ui/Overlay";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
-import { DEMO_EMPLOYEES } from "../lib/demo";
 import { KycSection } from "../components/kyc/KycSection";
 
 interface Row {
@@ -28,6 +27,7 @@ interface Row {
   employeeNumber: string;
   name: string;
   email?: string;
+  company?: string;
   department?: string;
   designation?: string;
   location?: string;
@@ -36,7 +36,7 @@ interface Row {
   state: string;
   manager?: string;
   stage?: string;
-  // Raw ids for the transfer form — undefined for demo/sample rows.
+  // Raw ids for the transfer form.
   legalEntityId?: string;
   orgUnitId?: string;
   jobId?: string;
@@ -56,9 +56,10 @@ function tenure(hireDate: string) {
   return y ? `${y}y ${m % 12}m` : `${m}m`;
 }
 
-function toRow(e: Employment, name: string): Row {
+function toRow(e: Employment, name: string, company?: string): Row {
   return {
     id: e.id,
+    company,
     employeeNumber: e.employee_number,
     name,
     hireDate: e.hire_date,
@@ -81,6 +82,7 @@ function downloadCsv(rows: Row[]) {
     ["Employee ID", (r) => r.employeeNumber],
     ["Name", (r) => r.name],
     ["Email", (r) => r.email ?? ""],
+    ["Company", (r) => r.company ?? ""],
     ["Department", (r) => r.department ?? ""],
     ["Designation", (r) => r.designation ?? ""],
     ["Location", (r) => r.location ?? ""],
@@ -101,6 +103,7 @@ export function EmployeePage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [status, setStatus] = useState<StatusTab>("ALL");
+  const [company, setCompany] = useState("");
   const [dept, setDept] = useState("");
   const [type, setType] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
@@ -119,24 +122,24 @@ export function EmployeePage() {
     setParams(next, { replace: true });
   };
 
-  const filterKey = `${status}|${dept}|${type}|${search}|${perPage}`;
+  const filterKey = `${status}|${company}|${dept}|${type}|${search}|${perPage}`;
   const [pageState, setPageState] = useState({ n: 1, key: filterKey });
   const page = pageState.key === filterKey ? pageState.n : 1;
   const setPage = (n: number) => setPageState({ n, key: filterKey });
 
-  const emps = useQuery({ queryKey: ["employees"], queryFn: () => peopleApi.listEmployees(undefined, 200) });
-  const persons = useQuery({ queryKey: ["persons"], queryFn: () => peopleApi.listPersons(), enabled: !!emps.data?.length });
+  const emps = useQuery({ queryKey: ["employees"], queryFn: () => peopleApi.listAllEmployees() });
+  const persons = useQuery({ queryKey: ["persons"], queryFn: () => peopleApi.listAllPersons(), enabled: !!emps.data?.length });
 
-  const sample = emps.isError;
   const rows = useMemo<Row[]>(() => {
-    if (sample) return DEMO_EMPLOYEES;
     const byId = new Map((persons.data ?? []).map((p) => [p.id, p]));
+    // Resolved from the signed-in user's companies so it shows even for people not yet placed in a department.
+    const companyById = new Map((user?.legalEntities ?? []).map((l) => [l.id, l.name]));
     return (emps.data ?? []).map((e) => {
       const p = byId.get(e.person_id);
       const name = p ? `${p.preferred_name || p.legal_first_name} ${p.legal_last_name}` : e.employee_number;
-      return toRow(e, name);
+      return toRow(e, name, companyById.get(e.legal_entity_id) ?? e.legal_entity_name ?? undefined);
     });
-  }, [sample, emps.data, persons.data]);
+  }, [emps.data, persons.data, user?.legalEntities]);
 
   const counts = useMemo(() => {
     const c: Record<StatusTab, number> = { ALL: rows.length, ACTIVE: 0, PROBATION: 0, ON_NOTICE: 0, INACTIVE: 0 };
@@ -144,6 +147,7 @@ export function EmployeePage() {
     return c;
   }, [rows]);
 
+  const companies = useMemo(() => [...new Set(rows.map((r) => r.company).filter(Boolean))].sort() as string[], [rows]);
   const departments = useMemo(() => [...new Set(rows.map((r) => r.department).filter(Boolean))].sort() as string[], [rows]);
   const types = useMemo(() => [...new Set(rows.map((r) => r.type).filter(Boolean))].sort() as string[], [rows]);
 
@@ -151,24 +155,25 @@ export function EmployeePage() {
     const q = search.trim().toLowerCase();
     const out = rows.filter((r) =>
       (status === "ALL" || bucket(r.state) === status) &&
+      (!company || r.company === company) &&
       (!dept || r.department === dept) &&
       (!type || r.type === type) &&
-      (!q || [r.name, r.employeeNumber, r.email, r.designation].some((v) => v?.toLowerCase().includes(q))),
+      (!q || [r.name, r.employeeNumber, r.email, r.designation, r.company].some((v) => v?.toLowerCase().includes(q))),
     );
     out.sort((a, b) => {
       const cmp = sort.key === "name" ? a.name.localeCompare(b.name) : a.hireDate.localeCompare(b.hireDate);
       return sort.dir === "asc" ? cmp : -cmp;
     });
     return out;
-  }, [rows, status, dept, type, search, sort]);
+  }, [rows, status, company, dept, type, search, sort]);
 
   const totalPages = Math.max(1, Math.ceil(filtered.length / perPage));
   const current = Math.min(page, totalPages);
   const pageRows = filtered.slice((current - 1) * perPage, current * perPage);
-  const hasFilters = !!(dept || type || search || status !== "ALL");
+  const hasFilters = !!(company || dept || type || search || status !== "ALL");
   const allOnPage = pageRows.length > 0 && pageRows.every((r) => selected.has(r.id));
 
-  const resetFilters = () => { setStatus("ALL"); setDept(""); setType(""); setSearch(""); };
+  const resetFilters = () => { setStatus("ALL"); setCompany(""); setDept(""); setType(""); setSearch(""); };
   const toggleSort = (key: SortKey) =>
     setSort((s) => (s.key === key ? { key, dir: s.dir === "asc" ? "desc" : "asc" } : { key, dir: key === "hireDate" ? "desc" : "asc" }));
   const toggleRow = (id: string) =>
@@ -187,7 +192,7 @@ export function EmployeePage() {
     <>
       <PageHeader
         title="Employees"
-        description={`Everyone employed across ${user?.tenantName ?? "your"} entities.`}
+        description={(user?.legalEntities.length ?? 0) > 1 ? `Everyone employed across ${user?.tenantName} companies.` : "Everyone employed here."}
         actions={
           <>
             <button className="btn-secondary" onClick={() => downloadCsv(filtered)} disabled={!filtered.length}>
@@ -202,9 +207,14 @@ export function EmployeePage() {
         }
       />
 
-      {sample && (
+      {emps.isError && (
         <div className="mb-4">
-          <Notice title="Showing sample employees">The employee API isn’t responding. Start the backend to see and manage real records.</Notice>
+          <Notice
+            title="Couldn’t load employees"
+            action={<button className="btn-secondary btn-sm shrink-0" onClick={() => emps.refetch()}>Retry</button>}
+          >
+            The employee API isn’t responding, so no records can be shown right now.
+          </Notice>
         </div>
       )}
 
@@ -228,12 +238,18 @@ export function EmployeePage() {
             <Search size={14} className="pointer-events-none absolute left-3 top-1/2 -translate-y-1/2 text-fg-subtle" />
             <input
               className="input pl-9"
-              placeholder="Search name, ID or email"
+              placeholder="Search name, ID or company"
               value={search}
               onChange={(e) => setSearch(e.target.value)}
               aria-label="Search employees"
             />
           </div>
+          {companies.length > 1 && (
+            <select className="input sm:w-56" value={company} onChange={(e) => setCompany(e.target.value)} aria-label="Company">
+              <option value="">All companies</option>
+              {companies.map((c) => <option key={c}>{c}</option>)}
+            </select>
+          )}
           {departments.length > 0 && (
             <select className="input sm:w-44" value={dept} onChange={(e) => setDept(e.target.value)} aria-label="Department">
               <option value="">All departments</option>
@@ -295,12 +311,13 @@ export function EmployeePage() {
                   <th>
                     <button className="inline-flex items-center gap-1.5 hover:text-fg" onClick={() => toggleSort("name")}>Employee {sortIcon("name")}</button>
                   </th>
+                  {companies.length > 1 && <th className="hidden lg:table-cell">Company</th>}
                   <th className="hidden md:table-cell">Department</th>
                   <th className="hidden lg:table-cell">Designation</th>
                   <th>
                     <button className="inline-flex items-center gap-1.5 hover:text-fg" onClick={() => toggleSort("hireDate")}>Joined {sortIcon("hireDate")}</button>
                   </th>
-                  <th className="hidden xl:table-cell">Type</th>
+                  {types.length > 0 && <th className="hidden xl:table-cell">Type</th>}
                   <th>Status</th>
                   <th className="w-8" />
                 </tr>
@@ -325,6 +342,7 @@ export function EmployeePage() {
                         </div>
                       </div>
                     </td>
+                    {companies.length > 1 && <td className="hidden max-w-[14rem] truncate lg:table-cell" title={r.company}>{r.company ?? "—"}</td>}
                     <td className="hidden md:table-cell">
                       {r.department ?? (r.legalEntityId !== undefined
                         ? <span className="text-warning">Not placed</span>
@@ -332,7 +350,7 @@ export function EmployeePage() {
                     </td>
                     <td className="hidden lg:table-cell">{r.designation ?? "—"}</td>
                     <td className="whitespace-nowrap tabular-nums">{format(new Date(r.hireDate), "d MMM yyyy")}</td>
-                    <td className="hidden xl:table-cell">{r.type ?? "—"}</td>
+                    {types.length > 0 && <td className="hidden xl:table-cell">{r.type ?? "—"}</td>}
                     <td><StatusBadge status={r.state} /></td>
                     <td><ChevronRight size={15} className="text-fg-subtle opacity-0 transition-opacity group-hover:opacity-100" /></td>
                   </tr>
@@ -395,12 +413,14 @@ function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
   const fields = row
     ? [
         { icon: Hash, label: "Employee ID", value: row.employeeNumber },
+        { icon: Landmark, label: "Company", value: row.company },
         { icon: Building2, label: "Department", value: row.department },
         { icon: Briefcase, label: "Designation", value: row.designation },
         { icon: UserRound, label: "Reports to", value: row.manager },
         { icon: MapPin, label: "Location", value: row.location },
         { icon: CalendarDays, label: "Joined", value: `${format(new Date(row.hireDate), "d MMM yyyy")} · ${tenure(row.hireDate)}` },
-        { icon: Mail, label: "Email", value: row.email },
+        // Only shown when known — the employee list doesn't carry login emails.
+        ...(row.email ? [{ icon: Mail, label: "Email", value: row.email }] : []),
       ]
     : [];
   const isPlaced = !!row?.department;
@@ -497,7 +517,9 @@ function PlacementFields({ legalEntityId, values, onChange, excludeEmploymentId 
   const orgUnits = useQuery({ queryKey: ["org-units"], queryFn: () => orgApi.listOrgUnits() });
   const locations = useQuery({ queryKey: ["locations"], queryFn: () => orgApi.listLocations() });
   const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => orgApi.listJobs() });
-  const employees = useQuery({ queryKey: ["employees"], queryFn: () => peopleApi.listEmployees(undefined, 200) });
+  const employees = useQuery({ queryKey: ["employees"], queryFn: () => peopleApi.listAllEmployees() });
+  const persons = useQuery({ queryKey: ["persons"], queryFn: () => peopleApi.listAllPersons(), enabled: !!employees.data?.length });
+  const personName = new Map((persons.data ?? []).map((p) => [p.id, `${p.preferred_name || p.legal_first_name} ${p.legal_last_name}`]));
 
   const departments = (orgUnits.data ?? []).filter((o) => o.type === "DEPARTMENT" && o.legal_entity_id === legalEntityId);
   const entityLocations = (locations.data ?? []).filter((l) => !l.legal_entity_id || l.legal_entity_id === legalEntityId);
@@ -535,7 +557,7 @@ function PlacementFields({ legalEntityId, values, onChange, excludeEmploymentId 
         <label className="label" htmlFor="pl-mgr">Reports to <span className="font-normal text-fg-subtle">(optional)</span></label>
         <select id="pl-mgr" className="input" value={values.managerEmploymentId} onChange={(e) => onChange({ managerEmploymentId: e.target.value })}>
           <option value="">No manager</option>
-          {managers.map((m) => <option key={m.id} value={m.id}>{m.employee_number}</option>)}
+          {managers.map((m) => <option key={m.id} value={m.id}>{personName.has(m.person_id) ? `${personName.get(m.person_id)} · ${m.employee_number}` : m.employee_number}</option>)}
         </select>
       </div>
     </>
@@ -555,6 +577,9 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
 
   const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities(), enabled: open });
   const entityId = form.entity || entities.data?.[0]?.id || "";
+  const idSchemes = useQuery({ queryKey: ["employee-id-schemes"], queryFn: () => orgApi.listEmployeeIdSchemes(), enabled: open });
+  const resolvedScheme = (idSchemes.data ?? []).find((s) => s.legal_entity_id === entityId)
+    ?? (idSchemes.data ?? []).find((s) => !s.legal_entity_id);
 
   const hire = useMutation({
     mutationFn: async () => {
@@ -562,7 +587,7 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
       const employment = await peopleApi.createEmployment({
         person_id: person.id,
         legal_entity_id: entityId,
-        employee_number: form.number.trim(),
+        employee_number: form.number.trim() || undefined,
         hire_date: form.hireDate,
       });
       if (form.orgUnitId && form.jobId && form.locationId) {
@@ -598,7 +623,7 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
     onError: (e) => toast.error("Couldn’t add employee", errorMessage(e)),
   });
 
-  const valid = form.first.trim() && form.last.trim() && form.number.trim() && form.hireDate && entityId;
+  const valid = form.first.trim() && form.last.trim() && (form.number.trim() || resolvedScheme) && form.hireDate && entityId;
   const submit = (e: FormEvent) => { e.preventDefault(); if (valid) hire.mutate(); };
 
   return (
@@ -629,8 +654,14 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
         </div>
         <div className="grid grid-cols-2 gap-3">
           <div>
-            <label className="label" htmlFor="ae-num">Employee ID</label>
-            <input id="ae-num" className="input font-mono" placeholder="SRJ1049" value={form.number} onChange={set("number")} />
+            <label className="label" htmlFor="ae-num">
+              Employee ID {resolvedScheme && <span className="font-normal text-fg-subtle">(optional — auto-generated)</span>}
+            </label>
+            <input
+              id="ae-num" className="input font-mono"
+              placeholder={resolvedScheme ? `Auto: ${resolvedScheme.preview}` : "Enter employee ID"}
+              value={form.number} onChange={set("number")}
+            />
           </div>
           <div>
             <label className="label" htmlFor="ae-date">Date of joining</label>

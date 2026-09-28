@@ -2,8 +2,8 @@ import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
-  Users, UserCheck, Umbrella, Inbox, ChevronRight, Cake, Award, UserPlus, CheckCheck,
-  BarChart3, FilePenLine, CalendarX2, Timer, CalendarCheck, ArrowUpRight,
+  Users, UserCheck, Umbrella, Inbox, CheckCheck,
+  BarChart3, FilePenLine, CalendarX2, Timer, CalendarCheck,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
 import { dashboardApi } from "../api/dashboard";
@@ -13,13 +13,9 @@ import { PunchClock } from "../components/attendance/PunchClock";
 import { OnboardingChecklist } from "../components/onboarding/OnboardingChecklist";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatCard } from "../components/ui/StatCard";
-import { AreaChart, BarList, Donut, Legend, CHART } from "../components/ui/Charts";
-import { Avatar } from "../components/ui/Avatar";
-import { StatusBadge, TONE_CLASS } from "../components/ui/StatusBadge";
-import { EmptyState, Notice, SampleTag, Skeleton } from "../components/ui/Feedback";
-import {
-  ACTION_ITEMS, ATTENDANCE_TREND, DEMO_EMPLOYEES, DEPT_HEADCOUNT, LEAVE_BY_TYPE, TODAY_EVENTS,
-} from "../lib/demo";
+import { Donut, Legend, CHART } from "../components/ui/Charts";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
 
 type Dict = Record<string, unknown>;
 const num = (v: unknown, fallback = 0) => (typeof v === "number" ? v : fallback);
@@ -35,7 +31,7 @@ function ApiNotice({ onRetry }: { onRetry: () => void }) {
       title="Live data is unavailable"
       action={<button onClick={onRetry} className="btn-secondary btn-sm shrink-0">Retry</button>}
     >
-      The API isn’t responding, so figures below are sample data. Start the backend and run migrations (see RUNBOOK.md).
+      The API isn’t responding, so the figures below aren’t current. Start the backend and run migrations (see RUNBOOK.md).
     </Notice>
   );
 }
@@ -48,99 +44,56 @@ function HRDashboard() {
     queryFn: () => leaveApi.listApplications(),
   });
 
-  const live = !!data && !isError;
   const hc = (data?.headcount as Dict) ?? {};
   const today = (data?.today as Dict) ?? {};
   const month = (data?.month as Dict) ?? {};
   const actions = (data?.actions as Dict) ?? {};
 
-  const total = live ? num(hc.total) : 148;
-  const present = live ? num(today.present) : 140;
-  const absent = live ? num(today.absent) : 3;
-  const onLeave = live ? num(today.on_leave) : 5;
-  const late = live ? num(today.late) : 5;
-  const newHires = live ? num(month.new_hires) : 6;
-  const pending = live ? num(actions.pending_approvals) : 10;
+  const total = num(hc.total);
+  const present = num(today.present);
+  const absent = num(today.absent);
+  const onLeave = num(today.on_leave);
+  const late = num(today.late);
+  const newHires = num(month.new_hires);
+  const pending = num(actions.pending_approvals);
   const presentPct = total > 0 ? Math.round((present / total) * 100) : 0;
 
   const leaveLive = !!apps?.length;
-  const leaveStatus = leaveLive
-    ? {
-        pending: apps.filter((a) => a.status.includes("PENDING")).length,
-        approved: apps.filter((a) => a.status === "APPROVED").length,
-        rejected: apps.filter((a) => a.status === "REJECTED").length,
-      }
-    : { pending: 7, approved: 22, rejected: 3 };
-  const leaveTypes = leaveLive
-    ? Object.values(
-        apps.reduce<Record<string, { label: string; value: number; color: string }>>((acc, a) => {
-          acc[a.leave_type_name] ??= { label: a.leave_type_name, value: 0, color: a.leave_type_color };
-          acc[a.leave_type_name].value += a.days_requested;
-          return acc;
-        }, {}),
-      )
-    : LEAVE_BY_TYPE;
+  const leaveStatus = {
+    pending: (apps ?? []).filter((a) => a.status.includes("PENDING")).length,
+    approved: (apps ?? []).filter((a) => a.status === "APPROVED").length,
+    rejected: (apps ?? []).filter((a) => a.status === "REJECTED").length,
+  };
+  const leaveTypes = Object.values(
+    (apps ?? []).reduce<Record<string, { label: string; value: number; color: string }>>((acc, a) => {
+      acc[a.leave_type_name] ??= { label: a.leave_type_name, value: 0, color: a.leave_type_color };
+      acc[a.leave_type_name].value += a.days_requested;
+      return acc;
+    }, {}),
+  );
   const leaveTotal = leaveTypes.reduce((s, t) => s + t.value, 0) || 1;
-
-  const recent = [...DEMO_EMPLOYEES].sort((a, b) => b.hireDate.localeCompare(a.hireDate)).slice(0, 5);
 
   return (
     <div className="space-y-6">
       {isError && <ApiNotice onRetry={() => refetch()} />}
 
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Headcount" icon={Users} loading={isLoading} value={total} delta={newHires} hint="joined this month"
-          spark={[132, 135, 134, 138, 141, 140, 143, 145, 148]} />
-        <StatCard label="Present today" icon={UserCheck} loading={isLoading} value={present} hint={`${presentPct}% of workforce`}
-          spark={ATTENDANCE_TREND.map((d) => d.present)} />
+        <StatCard label="Headcount" icon={Users} loading={isLoading} value={total} delta={newHires} hint="joined this month" />
+        <StatCard label="Present today" icon={UserCheck} loading={isLoading} value={present} hint={`${presentPct}% of workforce`} />
         <StatCard label="On leave today" icon={Umbrella} loading={isLoading} value={onLeave} hint={`${absent} unplanned absences`} />
         <StatCard label="Pending approvals" icon={Inbox} loading={isLoading} value={pending} hint="leave & corrections" />
       </div>
 
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="card lg:col-span-2">
-          <div className="card-header">
-            <div>
-              <h3 className="card-title">Attendance trend</h3>
-              <p className="card-desc">Daily attendance rate · last 12 working days</p>
-            </div>
-            <div className="flex items-center gap-2">
-              <Link to="/daily-analysis" className="btn-ghost btn-sm text-xs gap-1">
-                <span>Daily analysis</span>
-                <ArrowUpRight size={13} />
-              </Link>
-              <SampleTag />
-            </div>
-          </div>
-          <div className="px-5 pb-5">
-            <AreaChart
-              min={84}
-              max={100}
-              unit="%"
-              data={ATTENDANCE_TREND.map((d) => ({
-                label: d.label,
-                value: d.value,
-                detail: (
-                  <div className="grid grid-cols-3 gap-2 tabular-nums">
-                    <span><b className="font-medium text-success">{d.present}</b> in</span>
-                    <span><b className="font-medium text-warning">{d.late}</b> late</span>
-                    <span><b className="font-medium text-danger">{d.absent}</b> out</span>
-                  </div>
-                ),
-              }))}
-            />
-          </div>
-        </div>
-
+      <div className="grid gap-4 lg:grid-cols-2">
         <div className="card">
           <div className="card-header">
             <div>
               <h3 className="card-title">Today</h3>
               <p className="card-desc">{format(new Date(), "EEEE, d MMM")}</p>
             </div>
-            <Link to="/attendance" className="link text-xs">Details</Link>
+            <Link to="/daily-analysis" className="link text-xs">Daily analysis</Link>
           </div>
-          <div className="flex flex-col items-center gap-6 px-5 pb-5 sm:flex-row lg:flex-col xl:flex-row">
+          <div className="flex flex-col items-center gap-6 px-5 pb-5 sm:flex-row">
             {isLoading ? (
               <Skeleton className="h-[152px] w-[152px] rounded-full" />
             ) : (
@@ -168,121 +121,37 @@ function HRDashboard() {
             </div>
           </div>
         </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">Headcount by department</h3>
-            <SampleTag />
-          </div>
-          <div className="px-5 pb-5"><BarList items={DEPT_HEADCOUNT} /></div>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">Action centre</h3>
-            <SampleTag />
-          </div>
-          <ul className="px-2 pb-2">
-            {ACTION_ITEMS.map((a) => (
-              <li key={a.label}>
-                <Link to={a.to} className="group flex items-center gap-3 rounded-lg px-3 py-2.5 text-[13px] transition-colors hover:bg-muted">
-                  <span className="flex-1 text-fg-muted group-hover:text-fg">{a.label}</span>
-                  <span className={`${TONE_CLASS[a.tone]} tabular-nums`}>{a.count}</span>
-                  <ChevronRight size={14} className="text-fg-subtle transition-transform group-hover:translate-x-0.5" />
-                </Link>
-              </li>
-            ))}
-          </ul>
-        </div>
-
-        <div className="card">
-          <div className="card-header">
-            <h3 className="card-title">Today at SFPL</h3>
-            <SampleTag />
-          </div>
-          <ul className="space-y-1 px-2 pb-2">
-            {TODAY_EVENTS.map((e) => {
-              const Icon = e.kind === "birthday" ? Cake : e.kind === "anniversary" ? Award : UserPlus;
-              return (
-                <li key={e.name} className="flex items-center gap-3 rounded-lg px-3 py-2">
-                  <Avatar name={e.name} size="md" />
-                  <div className="min-w-0 flex-1 leading-tight">
-                    <p className="truncate text-[13px] font-medium text-fg">{e.name}</p>
-                    <p className="truncate text-xs text-fg-subtle">{e.detail}</p>
-                  </div>
-                  <span className="grid h-7 w-7 place-items-center rounded-lg bg-muted text-fg-subtle"><Icon size={14} /></span>
-                </li>
-              );
-            })}
-          </ul>
-        </div>
-      </div>
-
-      <div className="grid gap-4 lg:grid-cols-3">
-        <div className="card overflow-hidden lg:col-span-2">
-          <div className="card-header">
-            <div className="flex items-center gap-2">
-              <h3 className="card-title">Recent joiners</h3>
-              <SampleTag />
-            </div>
-            <Link to="/employees" className="link text-xs">View all</Link>
-          </div>
-          <div className="overflow-x-auto">
-            <table className="tbl">
-              <thead>
-                <tr><th>Employee</th><th>Department</th><th className="hidden md:table-cell">Role</th><th>Joined</th><th>Status</th></tr>
-              </thead>
-              <tbody>
-                {recent.map((e) => (
-                  <tr key={e.id}>
-                    <td>
-                      <div className="flex items-center gap-3">
-                        <Avatar name={e.name} size="sm" />
-                        <div className="min-w-0 leading-tight">
-                          <p className="truncate font-medium text-fg">{e.name}</p>
-                          <p className="truncate text-xs text-fg-subtle">{e.employeeNumber}</p>
-                        </div>
-                      </div>
-                    </td>
-                    <td>{e.department}</td>
-                    <td className="hidden md:table-cell">{e.designation}</td>
-                    <td className="whitespace-nowrap tabular-nums">{format(new Date(e.hireDate), "d MMM yyyy")}</td>
-                    <td><StatusBadge status={e.state} /></td>
-                  </tr>
-                ))}
-              </tbody>
-            </table>
-          </div>
-        </div>
 
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">Leave overview</h3>
-            {leaveLive ? <Link to="/leave" className="link text-xs">Open</Link> : <SampleTag />}
+            {leaveLive && <Link to="/leave" className="link text-xs">Open</Link>}
           </div>
-          <div className="px-5 pb-5">
-            <div className="grid grid-cols-3 divide-x divide-line rounded-lg border border-line">
-              {[
-                { label: "Pending", value: leaveStatus.pending, cls: "text-warning" },
-                { label: "Approved", value: leaveStatus.approved, cls: "text-success" },
-                { label: "Rejected", value: leaveStatus.rejected, cls: "text-danger" },
-              ].map((s) => (
-                <div key={s.label} className="px-3 py-3 text-center">
-                  <p className={`text-xl font-semibold tabular-nums ${s.cls}`}>{s.value}</p>
-                  <p className="text-[11px] text-fg-subtle">{s.label}</p>
-                </div>
-              ))}
+          {!leaveLive ? (
+            <EmptyState icon={Umbrella} title="No leave requests yet" description="Requests will be summarised here once people start applying." className="py-10" />
+          ) : (
+            <div className="px-5 pb-5">
+              <div className="grid grid-cols-3 divide-x divide-line rounded-lg border border-line">
+                {[
+                  { label: "Pending", value: leaveStatus.pending, cls: "text-warning" },
+                  { label: "Approved", value: leaveStatus.approved, cls: "text-success" },
+                  { label: "Rejected", value: leaveStatus.rejected, cls: "text-danger" },
+                ].map((s) => (
+                  <div key={s.label} className="px-3 py-3 text-center">
+                    <p className={`text-xl font-semibold tabular-nums ${s.cls}`}>{s.value}</p>
+                    <p className="text-[11px] text-fg-subtle">{s.label}</p>
+                  </div>
+                ))}
+              </div>
+              <p className="eyebrow mb-2.5 mt-5">Days by leave type</p>
+              <div className="flex h-2 overflow-hidden rounded-full bg-muted">
+                {leaveTypes.map((t) => (
+                  <div key={t.label} style={{ width: `${(t.value / leaveTotal) * 100}%`, background: t.color }} className="h-full first:rounded-l-full last:rounded-r-full" />
+                ))}
+              </div>
+              <div className="mt-4"><Legend items={leaveTypes.map((t) => ({ label: t.label, color: t.color, value: `${t.value}d` }))} /></div>
             </div>
-            <p className="eyebrow mb-2.5 mt-5">Days by leave type</p>
-            <div className="flex h-2 overflow-hidden rounded-full bg-muted">
-              {leaveTypes.map((t) => (
-                <div key={t.label} style={{ width: `${(t.value / leaveTotal) * 100}%`, background: t.color }} className="h-full first:rounded-l-full last:rounded-r-full" />
-              ))}
-            </div>
-            <div className="mt-4"><Legend items={leaveTypes.map((t) => ({ label: t.label, color: t.color, value: `${t.value}d` }))} /></div>
-          </div>
+          )}
         </div>
       </div>
     </div>
@@ -399,7 +268,8 @@ function EmployeeDashboard({ employmentId }: { employmentId: string }) {
 export function DashboardPage() {
   const { user } = useAuth();
   if (!user) return null;
-  const first = user.name.split(" ")[0];
+  // Admin-only accounts have no person record, so their "name" is just their email.
+  const first = user.name.includes("@") ? "" : user.name.split(" ")[0];
   const isHR = user.role === "HR" || user.role === "SUPER_ADMIN";
 
   const actions = isHR ? (
@@ -417,7 +287,7 @@ export function DashboardPage() {
   return (
     <>
       <PageHeader
-        title={`${greeting()}, ${first}`}
+        title={first ? `${greeting()}, ${first}` : greeting()}
         description={isHR ? `Here’s what’s happening across ${user.tenantName} today.` : "Here’s your day at a glance."}
         actions={actions}
       />

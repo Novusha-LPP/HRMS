@@ -28,25 +28,36 @@ own and is checked against their scope if they name someone else; approver
 identity is always the caller (from the verified token), never a parameter.
 """
 
-from uuid import UUID, uuid4
+from datetime import timedelta
+from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import text
 from sqlmodel import select
 
+from hrms.core.approvals import require_reviewer
 from hrms.core.authn import CurrentUser
-from hrms.core.authz import ScopeDep, authorize_employment, require_permission, resolve_acting_employment_id
+from hrms.core.authz import (
+    ScopeDep,
+    authorize_employment,
+    authorize_write,
+    read_scope,
+    require_global_permission,
+    require_permission,
+    resolve_acting_employment_id,
+    visible_employment_ids,
+)
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import now_utc, working_days_between
+from hrms.core.datetime_utils import now_utc
 from hrms.core.ids import to_typed_id, to_uuid
+from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
-from hrms.modules.policy.engine import resolve_policy
 from hrms.modules.leave.models import (
     CompOffGrant,
-    LeaveApprovalAction,
-    LeaveApprovalActionType,
     LeaveApplication,
     LeaveApplicationStatus,
+    LeaveApprovalAction,
+    LeaveApprovalActionType,
     LeaveBalance,
     LeaveEncashment,
     LeaveType,
@@ -55,10 +66,10 @@ from hrms.modules.leave.schemas import (
     AccrualRunResponse,
     CompOffGrantRequest,
     CompOffGrantResponse,
+    LeaveApplicationResponse,
     LeaveApplyRequest,
     LeaveApprovalActionRequest,
     LeaveApprovalActionResponse,
-    LeaveApplicationResponse,
     LeaveBalanceResponse,
     LeaveCancelRequest,
     LeaveEncashmentRequest,
@@ -67,11 +78,13 @@ from hrms.modules.leave.schemas import (
     LeaveTypeResponse,
     LeaveTypeUpdate,
 )
+from hrms.modules.policy.engine import resolve_policy
 
 router = APIRouter(prefix="/v1/leave", tags=["Leave Management"])
 
 
 # ─── Leave types ──────────────────────────────────────────────────────────────
+
 
 @router.get("/types", response_model=list[LeaveTypeResponse])
 async def list_leave_types(
@@ -87,8 +100,12 @@ async def list_leave_types(
     return [_lt_resp(t) for t in rows.scalars()]
 
 
-@router.post("/types", response_model=LeaveTypeResponse, status_code=201,
-             dependencies=[require_permission("leave.write")])
+@router.post(
+    "/types",
+    response_model=LeaveTypeResponse,
+    status_code=201,
+    dependencies=[require_global_permission("leave.write")],
+)
 async def create_leave_type(
     body: LeaveTypeCreate,
     tenant_id: TenantDep = None,
@@ -101,8 +118,11 @@ async def create_leave_type(
     return _lt_resp(lt)
 
 
-@router.patch("/types/{leave_type_id}", response_model=LeaveTypeResponse,
-              dependencies=[require_permission("leave.write")])
+@router.patch(
+    "/types/{leave_type_id}",
+    response_model=LeaveTypeResponse,
+    dependencies=[require_global_permission("leave.write")],
+)
 async def update_leave_type(
     leave_type_id: str,
     body: LeaveTypeUpdate,
@@ -119,6 +139,7 @@ async def update_leave_type(
 
 # ─── Leave balances ───────────────────────────────────────────────────────────
 
+
 @router.get("/balances", response_model=list[LeaveBalanceResponse])
 async def list_balances(
     principal: CurrentUser,
@@ -128,6 +149,7 @@ async def list_balances(
     employment_id: str | None = Query(default=None, description="Defaults to your own employment"),
     year: int | None = Query(default=None),
 ) -> list[LeaveBalanceResponse]:
+    scope = read_scope(scope, "leave.read", "leave.approve")
     emp_uuid = resolve_acting_employment_id(principal, employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
 
@@ -152,7 +174,9 @@ async def list_balances(
             carry_forward_days=b.carry_forward_days,
             used_days=b.used_days,
             pending_days=b.pending_days,
-            available_days=max(0.0, b.allocated_days + b.carry_forward_days - b.used_days - b.pending_days),
+            available_days=max(
+                0.0, b.allocated_days + b.carry_forward_days - b.used_days - b.pending_days
+            ),
             color=lt.color,
         )
         for b, lt in rows
@@ -168,8 +192,10 @@ async def init_balances(
     year: int = Query(...),
 ) -> dict:
     """Create leave balance records for all active leave types for one employee/year."""
+    scope = scope.for_permission("leave.write")
     emp_uuid = to_uuid(employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
+    await lock_resource(session, tenant_id, f"leave:{emp_uuid}")
 
     lt_rows = await session.execute(
         select(LeaveType)
@@ -210,8 +236,13 @@ async def init_balances(
 # encashment are one-shot credits/debits an HR user enters after the fact,
 # and accrual is a scheduled top-up. None of this needs multi-level review.
 
-@router.post("/comp-off", response_model=CompOffGrantResponse, status_code=201,
-             dependencies=[require_permission("leave.write")])
+
+@router.post(
+    "/comp-off",
+    response_model=CompOffGrantResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
 async def grant_comp_off(
     body: CompOffGrantRequest,
     principal: CurrentUser,
@@ -219,8 +250,10 @@ async def grant_comp_off(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> CompOffGrantResponse:
+    scope = scope.for_permission("leave.write")
     emp_uuid = to_uuid(body.employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
+    await lock_resource(session, tenant_id, f"leave:{emp_uuid}")
 
     existing = await session.execute(
         select(CompOffGrant)
@@ -234,13 +267,25 @@ async def grant_comp_off(
     lt = await _get_or_create_comp_off_type(session, tenant_id)
 
     grant = CompOffGrant(
-        tenant_id=tenant_id, id=uuid4(), employment_id=emp_uuid, work_date=body.work_date,
-        days_granted=body.days_granted, notes=body.notes, granted_by=principal.employment_id,
+        tenant_id=tenant_id,
+        id=uuid4(),
+        employment_id=emp_uuid,
+        work_date=body.work_date,
+        days_granted=body.days_granted,
+        notes=body.notes,
+        granted_by=principal.employment_id,
         recorded_at=now_utc(),
     )
     session.add(grant)
-    await _adjust_balance(session, tenant_id, emp_uuid, lt.id, body.work_date.year,
-                          allocated_delta=body.days_granted, create_if_missing=True)
+    await _adjust_balance(
+        session,
+        tenant_id,
+        emp_uuid,
+        lt.id,
+        body.work_date.year,
+        allocated_delta=body.days_granted,
+        create_if_missing=True,
+    )
     await session.flush()
     return CompOffGrantResponse(
         id=to_typed_id("comp_off_grant", grant.id),
@@ -253,8 +298,12 @@ async def grant_comp_off(
     )
 
 
-@router.post("/encashment", response_model=LeaveEncashmentResponse, status_code=201,
-             dependencies=[require_permission("leave.write")])
+@router.post(
+    "/encashment",
+    response_model=LeaveEncashmentResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
 async def encash_leave(
     body: LeaveEncashmentRequest,
     principal: CurrentUser,
@@ -262,8 +311,10 @@ async def encash_leave(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveEncashmentResponse:
+    scope = scope.for_permission("leave.write")
     emp_uuid = to_uuid(body.employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
+    await lock_resource(session, tenant_id, f"leave:{emp_uuid}")
 
     lt = await _get_lt(session, tenant_id, body.leave_type_id)
     if not lt.encashable:
@@ -278,17 +329,29 @@ async def encash_leave(
         .where(LeaveBalance.year == effective_date.year)
     )
     lb = row.scalars().first()
-    available = (lb.allocated_days + lb.carry_forward_days - lb.used_days - lb.pending_days) if lb else 0.0
+    available = (
+        (lb.allocated_days + lb.carry_forward_days - lb.used_days - lb.pending_days) if lb else 0.0
+    )
     if body.days > available:
-        raise HTTPException(400, f"Only {available} days available to encash, requested {body.days}")
+        raise HTTPException(
+            400, f"Only {available} days available to encash, requested {body.days}"
+        )
 
     enc = LeaveEncashment(
-        tenant_id=tenant_id, id=uuid4(), employment_id=emp_uuid, leave_type_id=lt.id,
-        days=body.days, effective_date=effective_date, notes=body.notes,
-        processed_by=principal.employment_id, recorded_at=now_utc(),
+        tenant_id=tenant_id,
+        id=uuid4(),
+        employment_id=emp_uuid,
+        leave_type_id=lt.id,
+        days=body.days,
+        effective_date=effective_date,
+        notes=body.notes,
+        processed_by=principal.employment_id,
+        recorded_at=now_utc(),
     )
     session.add(enc)
-    await _adjust_balance(session, tenant_id, emp_uuid, lt.id, effective_date.year, allocated_delta=-body.days)
+    await _adjust_balance(
+        session, tenant_id, emp_uuid, lt.id, effective_date.year, allocated_delta=-body.days
+    )
     await session.flush()
     return LeaveEncashmentResponse(
         id=to_typed_id("leave_encashment", enc.id),
@@ -303,13 +366,18 @@ async def encash_leave(
     )
 
 
-@router.post("/accrual/run", response_model=AccrualRunResponse,
-             dependencies=[require_permission("leave.write")])
+@router.post(
+    "/accrual/run",
+    response_model=AccrualRunResponse,
+    dependencies=[require_permission("leave.write")],
+)
 async def run_accrual(
     scope: ScopeDep,
     tenant_id: TenantDep,
     session: SessionDep,
-    period: str | None = Query(default=None, description='"YYYY-MM", defaults to the current month'),
+    period: str | None = Query(
+        default=None, description='"YYYY-MM", defaults to the current month'
+    ),
 ) -> AccrualRunResponse:
     """
     Credits days_per_year / 12 to every active employee's balance for every
@@ -321,8 +389,16 @@ async def run_accrual(
     mistake. Meant to be triggered by an external cron; there is no in-app
     scheduler (see RUNBOOK.md).
     """
+    scope = scope.for_permission("leave.write")
     if period is None:
         period = now_utc().strftime("%Y-%m")
+    import re
+
+    if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
+        raise HTTPException(422, "period must be YYYY-MM")
+    if period > now_utc().strftime("%Y-%m"):
+        raise HTTPException(422, "Cannot accrue a future period")
+    await lock_resource(session, tenant_id, "leave-accrual")
     year = int(period[:4])
 
     lt_rows = await session.execute(
@@ -352,7 +428,8 @@ async def run_accrual(
         monthly = round(lt.days_per_year / 12, 4)
         if monthly <= 0:
             continue
-        for emp_id in employment_ids:
+        for emp_id in sorted(employment_ids):
+            await lock_resource(session, tenant_id, f"leave:{emp_id}")
             row = await session.execute(
                 select(LeaveBalance)
                 .where(LeaveBalance.tenant_id == tenant_id)
@@ -363,8 +440,12 @@ async def run_accrual(
             lb = row.scalars().first()
             if lb is None:
                 lb = LeaveBalance(
-                    tenant_id=tenant_id, id=uuid4(), employment_id=emp_id,
-                    leave_type_id=lt.id, year=year, recorded_at=now_utc(),
+                    tenant_id=tenant_id,
+                    id=uuid4(),
+                    employment_id=emp_id,
+                    leave_type_id=lt.id,
+                    year=year,
+                    recorded_at=now_utc(),
                 )
             if lb.last_accrued_period is not None and lb.last_accrued_period >= period:
                 continue
@@ -375,10 +456,13 @@ async def run_accrual(
             total_days += monthly
 
     await session.flush()
-    return AccrualRunResponse(period=period, balances_credited=credited, days_credited_total=round(total_days, 2))
+    return AccrualRunResponse(
+        period=period, balances_credited=credited, days_credited_total=round(total_days, 2)
+    )
 
 
 # ─── Leave applications ───────────────────────────────────────────────────────
+
 
 @router.get("/applications", response_model=list[LeaveApplicationResponse])
 async def list_applications(
@@ -389,6 +473,7 @@ async def list_applications(
     employment_id: str | None = Query(default=None),
     status: str | None = Query(default=None),
 ) -> list[LeaveApplicationResponse]:
+    scope = read_scope(scope, "leave.read", "leave.approve")
     q = (
         select(LeaveApplication, LeaveType)
         .join(LeaveType, LeaveType.id == LeaveApplication.leave_type_id)
@@ -400,25 +485,8 @@ async def list_applications(
         await authorize_employment(session, tenant_id, scope, emp_uuid)
         q = q.where(LeaveApplication.employment_id == emp_uuid)
     elif not scope.is_all:
-        if scope.employment_ids is not None:
-            if not scope.employment_ids:
-                return []
-            q = q.where(LeaveApplication.employment_id.in_(scope.employment_ids))
-        elif scope.legal_entity_ids:
-            allowed = await session.execute(
-                text("""
-                    SELECT id FROM employments
-                    WHERE tenant_id = CAST(:tid AS uuid)
-                      AND legal_entity_id = ANY(CAST(:ids AS uuid[]))
-                """),
-                {"tid": str(tenant_id), "ids": [str(i) for i in scope.legal_entity_ids]},
-            )
-            allowed_ids = [r[0] for r in allowed]
-            if not allowed_ids:
-                return []
-            q = q.where(LeaveApplication.employment_id.in_(allowed_ids))
-        else:
-            return []
+        allowed_ids = await visible_employment_ids(session, tenant_id, scope)
+        q = q.where(LeaveApplication.employment_id.in_(allowed_ids))
     if status:
         q = q.where(LeaveApplication.status == status)
     rows = await session.execute(q.order_by(LeaveApplication.applied_at.desc()))
@@ -443,21 +511,14 @@ async def create_application(
 
     lt = await _get_lt(session, tenant_id, body.leave_type_id)
 
-    holiday_rows = await session.execute(
-        text("""
-            SELECT holiday_date FROM holidays
-            WHERE tenant_id = CAST(:tid AS uuid) AND legal_entity_id IS NULL AND archived_at IS NULL
-              AND holiday_date >= CAST(:from_date AS date) AND holiday_date <= CAST(:to_date AS date)
-        """),
-        {"tid": str(tenant_id), "from_date": body.from_date, "to_date": body.to_date},
+    await authorize_write(
+        session, tenant_id, scope, principal, emp_uuid, "leave.write", "leave.apply"
     )
-    holidays = {r[0] for r in holiday_rows}
-
-    policy = await resolve_policy(emp_uuid, body.from_date, session, tenant_id)
-    days = working_days_between(body.from_date, body.to_date, policy.work_days, holidays, policy.saturday_pattern)
-    if body.half_day_option != "NONE":
-        days = 0.5
-
+    allocation = await _allocate_days(
+        session, tenant_id, emp_uuid, body.from_date, body.to_date, body.half_day_option
+    )
+    days = sum(allocation.values())
+    await _validate_application(session, tenant_id, emp_uuid, lt, body, days)
     uid = uuid4()
     app = LeaveApplication(
         tenant_id=tenant_id,
@@ -467,6 +528,8 @@ async def create_application(
         from_date=body.from_date,
         to_date=body.to_date,
         days_requested=days,
+        days_by_year=allocation,
+        document_id=to_uuid(body.document_id) if body.document_id else None,
         half_day_option=body.half_day_option,
         reason=body.reason,
         status=LeaveApplicationStatus.DRAFT,
@@ -487,19 +550,26 @@ async def submit_application(
     session: SessionDep,
 ) -> LeaveApplicationResponse:
     app, lt = await _get_app_lt(session, tenant_id, app_id)
-    await authorize_employment(session, tenant_id, scope, app.employment_id)
+    await authorize_write(
+        session, tenant_id, scope, principal, app.employment_id, "leave.write", "leave.apply"
+    )
     if app.status != LeaveApplicationStatus.DRAFT:
         raise HTTPException(400, f"Cannot submit: status is {app.status}")
 
-    await _adjust_balance(session, tenant_id, app.employment_id, lt.id, now_utc().year, pending_delta=app.days_requested)
+    await _validate_application(session, tenant_id, app.employment_id, lt, app, app.days_requested)
+    await _check_overlap(session, tenant_id, app)
+    app.days_by_year = await _allocate_days(
+        session, tenant_id, app.employment_id, app.from_date, app.to_date, app.half_day_option
+    )
+    app.days_requested = sum(app.days_by_year.values())
+    await _change_application_balance(session, tenant_id, app, lt, pending=1)
 
     if lt.requires_approval:
         app.status = LeaveApplicationStatus.PENDING_L1
         app.current_level = 1
     else:
         app.status = LeaveApplicationStatus.APPROVED
-        await _adjust_balance(session, tenant_id, app.employment_id, lt.id, now_utc().year,
-                              pending_delta=-app.days_requested, used_delta=app.days_requested)
+        await _change_application_balance(session, tenant_id, app, lt, pending=-1, used=1)
     app.applied_at = now_utc()
     session.add(app)
     await session.flush()
@@ -515,27 +585,38 @@ async def approve_application(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveApplicationResponse:
-    scope.require("leave.approve")
+    scope = scope.for_permission("leave.approve")
     app, lt = await _get_app_lt(session, tenant_id, app_id)
     await authorize_employment(session, tenant_id, scope, app.employment_id)
     _assert_pending(app)
-    approver_uuid = _require_approver(principal)
+
+    await _check_reviewer(session, tenant_id, principal, scope, app, cancel=False)
 
     action = LeaveApprovalAction(
-        tenant_id=tenant_id, id=uuid4(), application_id=app.id,
-        action_type=LeaveApprovalActionType.APPROVE, level=app.current_level,
-        approver_employment_id=approver_uuid, comments=body.comments,
-        actioned_at=now_utc(), recorded_at=now_utc(),
+        tenant_id=tenant_id,
+        id=uuid4(),
+        application_id=app.id,
+        action_type=LeaveApprovalActionType.APPROVE,
+        level=app.current_level,
+        approver_employment_id=principal.employment_id,
+        approver_user_account_id=principal.user_account_id,
+        comments=body.comments,
+        actioned_at=now_utc(),
+        recorded_at=now_utc(),
     )
     session.add(action)
 
     if app.current_level >= app.total_levels:
         app.status = LeaveApplicationStatus.APPROVED
-        await _adjust_balance(session, tenant_id, app.employment_id, lt.id, app.from_date.year,
-                              pending_delta=-app.days_requested, used_delta=app.days_requested)
+        await _change_application_balance(session, tenant_id, app, lt, pending=-1, used=1)
     else:
         app.current_level += 1
-        next_status = [None, LeaveApplicationStatus.PENDING_L1, LeaveApplicationStatus.PENDING_L2, LeaveApplicationStatus.PENDING_L3]
+        next_status = [
+            None,
+            LeaveApplicationStatus.PENDING_L1,
+            LeaveApplicationStatus.PENDING_L2,
+            LeaveApplicationStatus.PENDING_L3,
+        ]
         app.status = next_status[app.current_level]
 
     session.add(app)
@@ -552,23 +633,29 @@ async def reject_application(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveApplicationResponse:
-    scope.require("leave.approve")
+    scope = scope.for_permission("leave.approve")
     app, lt = await _get_app_lt(session, tenant_id, app_id)
     await authorize_employment(session, tenant_id, scope, app.employment_id)
     _assert_pending(app)
-    approver_uuid = _require_approver(principal)
+
+    await _check_reviewer(session, tenant_id, principal, scope, app, cancel=False)
 
     action = LeaveApprovalAction(
-        tenant_id=tenant_id, id=uuid4(), application_id=app.id,
-        action_type=LeaveApprovalActionType.REJECT, level=app.current_level,
-        approver_employment_id=approver_uuid, comments=body.comments,
-        actioned_at=now_utc(), recorded_at=now_utc(),
+        tenant_id=tenant_id,
+        id=uuid4(),
+        application_id=app.id,
+        action_type=LeaveApprovalActionType.REJECT,
+        level=app.current_level,
+        approver_employment_id=principal.employment_id,
+        approver_user_account_id=principal.user_account_id,
+        comments=body.comments,
+        actioned_at=now_utc(),
+        recorded_at=now_utc(),
     )
     session.add(action)
 
     app.status = LeaveApplicationStatus.REJECTED
-    await _adjust_balance(session, tenant_id, app.employment_id, lt.id, app.from_date.year,
-                          pending_delta=-app.days_requested)
+    await _change_application_balance(session, tenant_id, app, lt, pending=-1)
     session.add(app)
     await session.flush()
     return _app_resp(app, lt, await _get_history(session, tenant_id, app.id))
@@ -584,7 +671,9 @@ async def cancel_application(
     session: SessionDep,
 ) -> LeaveApplicationResponse:
     app, lt = await _get_app_lt(session, tenant_id, app_id)
-    await authorize_employment(session, tenant_id, scope, app.employment_id)
+    await authorize_write(
+        session, tenant_id, scope, principal, app.employment_id, "leave.write", "leave.apply"
+    )
 
     if app.status == LeaveApplicationStatus.DRAFT:
         app.status = LeaveApplicationStatus.CANCELLED
@@ -592,12 +681,15 @@ async def cancel_application(
         await session.flush()
         return _app_resp(app, lt, [])
 
-    if app.status in (LeaveApplicationStatus.PENDING_L1, LeaveApplicationStatus.PENDING_L2, LeaveApplicationStatus.PENDING_L3):
+    if app.status in (
+        LeaveApplicationStatus.PENDING_L1,
+        LeaveApplicationStatus.PENDING_L2,
+        LeaveApplicationStatus.PENDING_L3,
+    ):
         app.status = LeaveApplicationStatus.CANCELLED
         app.cancel_reason = body.cancel_reason
         app.cancel_requested_at = now_utc()
-        await _adjust_balance(session, tenant_id, app.employment_id, lt.id, app.from_date.year,
-                              pending_delta=-app.days_requested)
+        await _change_application_balance(session, tenant_id, app, lt, pending=-1)
         session.add(app)
         await session.flush()
         return _app_resp(app, lt, await _get_history(session, tenant_id, app.id))
@@ -609,8 +701,7 @@ async def cancel_application(
             app.total_levels = lt.cancel_approval_levels
         else:
             app.status = LeaveApplicationStatus.CANCELLED
-            await _adjust_balance(session, tenant_id, app.employment_id, lt.id, app.from_date.year,
-                                  used_delta=-app.days_requested)
+            await _change_application_balance(session, tenant_id, app, lt, used=-1)
         app.cancel_reason = body.cancel_reason
         app.cancel_requested_at = now_utc()
         session.add(app)
@@ -629,27 +720,38 @@ async def approve_cancellation(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveApplicationResponse:
-    scope.require("leave.approve")
+    scope = scope.for_permission("leave.approve")
     app, lt = await _get_app_lt(session, tenant_id, app_id)
     await authorize_employment(session, tenant_id, scope, app.employment_id)
     _assert_cancel_pending(app)
-    approver_uuid = _require_approver(principal)
+
+    await _check_reviewer(session, tenant_id, principal, scope, app, cancel=True)
 
     action = LeaveApprovalAction(
-        tenant_id=tenant_id, id=uuid4(), application_id=app.id,
-        action_type=LeaveApprovalActionType.CANCEL_APPROVE, level=app.current_level,
-        approver_employment_id=approver_uuid, comments=body.comments,
-        actioned_at=now_utc(), recorded_at=now_utc(),
+        tenant_id=tenant_id,
+        id=uuid4(),
+        application_id=app.id,
+        action_type=LeaveApprovalActionType.CANCEL_APPROVE,
+        level=app.current_level,
+        approver_employment_id=principal.employment_id,
+        approver_user_account_id=principal.user_account_id,
+        comments=body.comments,
+        actioned_at=now_utc(),
+        recorded_at=now_utc(),
     )
     session.add(action)
 
     if app.current_level >= app.total_levels:
         app.status = LeaveApplicationStatus.CANCELLED
-        await _adjust_balance(session, tenant_id, app.employment_id, lt.id, app.from_date.year,
-                              used_delta=-app.days_requested)
+        await _change_application_balance(session, tenant_id, app, lt, used=-1)
     else:
         app.current_level += 1
-        cancel_statuses = [None, LeaveApplicationStatus.CANCEL_PENDING_L1, LeaveApplicationStatus.CANCEL_PENDING_L2, LeaveApplicationStatus.CANCEL_PENDING_L3]
+        cancel_statuses = [
+            None,
+            LeaveApplicationStatus.CANCEL_PENDING_L1,
+            LeaveApplicationStatus.CANCEL_PENDING_L2,
+            LeaveApplicationStatus.CANCEL_PENDING_L3,
+        ]
         app.status = cancel_statuses[app.current_level]
 
     session.add(app)
@@ -666,17 +768,24 @@ async def reject_cancellation(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveApplicationResponse:
-    scope.require("leave.approve")
+    scope = scope.for_permission("leave.approve")
     app, lt = await _get_app_lt(session, tenant_id, app_id)
     await authorize_employment(session, tenant_id, scope, app.employment_id)
     _assert_cancel_pending(app)
-    approver_uuid = _require_approver(principal)
+
+    await _check_reviewer(session, tenant_id, principal, scope, app, cancel=True)
 
     action = LeaveApprovalAction(
-        tenant_id=tenant_id, id=uuid4(), application_id=app.id,
-        action_type=LeaveApprovalActionType.CANCEL_REJECT, level=app.current_level,
-        approver_employment_id=approver_uuid, comments=body.comments,
-        actioned_at=now_utc(), recorded_at=now_utc(),
+        tenant_id=tenant_id,
+        id=uuid4(),
+        application_id=app.id,
+        action_type=LeaveApprovalActionType.CANCEL_REJECT,
+        level=app.current_level,
+        approver_employment_id=principal.employment_id,
+        approver_user_account_id=principal.user_account_id,
+        comments=body.comments,
+        actioned_at=now_utc(),
+        recorded_at=now_utc(),
     )
     session.add(action)
     app.status = LeaveApplicationStatus.APPROVED
@@ -686,11 +795,6 @@ async def reject_cancellation(
 
 
 # ─── Helpers ──────────────────────────────────────────────────────────────────
-
-def _require_approver(principal: CurrentUser) -> UUID:
-    if principal.employment_id is None:
-        raise HTTPException(400, "This account has no employment record and cannot approve requests")
-    return principal.employment_id
 
 
 def _lt_resp(lt: LeaveType) -> LeaveTypeResponse:
@@ -718,7 +822,9 @@ def _lt_resp(lt: LeaveType) -> LeaveTypeResponse:
     )
 
 
-def _app_resp(app: LeaveApplication, lt: LeaveType, history: list[LeaveApprovalActionResponse]) -> LeaveApplicationResponse:
+def _app_resp(
+    app: LeaveApplication, lt: LeaveType, history: list[LeaveApprovalActionResponse]
+) -> LeaveApplicationResponse:
     return LeaveApplicationResponse(
         id=to_typed_id("leave_application", app.id),
         employment_id=to_typed_id("employment", app.employment_id),
@@ -754,9 +860,16 @@ async def _get_or_create_comp_off_type(session, tenant_id) -> LeaveType:
     if lt:
         return lt
     lt = LeaveType(
-        tenant_id=tenant_id, id=uuid4(), name="Comp Off", code="COMPOFF",
-        days_per_year=0, requires_approval=False, is_comp_off=True, is_paid=True,
-        color="#8B5CF6", recorded_at=now_utc(),
+        tenant_id=tenant_id,
+        id=uuid4(),
+        name="Comp Off",
+        code="COMPOFF",
+        days_per_year=0,
+        requires_approval=False,
+        is_comp_off=True,
+        is_paid=True,
+        color="#8B5CF6",
+        recorded_at=now_utc(),
     )
     session.add(lt)
     await session.flush()
@@ -781,10 +894,12 @@ async def _get_app_lt(session, tenant_id, app_id: str):
         .join(LeaveType, LeaveType.id == LeaveApplication.leave_type_id)
         .where(LeaveApplication.tenant_id == tenant_id)
         .where(LeaveApplication.id == uid)
+        .with_for_update(of=LeaveApplication)
     )
     result = row.first()
     if not result:
         raise HTTPException(404, "Leave application not found")
+    await lock_resource(session, tenant_id, f"leave:{result[0].employment_id}")
     return result
 
 
@@ -801,7 +916,9 @@ async def _get_history(session, tenant_id, app_id) -> list[LeaveApprovalActionRe
             application_id=to_typed_id("leave_application", a.application_id),
             action_type=a.action_type,
             level=a.level,
-            approver_employment_id=to_typed_id("employment", a.approver_employment_id) if a.approver_employment_id else None,
+            approver_employment_id=to_typed_id("employment", a.approver_employment_id)
+            if a.approver_employment_id
+            else None,
             comments=a.comments,
             actioned_at=a.actioned_at,
         )
@@ -810,8 +927,14 @@ async def _get_history(session, tenant_id, app_id) -> list[LeaveApprovalActionRe
 
 
 async def _adjust_balance(
-    session, tenant_id, employment_id, leave_type_id, year: int,
-    pending_delta: float = 0.0, used_delta: float = 0.0, allocated_delta: float = 0.0,
+    session,
+    tenant_id,
+    employment_id,
+    leave_type_id,
+    year: int,
+    pending_delta: float = 0.0,
+    used_delta: float = 0.0,
+    allocated_delta: float = 0.0,
     create_if_missing: bool = False,
 ) -> None:
     row = await session.execute(
@@ -824,10 +947,22 @@ async def _adjust_balance(
     lb = row.scalars().first()
     if not lb and create_if_missing:
         lb = LeaveBalance(
-            tenant_id=tenant_id, id=uuid4(), employment_id=employment_id,
-            leave_type_id=leave_type_id, year=year, recorded_at=now_utc(),
+            tenant_id=tenant_id,
+            id=uuid4(),
+            employment_id=employment_id,
+            leave_type_id=leave_type_id,
+            year=year,
+            recorded_at=now_utc(),
         )
+    if not lb:
+        raise HTTPException(409, f"Initialize the leave balance for {year} first")
     if lb:
+        if (
+            pending_delta > 0
+            and pending_delta
+            > lb.allocated_days + lb.carry_forward_days - lb.used_days - lb.pending_days
+        ):
+            raise HTTPException(409, f"Insufficient leave balance for {year}")
         if pending_delta:
             lb.pending_days = max(0.0, lb.pending_days + pending_delta)
         if used_delta:
@@ -853,3 +988,122 @@ def _assert_cancel_pending(app: LeaveApplication) -> None:
         LeaveApplicationStatus.CANCEL_PENDING_L3,
     ):
         raise HTTPException(400, f"Application cancellation not pending (status: {app.status})")
+
+
+async def _allocate_days(session, tenant_id, employment_id, start, end, half_day):
+    from hrms.core.datetime_utils import is_working_day
+
+    holidays = (
+        await session.execute(
+            text("""
+        SELECT holiday_date FROM holidays WHERE tenant_id = :tid AND archived_at IS NULL
+          AND (legal_entity_id IS NULL OR legal_entity_id =
+              (SELECT legal_entity_id FROM employments WHERE tenant_id = :tid AND id = :eid))
+          AND holiday_date BETWEEN :start AND :end AND is_optional = false
+    """),
+            {"tid": tenant_id, "eid": employment_id, "start": start, "end": end},
+        )
+    ).all()
+    holidays = {r[0] for r in holidays}
+    allocation = {}
+    day = start
+    while day <= end:
+        policy = await resolve_policy(employment_id, day, session, tenant_id)
+        if day not in holidays and is_working_day(day, policy.work_days, policy.saturday_pattern):
+            key = str(day.year)
+            allocation[key] = allocation.get(key, 0.0) + (0.5 if half_day != "NONE" else 1.0)
+        day += timedelta(days=1)
+    return allocation
+
+
+async def _validate_application(session, tenant_id, employment_id, lt, body, days):
+    if not lt.is_active or lt.archived_at:
+        raise HTTPException(422, "This leave type is inactive")
+    if days <= 0 or days < lt.min_days_per_application:
+        raise HTTPException(422, "Leave must cover the minimum number of working days")
+    if lt.max_days_per_application is not None and days > lt.max_days_per_application:
+        raise HTTPException(422, "Leave exceeds the maximum application duration")
+    if lt.advance_notice_days and body.from_date < now_utc().date() + timedelta(
+        days=lt.advance_notice_days
+    ):
+        raise HTTPException(422, "This leave type requires more advance notice")
+    document = getattr(body, "document_id", None)
+    if lt.requires_document and not document:
+        raise HTTPException(422, "This leave type requires a supporting KYC document")
+    if document:
+        document = to_uuid(document) if isinstance(document, str) else document
+        found = (
+            await session.execute(
+                text("""
+            SELECT id FROM employee_kyc_documents WHERE tenant_id = :tid AND id = :id AND
+            employment_id = :eid
+        """),
+                {"tid": tenant_id, "id": document, "eid": employment_id},
+            )
+        ).first()
+        if not found:
+            raise HTTPException(422, "Supporting document does not belong to this employee")
+
+
+async def _check_overlap(session, tenant_id, app):
+    rows = (
+        await session.execute(
+            select(LeaveApplication)
+            .where(LeaveApplication.tenant_id == tenant_id)
+            .where(LeaveApplication.employment_id == app.employment_id)
+            .where(LeaveApplication.id != app.id)
+            .where(LeaveApplication.from_date <= app.to_date)
+            .where(LeaveApplication.to_date >= app.from_date)
+            .where(LeaveApplication.status.notin_(["DRAFT", "REJECTED", "CANCELLED"]))
+        )
+    ).scalars()
+    for other in rows:
+        if app.from_date == app.to_date == other.from_date == other.to_date and {
+            app.half_day_option,
+            other.half_day_option,
+        } == {"FIRST_HALF", "SECOND_HALF"}:
+            continue
+        raise HTTPException(409, "This leave overlaps an existing application")
+
+
+async def _change_application_balance(session, tenant_id, app, lt, pending=0, used=0):
+    if not lt.is_paid and not lt.is_comp_off:
+        return
+    allocation = app.days_by_year
+    if not allocation:
+        # Legacy single-year applications retain their recorded entitlement amount.
+        if app.from_date.year != app.to_date.year:
+            raise HTTPException(409, "A legacy cross-year application needs balance reconciliation")
+        allocation = {str(app.from_date.year): app.days_requested}
+    for year, days in sorted(allocation.items()):
+        await _adjust_balance(
+            session,
+            tenant_id,
+            app.employment_id,
+            lt.id,
+            int(year),
+            pending_delta=pending * days,
+            used_delta=used * days,
+        )
+
+
+async def _check_reviewer(session, tenant_id, principal, scope, app, cancel=False):
+    history = (
+        await session.execute(
+            select(LeaveApprovalAction)
+            .where(LeaveApprovalAction.tenant_id == tenant_id)
+            .where(LeaveApprovalAction.application_id == app.id)
+        )
+    ).scalars()
+    history = [a for a in history if a.action_type.startswith("CANCEL_") == cancel]
+    await require_reviewer(
+        session,
+        tenant_id,
+        principal,
+        scope,
+        app.employment_id,
+        app.current_level,
+        {a.approver_user_account_id for a in history},
+        {a.approver_employment_id for a in history},
+        "leave.write",
+    )

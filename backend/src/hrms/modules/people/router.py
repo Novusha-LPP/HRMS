@@ -18,7 +18,7 @@ company-scoped HR manager can't quietly hire someone into a company they
 don't administer.
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -29,6 +29,7 @@ from hrms.core.authn import CurrentUser
 from hrms.core.authz import ScopeDep, authorize_employment, require_permission
 from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
+from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
 from hrms.modules.kernel.models import UserAccount
 from hrms.modules.people.models import (
@@ -56,9 +57,13 @@ from hrms.modules.people.schemas import (
 router = APIRouter(tags=["People"])
 
 _ASSIGNMENT_ACTIONS = {
-    PersonnelActionType.HIRE, PersonnelActionType.REHIRE, PersonnelActionType.TRANSFER,
-    PersonnelActionType.PROMOTION, PersonnelActionType.DEMOTION,
-    PersonnelActionType.CHANGE_MANAGER, PersonnelActionType.CHANGE_GRADE,
+    PersonnelActionType.HIRE,
+    PersonnelActionType.REHIRE,
+    PersonnelActionType.TRANSFER,
+    PersonnelActionType.PROMOTION,
+    PersonnelActionType.DEMOTION,
+    PersonnelActionType.CHANGE_MANAGER,
+    PersonnelActionType.CHANGE_GRADE,
     PersonnelActionType.CHANGE_COST_CENTRE,
 }
 _INITIAL_PLACEMENT = {PersonnelActionType.HIRE, PersonnelActionType.REHIRE}
@@ -78,7 +83,9 @@ _EMPLOYEE_SELECT = """
         mp.legal_first_name || ' ' || mp.legal_last_name AS manager_name
     FROM employments e
     JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
-    LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id AND a.effective_to IS NULL
+    LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id AND
+    (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from <=
+    CURRENT_DATE
     LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
     LEFT JOIN jobs j ON j.tenant_id = a.tenant_id AND j.id = a.job_id
     LEFT JOIN locations l ON l.tenant_id = a.tenant_id AND l.id = a.location_id
@@ -88,6 +95,56 @@ _EMPLOYEE_SELECT = """
     LEFT JOIN employments me ON me.tenant_id = e.tenant_id AND me.id = am.manager_employment_id
     LEFT JOIN persons mp ON mp.tenant_id = me.tenant_id AND mp.id = me.person_id
 """
+
+
+async def _generate_employee_number(session, tenant_id: UUID, legal_entity_id: UUID) -> str | None:
+    """
+    Resolve the hiring company's own employee ID scheme, falling back to
+    the tenant-wide one, and atomically consume the next number from
+    whichever is found. Returns None if no scheme exists at all — the
+    caller must then require employee_number to be supplied manually.
+
+    The increment is a single UPDATE ... RETURNING, not a SELECT then
+    UPDATE, so two employees hired at the same instant still get distinct
+    numbers — Postgres serializes the row-level UPDATE.
+    """
+    row = await session.execute(
+        text("""
+            SELECT id, prefix, separator, number_digits
+            FROM employee_id_schemes
+            WHERE tenant_id = CAST(:tid AS uuid) AND archived_at IS NULL
+              AND legal_entity_id = CAST(:leid AS uuid)
+            LIMIT 1
+        """),
+        {"tid": str(tenant_id), "leid": str(legal_entity_id)},
+    )
+    scheme = row.mappings().first()
+    if scheme is None:
+        row = await session.execute(
+            text("""
+                SELECT id, prefix, separator, number_digits
+                FROM employee_id_schemes
+                WHERE tenant_id = CAST(:tid AS uuid) AND archived_at IS NULL
+                  AND legal_entity_id IS NULL
+                LIMIT 1
+            """),
+            {"tid": str(tenant_id)},
+        )
+        scheme = row.mappings().first()
+    if scheme is None:
+        return None
+
+    issued = (
+        await session.execute(
+            text("""
+                UPDATE employee_id_schemes SET next_number = next_number + 1
+                WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:sid AS uuid)
+                RETURNING next_number - 1
+            """),
+            {"tid": str(tenant_id), "sid": str(scheme["id"])},
+        )
+    ).scalar()
+    return f"{scheme['prefix']}{scheme['separator']}{str(issued).zfill(scheme['number_digits'])}"
 
 
 def _employment_row_response(r) -> EmploymentResponse:
@@ -108,12 +165,15 @@ def _employment_row_response(r) -> EmploymentResponse:
         designation=r.designation,
         location_id=to_typed_id("location", r.location_id) if r.location_id else None,
         location=r.location,
-        manager_employment_id=to_typed_id("employment", r.manager_employment_id) if r.manager_employment_id else None,
+        manager_employment_id=to_typed_id("employment", r.manager_employment_id)
+        if r.manager_employment_id
+        else None,
         manager_name=r.manager_name,
     )
 
 
 # ─── Persons ─────────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/v1/persons",
@@ -161,6 +221,7 @@ async def list_persons(
     session: SessionDep,
     scope: ScopeDep,
     limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
 ) -> list[PersonResponse]:
     # Persons have no legal_entity_id of their own — visibility is derived
     # from having at least one employment the caller's scope covers.
@@ -169,7 +230,9 @@ async def list_persons(
             select(Person)
             .where(Person.tenant_id == tenant_id)
             .where(Person.archived_at.is_(None))  # type: ignore[attr-defined]
+            .order_by(Person.id)  # stable order so offset paging never skips or repeats a row
             .limit(limit)
+            .offset(offset)
         )
         rows = await session.execute(q)
         persons = list(rows.scalars())
@@ -181,9 +244,10 @@ async def list_persons(
                 JOIN employments e ON e.tenant_id = p.tenant_id AND e.person_id = p.id
                 WHERE p.tenant_id = CAST(:tid AS uuid) AND p.archived_at IS NULL
                   {clause}
-                LIMIT :limit
+                ORDER BY p.id
+                LIMIT :limit OFFSET :offset
             """),
-            {"tid": str(tenant_id), "limit": limit, **params},
+            {"tid": str(tenant_id), "limit": limit, "offset": offset, **params},
         )
         ids = [r[0] for r in person_rows]
         if not ids:
@@ -219,13 +283,17 @@ async def list_persons(
 # should be able to see/edit their own basic details regardless of what
 # admin permissions they separately hold.
 
+
 @router.get("/v1/persons/me", response_model=MyProfileResponse, summary="Your own profile")
-async def get_my_profile(principal: CurrentUser, tenant_id: TenantDep, session: SessionDep) -> MyProfileResponse:
+async def get_my_profile(
+    principal: CurrentUser, tenant_id: TenantDep, session: SessionDep
+) -> MyProfileResponse:
     if not principal.employment_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account has no employment record")
     row = (
-        await session.execute(
-            text("""
+        (
+            await session.execute(
+                text("""
                 SELECT p.id, p.legal_first_name, p.legal_last_name, p.preferred_name,
                        p.date_of_birth, p.gender, p.nationality, p.version,
                        ua.email, ua.mobile
@@ -234,9 +302,12 @@ async def get_my_profile(principal: CurrentUser, tenant_id: TenantDep, session: 
                 JOIN user_accounts ua ON ua.tenant_id = e.tenant_id AND ua.employment_id = e.id
                 WHERE e.tenant_id = :tid AND e.id = :eid
             """),
-            {"tid": str(tenant_id), "eid": str(principal.employment_id)},
+                {"tid": str(tenant_id), "eid": str(principal.employment_id)},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
     return _my_profile_response(row)
@@ -244,33 +315,54 @@ async def get_my_profile(principal: CurrentUser, tenant_id: TenantDep, session: 
 
 @router.patch("/v1/persons/me", response_model=MyProfileResponse, summary="Update your own profile")
 async def update_my_profile(
-    body: MyProfileUpdate, principal: CurrentUser, tenant_id: TenantDep, session: SessionDep,
+    body: MyProfileUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> MyProfileResponse:
     if not principal.employment_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account has no employment record")
 
     emp = (
-        await session.execute(
-            select(Employment).where(Employment.tenant_id == tenant_id).where(Employment.id == principal.employment_id)
+        (
+            await session.execute(
+                select(Employment)
+                .where(Employment.tenant_id == tenant_id)
+                .where(Employment.id == principal.employment_id)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if not emp:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
     person = (
-        await session.execute(
-            select(Person).where(Person.tenant_id == tenant_id).where(Person.id == emp.person_id)
+        (
+            await session.execute(
+                select(Person)
+                .where(Person.tenant_id == tenant_id)
+                .where(Person.id == emp.person_id)
+            )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if not person:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
 
     fields = body.model_dump(exclude_unset=True)
     if "mobile" in fields:
         account = (
-            await session.execute(
-                select(UserAccount).where(UserAccount.tenant_id == tenant_id).where(UserAccount.id == principal.user_account_id)
+            (
+                await session.execute(
+                    select(UserAccount)
+                    .where(UserAccount.tenant_id == tenant_id)
+                    .where(UserAccount.id == principal.user_account_id)
+                )
             )
-        ).scalars().first()
+            .scalars()
+            .first()
+        )
         if account:
             account.mobile = fields.pop("mobile")
             session.add(account)
@@ -280,8 +372,9 @@ async def update_my_profile(
     await session.flush()
 
     row = (
-        await session.execute(
-            text("""
+        (
+            await session.execute(
+                text("""
                 SELECT p.id, p.legal_first_name, p.legal_last_name, p.preferred_name,
                        p.date_of_birth, p.gender, p.nationality, p.version,
                        ua.email, ua.mobile
@@ -290,9 +383,12 @@ async def update_my_profile(
                 JOIN user_accounts ua ON ua.tenant_id = e.tenant_id AND ua.employment_id = e.id
                 WHERE e.tenant_id = :tid AND e.id = :eid
             """),
-            {"tid": str(tenant_id), "eid": str(principal.employment_id)},
+                {"tid": str(tenant_id), "eid": str(principal.employment_id)},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     return _my_profile_response(row)
 
 
@@ -313,6 +409,7 @@ def _my_profile_response(r) -> MyProfileResponse:
 
 # ─── Employments (/v1/employees) ─────────────────────────────────────────────
 
+
 @router.post(
     "/v1/employees",
     response_model=EmploymentResponse,
@@ -326,19 +423,52 @@ async def create_employment(
     session: SessionDep,
     scope: ScopeDep,
 ) -> EmploymentResponse:
+    scope = scope.for_permission("people.write")
     le_uuid = to_uuid(body.legal_entity_id)
     if not scope.covers_entity(le_uuid):
-        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized to hire into this legal entity")
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN, "Not authorized to hire into this legal entity"
+        )
+
+    employee_number = body.employee_number
+    if not employee_number:
+        employee_number = await _generate_employee_number(session, tenant_id, le_uuid)
+        if employee_number is None:
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "No employee ID scheme is configured for this company — provide employee_number "
+                "directly, or set one up first (POST /v1/org/employee-id-schemes)",
+            )
 
     uid = uuid4()
     person_uuid = to_uuid(body.person_id)
+    person = (
+        (
+            await session.execute(
+                select(Person).where(Person.tenant_id == tenant_id).where(Person.id == person_uuid)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    entity = (
+        await session.execute(
+            text(
+                "SELECT id FROM legal_entities "
+                "WHERE tenant_id = :tid AND id = :id AND archived_at IS NULL"
+            ),
+            {"tid": tenant_id, "id": le_uuid},
+        )
+    ).first()
+    if person is None or entity is None:
+        raise HTTPException(422, "Person and company must exist in this tenant")
 
     emp = Employment(
         tenant_id=tenant_id,
         id=uid,
         person_id=person_uuid,
         legal_entity_id=le_uuid,
-        employee_number=body.employee_number,
+        employee_number=employee_number,
         hire_date=body.hire_date,
         service_stage=body.service_stage,
     )
@@ -363,17 +493,18 @@ async def create_employment(
 @router.get(
     "/v1/employees",
     response_model=list[EmploymentResponse],
-    summary="List employments visible to the caller, with their current department/job/location/manager",
+    summary="List employees and their current organization assignments",
 )
 async def list_employees(
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
     limit: int = Query(default=50, le=200),
+    offset: int = Query(default=0, ge=0),
     status_filter: EmploymentState | None = Query(default=None, alias="filter[status]"),
 ) -> list[EmploymentResponse]:
     where = ["e.tenant_id = CAST(:tid AS uuid)", "e.archived_at IS NULL"]
-    params: dict = {"tid": str(tenant_id), "limit": limit}
+    params: dict = {"tid": str(tenant_id), "limit": limit, "offset": offset}
     if status_filter:
         where.append("e.employment_state = :state")
         params["state"] = status_filter.value
@@ -381,7 +512,10 @@ async def list_employees(
     params.update(entity_params)
 
     rows = await session.execute(
-        text(f"{_EMPLOYEE_SELECT} WHERE {' AND '.join(where)} {entity_clause} ORDER BY e.employee_number LIMIT :limit"),
+        text(
+            f"{_EMPLOYEE_SELECT} WHERE {' AND '.join(where)} {entity_clause} "
+            "ORDER BY e.employee_number, e.id LIMIT :limit OFFSET :offset"
+        ),
         params,
     )
     return [_employment_row_response(r) for r in rows.mappings().all()]
@@ -401,10 +535,19 @@ async def get_employee(
     emp_uuid = to_uuid(employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
 
-    row = (await session.execute(
-        text(f"{_EMPLOYEE_SELECT} WHERE e.tenant_id = CAST(:tid AS uuid) AND e.id = CAST(:eid AS uuid)"),
-        {"tid": str(tenant_id), "eid": str(emp_uuid)},
-    )).mappings().first()
+    row = (
+        (
+            await session.execute(
+                text(
+                    f"{_EMPLOYEE_SELECT} WHERE e.tenant_id = CAST(:tid AS uuid) "
+                    "AND e.id = CAST(:eid AS uuid)"
+                ),
+                {"tid": str(tenant_id), "eid": str(emp_uuid)},
+            )
+        )
+        .mappings()
+        .first()
+    )
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
     return _employment_row_response(row)
@@ -412,11 +555,12 @@ async def get_employee(
 
 # ─── Personnel Actions ───────────────────────────────────────────────────────
 
+
 @router.post(
     "/v1/personnel-actions",
     response_model=PersonnelActionResponse,
     status_code=status.HTTP_201_CREATED,
-    summary="Submit a personnel action (hire, transfer, promotion, separation, …) — applied immediately",
+    summary="Apply a personnel action, or schedule it for its effective date",
     dependencies=[require_permission("people.write")],
 )
 async def create_personnel_action(
@@ -425,7 +569,9 @@ async def create_personnel_action(
     session: SessionDep,
     scope: ScopeDep,
 ) -> PersonnelActionResponse:
+    scope = scope.for_permission("people.write")
     emp_uuid = to_uuid(body.employment_id)
+    await lock_resource(session, tenant_id, f"personnel:{emp_uuid}")
     await authorize_employment(session, tenant_id, scope, emp_uuid)
 
     if body.idempotency_key:
@@ -444,6 +590,7 @@ async def create_personnel_action(
     if not emp:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employment not found")
 
+    await _validate_assignment_references(session, tenant_id, emp, body.changes or {}, scope)
     uid = uuid4()
     pa = PersonnelAction(
         tenant_id=tenant_id,
@@ -455,7 +602,7 @@ async def create_personnel_action(
         changes=body.changes,
         status=PersonnelActionStatus.PENDING_APPROVAL,
         idempotency_key=body.idempotency_key,
-        submitted_at=datetime.now(timezone.utc),
+        submitted_at=datetime.now(UTC),
     )
     session.add(pa)
     await session.flush()
@@ -464,8 +611,12 @@ async def create_personnel_action(
     # (checked above) — that permission check IS the approval, so every
     # action type applies immediately rather than sitting in a
     # PENDING_APPROVAL state nothing can ever move out of.
-    await _apply_personnel_action(session, tenant_id, pa, emp)
-    pa.status = PersonnelActionStatus.APPLIED
+    if pa.effective_date > date.today():
+        pa.status = PersonnelActionStatus.SCHEDULED
+    else:
+        await _apply_personnel_action(session, tenant_id, pa, emp)
+        pa.status = PersonnelActionStatus.APPLIED
+        pa.applied_at = datetime.now(UTC)
     session.add(pa)
     await session.flush()
 
@@ -508,12 +659,14 @@ async def list_personnel_actions(
 
 # ─── Applying a personnel action to the org chart ─────────────────────────────
 
+
 async def _current_assignment(session, tenant_id: UUID, employment_id: UUID) -> Assignment | None:
     row = await session.execute(
         select(Assignment)
         .where(Assignment.tenant_id == tenant_id)
         .where(Assignment.employment_id == employment_id)
-        .where(Assignment.effective_to.is_(None))  # type: ignore[attr-defined]
+        .where(Assignment.effective_from <= date.today())
+        .where((Assignment.effective_to.is_(None)) | (Assignment.effective_to > date.today()))
     )
     return row.scalars().first()
 
@@ -524,7 +677,11 @@ async def _current_line_manager(session, tenant_id: UUID, assignment_id: UUID) -
         .where(AssignmentManager.tenant_id == tenant_id)
         .where(AssignmentManager.assignment_id == assignment_id)
         .where(AssignmentManager.manager_type == "LINE")
-        .where(AssignmentManager.effective_to.is_(None))  # type: ignore[attr-defined]
+        .where(AssignmentManager.effective_from <= date.today())
+        .where(
+            (AssignmentManager.effective_to.is_(None))
+            | (AssignmentManager.effective_to > date.today())
+        )
     )
     am = row.scalars().first()
     return am.manager_employment_id if am else None
@@ -537,12 +694,16 @@ def _changed_uuid(changes: dict, key: str) -> UUID | None:
     try:
         return to_uuid(val) if isinstance(val, str) and "_" in val else UUID(str(val))
     except (ValueError, IndexError):
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid id for {key}: {val!r}")
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Invalid id for {key}: {val!r}") from None
 
 
 async def _place_assignment(
-    session, tenant_id: UUID, employment_id: UUID, effective_date: date,
-    changes: dict, current: Assignment | None,
+    session,
+    tenant_id: UUID,
+    employment_id: UUID,
+    effective_date: date,
+    changes: dict,
+    current: Assignment | None,
 ) -> Assignment:
     """
     Close the current assignment slice (if any) exactly where the new one
@@ -551,12 +712,20 @@ async def _place_assignment(
     re-stating the department. org_unit/location/job are required overall
     (by the very first placement, or by carry-forward from then on).
     """
-    org_unit_id = _changed_uuid(changes, "org_unit_id") or (current.org_unit_id if current else None)
-    location_id = _changed_uuid(changes, "location_id") or (current.location_id if current else None)
+    org_unit_id = _changed_uuid(changes, "org_unit_id") or (
+        current.org_unit_id if current else None
+    )
+    location_id = _changed_uuid(changes, "location_id") or (
+        current.location_id if current else None
+    )
     job_id = _changed_uuid(changes, "job_id") or (current.job_id if current else None)
     grade_id = _changed_uuid(changes, "grade_id") or (current.grade_id if current else None)
-    position_id = _changed_uuid(changes, "position_id") or (current.position_id if current else None)
-    cost_centre_id = _changed_uuid(changes, "cost_centre_id") or (current.cost_centre_id if current else None)
+    position_id = _changed_uuid(changes, "position_id") or (
+        current.position_id if current else None
+    )
+    cost_centre_id = _changed_uuid(changes, "cost_centre_id") or (
+        current.cost_centre_id if current else None
+    )
 
     if org_unit_id is None or location_id is None or job_id is None:
         raise HTTPException(
@@ -571,47 +740,75 @@ async def _place_assignment(
 
     if current is not None:
         if effective_date < current.effective_from:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "Effective date can't be before the current assignment started")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST,
+                "Effective date can't be before the current assignment started",
+            )
         current.effective_to = effective_date
         session.add(current)
         mgr_rows = await session.execute(
             select(AssignmentManager)
             .where(AssignmentManager.tenant_id == tenant_id)
             .where(AssignmentManager.assignment_id == current.id)
-            .where(AssignmentManager.effective_to.is_(None))  # type: ignore[attr-defined]
+            .where(AssignmentManager.effective_from <= date.today())
+            .where(
+                (AssignmentManager.effective_to.is_(None))
+                | (AssignmentManager.effective_to > date.today())
+            )
         )
         for am in mgr_rows.scalars():
             am.effective_to = effective_date
             session.add(am)
 
     new_assignment = Assignment(
-        tenant_id=tenant_id, id=uuid4(), employment_id=employment_id,
-        effective_from=effective_date, org_unit_id=org_unit_id, location_id=location_id,
-        job_id=job_id, grade_id=grade_id, position_id=position_id, cost_centre_id=cost_centre_id,
+        tenant_id=tenant_id,
+        id=uuid4(),
+        employment_id=employment_id,
+        effective_from=effective_date,
+        org_unit_id=org_unit_id,
+        location_id=location_id,
+        job_id=job_id,
+        grade_id=grade_id,
+        position_id=position_id,
+        cost_centre_id=cost_centre_id,
     )
     session.add(new_assignment)
     await session.flush()
 
     if manager_id:
-        session.add(AssignmentManager(
-            tenant_id=tenant_id, id=uuid4(), assignment_id=new_assignment.id,
-            manager_employment_id=manager_id, manager_type="LINE", effective_from=effective_date,
-        ))
+        session.add(
+            AssignmentManager(
+                tenant_id=tenant_id,
+                id=uuid4(),
+                assignment_id=new_assignment.id,
+                manager_employment_id=manager_id,
+                manager_type="LINE",
+                effective_from=effective_date,
+            )
+        )
 
     return new_assignment
 
 
-async def _apply_personnel_action(session, tenant_id: UUID, pa: PersonnelAction, emp: Employment) -> None:
+async def _apply_personnel_action(
+    session, tenant_id: UUID, pa: PersonnelAction, emp: Employment
+) -> None:
     changes = pa.changes or {}
     action_type = PersonnelActionType(pa.type)
 
     if action_type in _ASSIGNMENT_ACTIONS:
         current = await _current_assignment(session, tenant_id, pa.employment_id)
         if action_type in _INITIAL_PLACEMENT and current is not None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "This employee already has an active assignment")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "This employee already has an active assignment"
+            )
         if action_type not in _INITIAL_PLACEMENT and current is None:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "No active assignment to change — hire them first")
-        await _place_assignment(session, tenant_id, pa.employment_id, pa.effective_date, changes, current)
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "No active assignment to change — hire them first"
+            )
+        await _place_assignment(
+            session, tenant_id, pa.employment_id, pa.effective_date, changes, current
+        )
 
     if action_type == PersonnelActionType.REHIRE:
         emp.employment_state = EmploymentState.PROBATION
@@ -643,3 +840,87 @@ def _pa_response(pa: PersonnelAction) -> PersonnelActionResponse:
         changes=pa.changes,
         version=pa.version,
     )
+
+
+async def _validate_assignment_references(session, tenant_id, emp, changes, scope):
+    mapping = {
+        "org_unit_id": "org_units",
+        "location_id": "locations",
+        "job_id": "jobs",
+        "grade_id": "grades",
+        "position_id": "positions",
+        "cost_centre_id": "cost_centres",
+        "manager_employment_id": "employments",
+    }
+    for key, table in mapping.items():
+        uid = _changed_uuid(changes, key)
+        if uid is None:
+            continue
+        row = (
+            (
+                await session.execute(
+                    text(f"SELECT * FROM {table} WHERE tenant_id = :tid AND id = :id"),
+                    {"tid": tenant_id, "id": uid},
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if not row:
+            raise HTTPException(422, f"Invalid reference: {key}")
+        if key in ("org_unit_id", "location_id") and row.get("legal_entity_id") not in (
+            None,
+            emp.legal_entity_id,
+        ):
+            raise HTTPException(
+                422, "Department and location must belong to the employment's company"
+            )
+        if key == "manager_employment_id":
+            if uid == emp.id:
+                raise HTTPException(422, "An employee cannot manage themselves")
+            await authorize_employment(session, tenant_id, scope, uid)
+
+
+async def apply_due_actions(session, tenant_id):
+    due = (
+        await session.execute(
+            select(PersonnelAction.id)
+            .where(PersonnelAction.tenant_id == tenant_id)
+            .where(PersonnelAction.status == PersonnelActionStatus.SCHEDULED)
+            .where(PersonnelAction.effective_date <= date.today())
+            .limit(1)
+        )
+    ).first()
+    if not due:
+        return
+    await lock_resource(session, tenant_id, "scheduled-personnel-actions")
+    pending = list(
+        (
+            await session.execute(
+                select(PersonnelAction)
+                .where(PersonnelAction.tenant_id == tenant_id)
+                .where(PersonnelAction.status == PersonnelActionStatus.SCHEDULED)
+                .where(PersonnelAction.effective_date <= date.today())
+                .order_by(PersonnelAction.effective_date, PersonnelAction.submitted_at)
+                .with_for_update()
+            )
+        ).scalars()
+    )
+    for pa in pending:
+        await lock_resource(session, tenant_id, f"personnel:{pa.employment_id}")
+        emp = (
+            (
+                await session.execute(
+                    select(Employment)
+                    .where(Employment.tenant_id == tenant_id)
+                    .where(Employment.id == pa.employment_id)
+                )
+            )
+            .scalars()
+            .one()
+        )
+        await _apply_personnel_action(session, tenant_id, pa, emp)
+        pa.status = PersonnelActionStatus.APPLIED
+        pa.applied_at = datetime.now(UTC)
+        session.add(pa)
+    await session.flush()

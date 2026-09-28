@@ -1,24 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, ChevronDown, Clock, ShieldCheck, Workflow, BarChart3, Loader2 } from "lucide-react";
+import { ArrowRight, Clock, ShieldCheck, Workflow, BarChart3, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { Avatar } from "../components/ui/Avatar";
-
-const DEMO_PASSWORD = "Passw0rd!";
-
-// Mirrors backend/scripts/seed_demo.py — SFPL Group, three sister companies,
-// a shared accountant and a regional HR manager, so the scoping story (who
-// can see which company) is visible from the login screen itself.
-const DEMO_USERS = [
-  { email: "kavita.singh@sfplgroup.in", label: "Super Admin", name: "Kavita Singh", desc: "Every company · platform admin" },
-  { email: "rahul.iyer@sfplgroup.in", label: "Group HR", name: "Rahul Iyer", desc: "Every company · HR authority" },
-  { email: "meera.joshi@sfplgroup.in", label: "Regional HR", name: "Meera Joshi", desc: "SRCC + Novusha only" },
-  { email: "suresh.kumar@sfplgroup.in", label: "Accountant", name: "Suresh Kumar", desc: "Shared across SFPL + Novusha" },
-  { email: "priya.menon@sfplgroup.in", label: "Manager", name: "Priya Menon", desc: "Her team at SFPL only" },
-  { email: "arjun.sharma@sfplgroup.in", label: "Employee", name: "Arjun Sharma", desc: "Self-service at SFPL" },
-  { email: "neha.patil@sfplgroup.in", label: "Employee", name: "Neha Patil", desc: "Self-service at SRCC" },
-];
 
 const FEATURES = [
   { icon: Clock, title: "Attendance that runs itself", desc: "Policy-driven shifts, grace periods and overtime." },
@@ -29,28 +13,24 @@ const FEATURES = [
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [showManual, setShowManual] = useState(false);
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
-  const [busy, setBusy] = useState<string | null>(null);
+  const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
-  const signIn = async (who: string, addr: string, pw: string) => {
-    setError(null);
-    setBusy(who);
-    try {
-      await login(addr, pw);
-      navigate("/dashboard");
-    } catch (e) {
-      setError(e instanceof Error ? e.message : "Sign in failed");
-    } finally {
-      setBusy(null);
-    }
-  };
-
-  const handleSubmit = (e: FormEvent) => {
+  const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (email && password) void signIn("manual", email, password);
+    if (!email || !password) return;
+    setError(null);
+    setBusy(true);
+    try {
+      await login(email, password);
+      navigate("/dashboard");
+    } catch (err) {
+      setError(err instanceof Error ? err.message : "Sign in failed");
+    } finally {
+      setBusy(false);
+    }
   };
 
   return (
@@ -69,9 +49,9 @@ export function LoginPage() {
         <div className="pointer-events-none absolute -bottom-40 right-0 h-[360px] w-[360px] rounded-full bg-brand-700/30 blur-[120px]" />
 
         <div className="relative flex items-center gap-2.5">
-          <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-brand-400 to-brand-700 text-base font-bold ring-1 ring-inset ring-white/20">S</div>
+          <div className="grid h-9 w-9 place-items-center rounded-lg bg-gradient-to-br from-brand-400 to-brand-700 text-base font-bold ring-1 ring-inset ring-white/20">H</div>
           <div className="leading-tight">
-            <p className="text-sm font-semibold">SFPL Group</p>
+            <p className="text-sm font-semibold">HRMS</p>
             <p className="text-xs text-white/50">People Platform</p>
           </div>
         </div>
@@ -104,14 +84,12 @@ export function LoginPage() {
       <div className="flex flex-1 items-center justify-center px-6 py-12">
         <div className="w-full max-w-[420px]">
           <div className="mb-8 flex items-center gap-2.5 lg:hidden">
-            <div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white">S</div>
-            <p className="text-sm font-semibold text-fg">SFPL Group</p>
+            <div className="grid h-8 w-8 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-sm font-bold text-white">H</div>
+            <p className="text-sm font-semibold text-fg">HRMS</p>
           </div>
 
           <h1 className="text-2xl font-semibold tracking-tight text-fg">Sign in</h1>
-          <p className="mt-1.5 text-[13px] text-fg-muted">
-            Demo accounts below share one password — each shows a different slice of the company.
-          </p>
+          <p className="mt-1.5 text-[13px] text-fg-muted">Use the email and password for your company account.</p>
 
           {error && (
             <p className="mt-4 rounded-lg border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[13px] text-danger">
@@ -119,66 +97,29 @@ export function LoginPage() {
             </p>
           )}
 
-          <div className="mt-5 space-y-2">
-            {DEMO_USERS.map((u) => (
-              <button
-                key={u.email}
-                onClick={() => void signIn(u.email, u.email, DEMO_PASSWORD)}
-                disabled={busy !== null}
-                className="group flex w-full items-center gap-3.5 rounded-xl border border-line bg-surface px-4 py-3 text-left shadow-xs transition-all hover:border-brand-500/50 hover:shadow-card hover:ring-4 hover:ring-brand-500/10 disabled:opacity-60"
-              >
-                <Avatar name={u.name} size="lg" />
-                <span className="min-w-0 flex-1">
-                  <span className="flex items-center gap-2">
-                    <span className="truncate text-[13px] font-semibold text-fg">{u.name}</span>
-                    <span className="badge badge-neutral">{u.label}</span>
-                  </span>
-                  <span className="mt-0.5 block truncate text-xs text-fg-subtle">{u.desc}</span>
-                </span>
-                {busy === u.email
-                  ? <Loader2 size={16} className="shrink-0 animate-spin text-fg-subtle" />
-                  : <ArrowRight size={16} className="shrink-0 text-fg-subtle transition-all group-hover:translate-x-0.5 group-hover:text-accent" />}
-              </button>
-            ))}
-          </div>
-
-          <div className="mt-8 border-t border-line pt-5">
-            <button
-              onClick={() => setShowManual((s) => !s)}
-              className="flex w-full items-center justify-between text-[13px] font-medium text-fg-muted hover:text-fg"
-              aria-expanded={showManual}
-            >
-              Sign in with email and password
-              <ChevronDown size={15} className={`transition-transform ${showManual ? "rotate-180" : ""}`} />
+          <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
+            <div>
+              <label className="label" htmlFor="li-email">Email</label>
+              <input
+                id="li-email" type="email" className="input" value={email}
+                onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" autoComplete="username" autoFocus
+              />
+            </div>
+            <div>
+              <label className="label" htmlFor="li-password">Password</label>
+              <input
+                id="li-password" type="password" className="input" value={password}
+                onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password"
+              />
+            </div>
+            <button type="submit" className="btn-primary h-10 w-full" disabled={!email || !password || busy}>
+              {busy ? <Loader2 size={15} className="animate-spin" /> : <>Sign in <ArrowRight size={15} /></>}
             </button>
-
-            {showManual && (
-              <form onSubmit={handleSubmit} className="mt-4 space-y-3.5 animate-fade-in">
-                <div>
-                  <label className="label" htmlFor="li-email">Email</label>
-                  <input
-                    id="li-email" type="email" className="input" value={email}
-                    onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" autoComplete="username"
-                  />
-                </div>
-                <div>
-                  <label className="label" htmlFor="li-password">Password</label>
-                  <input
-                    id="li-password" type="password" className="input" value={password}
-                    onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password"
-                  />
-                </div>
-                <button type="submit" className="btn-primary h-10 w-full" disabled={!email || !password || busy !== null}>
-                  {busy === "manual" ? <Loader2 size={15} className="animate-spin" /> : <>Sign in <ArrowRight size={15} /></>}
-                </button>
-              </form>
-            )}
-          </div>
+          </form>
 
           <p className="mt-8 text-center text-xs text-fg-subtle">
             New company? <Link to="/register" className="font-medium text-accent hover:underline">Register here</Link> — a separate, isolated workspace.
           </p>
-          <p className="mt-2 text-center text-xs text-fg-subtle">Development build · seeded demo tenant</p>
         </div>
       </div>
     </div>

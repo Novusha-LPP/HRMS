@@ -117,8 +117,22 @@ postgres_data/
 storage/
 
 # --------------------------------------------------
+#  Legacy-system import data (real employee PII: names,
+#  Aadhaar, mobile numbers, password hashes) — never committed
+# --------------------------------------------------
+exim.*.json
+Sharanga_Production.*.json
+Sharanga_Production.*.csv
+
+# --------------------------------------------------
 #  Misc
 # --------------------------------------------------
 *.bak
 *.tmp
 *.temp
+
+
+# --------------------------------------------------
+# Credential
+# --------------------------------------------------
+credential.md

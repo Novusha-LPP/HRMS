@@ -1,5 +1,4 @@
 from datetime import date, datetime
-from typing import Optional
 
 from pydantic import BaseModel, ConfigDict
 
@@ -8,7 +7,7 @@ from hrms.modules.onboarding.models import AssigneeType, CaseStatus, ItemStatus,
 
 class TemplateItemCreate(BaseModel):
     title: str
-    description: Optional[str] = None
+    description: str | None = None
     item_type: OnboardingItemType = OnboardingItemType.TASK
     assignee_type: AssigneeType = AssigneeType.EMPLOYEE
     due_days_from_hire: int = 7
@@ -18,7 +17,7 @@ class TemplateItemCreate(BaseModel):
 
 class TemplateCreate(BaseModel):
     name: str
-    description: Optional[str] = None
+    description: str | None = None
     trigger: str = "HIRE"
     is_default: bool = False
     items: list[TemplateItemCreate] = []
@@ -29,7 +28,7 @@ class TemplateItemResponse(BaseModel):
 
     id: str
     title: str
-    description: Optional[str]
+    description: str | None
     item_type: OnboardingItemType
     assignee_type: AssigneeType
     due_days_from_hire: int
@@ -40,7 +39,7 @@ class TemplateItemResponse(BaseModel):
 class TemplateResponse(BaseModel):
     id: str
     name: str
-    description: Optional[str]
+    description: str | None
     trigger: str
     is_default: bool
     status: str
@@ -49,7 +48,7 @@ class TemplateResponse(BaseModel):
 
 class CaseCreateRequest(BaseModel):
     employment_id: str
-    template_id: Optional[str] = None  # uses default if omitted
+    template_id: str | None = None  # uses default if omitted
     hire_date: date
 
 
@@ -58,15 +57,15 @@ class OnboardingItemResponse(BaseModel):
 
     id: str
     title: str
-    description: Optional[str]
+    description: str | None
     item_type: OnboardingItemType
     assignee_type: AssigneeType
-    due_date: Optional[date]
+    due_date: date | None
     required: bool
     sequence: int
     status: ItemStatus
-    completed_at: Optional[datetime]
-    notes: Optional[str]
+    completed_at: datetime | None
+    notes: str | None
 
 
 class CaseResponse(BaseModel):
@@ -76,7 +75,7 @@ class CaseResponse(BaseModel):
     status: CaseStatus
     hire_date: date
     started_at: datetime
-    completed_at: Optional[datetime]
+    completed_at: datetime | None
     items: list[OnboardingItemResponse] = []
     # Summary counts
     total_items: int = 0
@@ -86,5 +85,5 @@ class CaseResponse(BaseModel):
 
 class ItemUpdateRequest(BaseModel):
     status: ItemStatus
-    notes: Optional[str] = None
-    document_key: Optional[str] = None
+    notes: str | None = None
+    document_key: str | None = None

@@ -1,4 +1,4 @@
-import { useState, useRef } from "react";
+import { useState, useRef, useEffect } from "react";
 import type { FormEvent } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -1132,14 +1132,12 @@ function DocumentSlot({
               >
                 <Eye size={12} />
               </button>
-              <a
-                href={document.download_url}
-                download
+              <DocumentDownload document={document}
                 className="btn-ghost btn-sm h-7 px-1.5 text-xs"
                 title="Download file"
               >
                 <Download size={12} />
-              </a>
+              </DocumentDownload>
 
               {isHR && document.status !== "VERIFIED" && (
                 <button
@@ -1364,6 +1362,17 @@ function DocumentPreviewDialog({
   onClose: () => void;
 }) {
   const isImage = doc.mime_type.startsWith("image/");
+  const [preview, setPreview] = useState<{ url?: string; error?: string }>({});
+  useEffect(() => {
+    let active = true;
+    let objectUrl: string | undefined;
+    kycApi.fetchDocumentBlob(doc.preview_url).then(({ url }) => {
+      objectUrl = url;
+      if (active) setPreview({ url });
+      else URL.revokeObjectURL(url);
+    }).catch(() => { if (active) setPreview({ error: "Could not load document" }); });
+    return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
+  }, [doc.preview_url]);
 
   return (
     <Dialog open={true} onClose={onClose} className="max-w-2xl">
@@ -1380,15 +1389,16 @@ function DocumentPreviewDialog({
         </div>
 
         <div className="max-h-[60vh] overflow-auto rounded-xl border border-line bg-canvas p-2 flex items-center justify-center">
-          {isImage ? (
+          {preview.error ? <p role="alert">{preview.error}</p> : !preview.url ? <p>Loading document…</p> : isImage ? (
             <img
-              src={doc.preview_url}
+              src={preview.url}
               alt={doc.document_title}
               className="max-h-[55vh] max-w-full rounded-lg object-contain"
             />
           ) : (
             <iframe
-              src={doc.preview_url}
+              sandbox=""
+              src={preview.url}
               title={doc.document_title}
               className="h-[55vh] w-full rounded-lg border-0"
             />
@@ -1400,13 +1410,11 @@ function DocumentPreviewDialog({
             {doc.document_number ? `Doc Ref: ${doc.document_number}` : ""}
           </span>
           <div className="flex items-center gap-2">
-            <a
-              href={doc.download_url}
-              download
+            <DocumentDownload document={doc}
               className="btn-secondary btn-sm"
             >
               <Download size={13} /> Download
-            </a>
+            </DocumentDownload>
             <button
               type="button"
               onClick={onClose}
@@ -1419,4 +1427,25 @@ function DocumentPreviewDialog({
       </div>
     </Dialog>
   );
+}
+
+
+function DocumentDownload({ document, children, ...props }: {
+  document: KycDocument; children: React.ReactNode; className?: string; title?: string;
+}) {
+  const [error, setError] = useState(false);
+  const [busy, setBusy] = useState(false);
+  const download = async () => {
+    setBusy(true); setError(false);
+    try {
+      const { url } = await kycApi.fetchDocumentBlob(document.download_url);
+      const link = window.document.createElement("a");
+      link.href = url; link.download = document.file_name;
+      link.click();
+      setTimeout(() => URL.revokeObjectURL(url), 1000);
+    } catch { setError(true); }
+    finally { setBusy(false); }
+  };
+  return <><button type="button" {...props} onClick={download} disabled={busy}>{children}</button>
+    {error && <span role="alert">Download failed. Try again.</span>}</>;
 }

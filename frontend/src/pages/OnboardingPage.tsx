@@ -11,7 +11,7 @@ import { Tabs } from "../components/ui/Tabs";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { Avatar } from "../components/ui/Avatar";
 import { Sheet } from "../components/ui/Overlay";
-import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
+import { EmptyState, Notice, NoEmployeeRecord, Skeleton } from "../components/ui/Feedback";
 import { usePeopleDirectory } from "../lib/usePeopleDirectory";
 
 type Filter = "IN_PROGRESS" | "COMPLETED" | "ALL";
@@ -109,16 +109,16 @@ function HROnboardingView() {
 
 export function OnboardingPage() {
   const { user } = useAuth();
-  if (!user || !user.employmentId) return null;
+  if (!user) return null;
   const isHR = user.role === "HR" || user.role === "SUPER_ADMIN";
 
   return (
     <>
       <PageHeader
         title="Onboarding"
-        description={isHR ? "Track new-hire onboarding plans and overdue tasks." : "Your onboarding tasks for getting started at SFPL."}
+        description={isHR ? "Track new-hire onboarding plans and overdue tasks." : "Your onboarding tasks for getting started."}
       />
-      {isHR ? <HROnboardingView /> : <OnboardingChecklist employmentId={user.employmentId} />}
+      {isHR ? <HROnboardingView /> : user.employmentId ? <OnboardingChecklist employmentId={user.employmentId} /> : <NoEmployeeRecord feature="onboarding checklist" />}
     </>
   );
 }

@@ -23,7 +23,13 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import text
 
-from hrms.core.authz import ROLE_PERMISSIONS, ScopeDep, authorize_employment, decode_scope_ids, require_permission
+from hrms.core.authz import (
+    ROLE_PERMISSIONS,
+    ScopeDep,
+    authorize_employment,
+    decode_scope_ids,
+    require_permission,
+)
 from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.security import hash_password
@@ -34,10 +40,14 @@ from hrms.modules.kernel.users.schemas import RoleResponse, UserCreate, UserResp
 router = APIRouter(tags=["Users"])
 
 
-@router.get("/v1/roles", response_model=list[RoleResponse], summary="List roles available in this tenant")
+@router.get(
+    "/v1/roles", response_model=list[RoleResponse], summary="List roles available in this tenant"
+)
 async def list_roles(tenant_id: TenantDep, session: SessionDep) -> list[RoleResponse]:
     rows = await session.execute(
-        text("SELECT name, description FROM roles WHERE tenant_id = CAST(:tid AS uuid) ORDER BY name"),
+        text(
+            "SELECT name, description FROM roles WHERE tenant_id = CAST(:tid AS uuid) ORDER BY name"
+        ),
         {"tid": str(tenant_id)},
     )
     return [
@@ -86,10 +96,15 @@ def _user_row_response(r) -> UserResponse:
 
 
 @router.get(
-    "/v1/users", response_model=list[UserResponse], summary="List user accounts and their access",
+    "/v1/users",
+    response_model=list[UserResponse],
+    summary="List user accounts and their access",
     dependencies=[require_permission("iam.read")],
 )
-async def list_users(tenant_id: TenantDep, session: SessionDep, scope: ScopeDep) -> list[UserResponse]:
+async def list_users(
+    tenant_id: TenantDep, session: SessionDep, scope: ScopeDep
+) -> list[UserResponse]:
+    scope = scope.for_permission("iam.read")
     rows = (await session.execute(text(_USER_SELECT), {"tid": str(tenant_id)})).mappings().all()
     if scope.is_all:
         return [_user_row_response(r) for r in rows]
@@ -101,26 +116,38 @@ async def list_users(tenant_id: TenantDep, session: SessionDep, scope: ScopeDep)
         if r["scope_type"] == "LEGAL_ENTITY":
             if decode_scope_ids(r["scope_value"]) & scope.legal_entity_ids:
                 out.append(_user_row_response(r))
-        elif r["scope_type"] in ("SELF", "DIRECT_REPORTS", "ALL_REPORTS"):
-            if r["employment_legal_entity_id"] in scope.legal_entity_ids:
-                out.append(_user_row_response(r))
+        elif (
+            r["scope_type"] in ("SELF", "DIRECT_REPORTS", "ALL_REPORTS")
+            and r["employment_legal_entity_id"] in scope.legal_entity_ids
+        ):
+            out.append(_user_row_response(r))
     return out
 
 
 @router.post(
-    "/v1/users", response_model=UserResponse, status_code=status.HTTP_201_CREATED,
+    "/v1/users",
+    response_model=UserResponse,
+    status_code=status.HTTP_201_CREATED,
     summary="Create a user account and grant it a role",
     dependencies=[require_permission("iam.write")],
 )
 async def create_user(
-    body: UserCreate, tenant_id: TenantDep, session: SessionDep, scope: ScopeDep,
+    body: UserCreate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
 ) -> UserResponse:
+    scope = scope.for_permission("iam.write")
     role_row = (
-        await session.execute(
-            text("SELECT id FROM roles WHERE tenant_id = CAST(:tid AS uuid) AND name = :name"),
-            {"tid": str(tenant_id), "name": body.role},
+        (
+            await session.execute(
+                text("SELECT id FROM roles WHERE tenant_id = CAST(:tid AS uuid) AND name = :name"),
+                {"tid": str(tenant_id), "name": body.role},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if not role_row:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown role: {body.role}")
 
@@ -142,20 +169,32 @@ async def create_user(
     legal_entity_uuids: list[UUID] = []
     if body.scope_type == "ALL":
         if not scope.is_all:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "Only a group-level administrator can grant all-company access")
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "Only a group-level administrator can grant all-company access",
+            )
     elif body.scope_type == "LEGAL_ENTITY":
         if not body.legal_entity_ids:
-            raise HTTPException(status.HTTP_400_BAD_REQUEST, "legal_entity_ids is required for LEGAL_ENTITY scope")
+            raise HTTPException(
+                status.HTTP_400_BAD_REQUEST, "legal_entity_ids is required for LEGAL_ENTITY scope"
+            )
         legal_entity_uuids = [to_uuid(i) for i in body.legal_entity_ids]
         for eid in legal_entity_uuids:
             if not scope.covers_entity(eid):
-                raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for one of the given companies")
+                raise HTTPException(
+                    status.HTTP_403_FORBIDDEN, "Not authorized for one of the given companies"
+                )
     elif not body.employment_id:  # SELF, DIRECT_REPORTS, ALL_REPORTS
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"employment_id is required for {body.scope_type} scope")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST, f"employment_id is required for {body.scope_type} scope"
+        )
 
     existing = (
         await session.execute(
-            text("SELECT 1 FROM user_accounts WHERE tenant_id = CAST(:tid AS uuid) AND email = :email"),
+            text(
+                "SELECT 1 FROM user_accounts WHERE tenant_id = CAST(:tid AS uuid) "
+                "AND lower(email) = lower(:email)"
+            ),
             {"tid": str(tenant_id), "email": body.email},
         )
     ).first()
@@ -181,7 +220,8 @@ async def create_user(
         scope_type=body.scope_type,
         scope_value=(
             json.dumps([to_typed_id("legal_entity", i) for i in legal_entity_uuids])
-            if legal_entity_uuids else None
+            if legal_entity_uuids
+            else None
         ),
     )
     session.add(assignment)
@@ -190,15 +230,20 @@ async def create_user(
     name = None
     if employment_uuid:
         person_row = (
-            await session.execute(
-                text("""
+            (
+                await session.execute(
+                    text("""
                     SELECT p.legal_first_name, p.legal_last_name
-                    FROM employments e JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+                    FROM employments e JOIN persons p ON p.tenant_id = e.tenant_id AND p.id =
+                    e.person_id
                     WHERE e.tenant_id = CAST(:tid AS uuid) AND e.id = CAST(:eid AS uuid)
                 """),
-                {"tid": str(tenant_id), "eid": str(employment_uuid)},
+                    {"tid": str(tenant_id), "eid": str(employment_uuid)},
+                )
             )
-        ).mappings().first()
+            .mappings()
+            .first()
+        )
         if person_row:
             name = f"{person_row['legal_first_name']} {person_row['legal_last_name']}"
 

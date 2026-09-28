@@ -1,1 +1,182 @@
-<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1240 880" width="1240" height="880" role="img" aria-label="Container view: clients reach a global edge and control plane that hold no employee data, then a regional API gateway and identity service, then one of several cells, each with the core modular monolith, satellite services and its own data stores; analytics is fed by change data capture." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif"><style>.bg{fill:#ffffff;stroke:#d5dde1}.n{fill:#f4f6f7;stroke:#7b8a92}.na{fill:#ddeaea;stroke:#0d6b6b}.nx{fill:#ffffff;stroke:#7b8a92;stroke-dasharray:5 4}.np{fill:#eceff1;stroke:#7b8a92}.g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}.gs{fill:#f9fbfb;stroke:#9aa7ae}.t{fill:#16222a;font-weight:600}.s{fill:#4f5e67}.ta{fill:#0d6b6b;font-weight:600}.e{fill:none;stroke:#4f5e67;stroke-width:1.5}.ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}.ah{fill:#4f5e67}.l{fill:none;stroke:#b4c0c7;stroke-width:1.25;stroke-dasharray:4 4}</style><defs><marker id="ah-containers" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="bg" x="0.5" y="0.5" width="1239" height="879" rx="10"/><rect class="np" x="20" y="20" width="190" height="48" rx="14" stroke-width="1.25"/><text class="t" x="115.0" y="48.5" font-size="12" text-anchor="middle">HR console (web SPA)</text><rect class="np" x="222" y="20" width="190" height="48" rx="14" stroke-width="1.25"/><text class="t" x="317.0" y="48.5" font-size="12" text-anchor="middle">Employee app (mobile)</text><rect class="np" x="424" y="20" width="190" height="48" rx="14" stroke-width="1.25"/><text class="t" x="519.0" y="48.5" font-size="12" text-anchor="middle">Admin console</text><rect class="np" x="626" y="20" width="190" height="48" rx="14" stroke-width="1.25"/><text class="t" x="721.0" y="48.5" font-size="12" text-anchor="middle">Developer portal</text><rect class="np" x="828" y="20" width="190" height="48" rx="14" stroke-width="1.25"/><text class="t" x="923.0" y="48.5" font-size="12" text-anchor="middle">Customer systems and ISVs</text><rect class="np" x="1030" y="20" width="190" height="48" rx="14" stroke-width="1.25"/><text class="t" x="1125.0" y="48.5" font-size="12" text-anchor="middle">Site agents and devices</text><polyline class="e" points="620,68 620,118" marker-end="url(#ah-containers)"/><text class="s" x="628" y="98" font-size="12" text-anchor="start">HTTPS</text><rect class="g" x="20" y="120" width="1200" height="130" rx="8" stroke-width="1.25"/><text class="t" x="32" y="140" font-size="13">Global layer (holds no employee personal data)</text><rect class="n" x="40" y="160" width="270" height="70" rx="6" stroke-width="1.25"/><text class="t" x="175.0" y="183.5" font-size="13" text-anchor="middle">Edge</text><text class="s" x="175.0" y="199.5" font-size="12" text-anchor="middle">CloudFront · WAF · Shield</text><text class="s" x="175.0" y="215.5" font-size="12" text-anchor="middle">static web assets, DDoS</text><rect class="n" x="330" y="160" width="210" height="70" rx="6" stroke-width="1.25"/><text class="t" x="435.0" y="183.5" font-size="13" text-anchor="middle">DNS</text><text class="s" x="435.0" y="199.5" font-size="12" text-anchor="middle">Route 53</text><text class="s" x="435.0" y="215.5" font-size="12" text-anchor="middle">regional hostnames</text><rect class="na" x="560" y="160" width="420" height="70" rx="6" stroke-width="1.25"/><text class="ta" x="770.0" y="183.5" font-size="13" text-anchor="middle">Control plane services</text><text class="s" x="770.0" y="199.5" font-size="12" text-anchor="middle">tenant registry · provisioning · plans and entitlements</text><text class="s" x="770.0" y="215.5" font-size="12" text-anchor="middle">metering and billing · developer apps · releases</text><rect class="n" x="1000" y="160" width="200" height="70" rx="6" stroke-width="1.25"/><text class="t" x="1100.0" y="183.5" font-size="13" text-anchor="middle">Routing map</text><text class="s" x="1100.0" y="199.5" font-size="12" text-anchor="middle">DynamoDB global table</text><text class="s" x="1100.0" y="215.5" font-size="12" text-anchor="middle">tenant → region → cell</text><polyline class="e" points="380,250 380,298" marker-end="url(#ah-containers)"/><text class="s" x="388" y="280" font-size="12" text-anchor="start">API calls (api.in.…)</text><rect class="g" x="20" y="270" width="1200" height="590" rx="8" stroke-width="1.25"/><text class="t" x="32" y="290" font-size="13">Region: India · Mumbai (DR in Hyderabad)</text><rect class="na" x="40" y="300" width="370" height="64" rx="6" stroke-width="1.25"/><text class="ta" x="225.0" y="328.5" font-size="13" text-anchor="middle">API gateway (Kong)</text><text class="s" x="225.0" y="344.5" font-size="12" text-anchor="middle">OAuth/JWT · quotas · routing to the home cell</text><rect class="n" x="430" y="300" width="370" height="64" rx="6" stroke-width="1.25"/><text class="t" x="615.0" y="328.5" font-size="13" text-anchor="middle">Identity (Keycloak)</text><text class="s" x="615.0" y="344.5" font-size="12" text-anchor="middle">realm or organisation per tenant · SSO · OTP</text><rect class="n" x="820" y="300" width="380" height="64" rx="6" stroke-width="1.25"/><text class="t" x="1010.0" y="328.5" font-size="13" text-anchor="middle">Analytics</text><text class="s" x="1010.0" y="344.5" font-size="12" text-anchor="middle">ClickHouse + Cube, tenant-partitioned</text><rect class="g" x="40" y="390" width="1160" height="450" rx="8" stroke-width="1.25"/><text class="t" x="52" y="410" font-size="13">Cell IN-1 (pooled) · one of N identical cells</text><rect class="na" x="60" y="430" width="380" height="92" rx="6" stroke-width="1.25"/><text class="ta" x="250.0" y="456.5" font-size="13" text-anchor="middle">Core platform app (modular monolith)</text><text class="s" x="250.0" y="472.5" font-size="12" text-anchor="middle">Public API v1 · Experience API · SCIM · Admin API</text><text class="s" x="250.0" y="488.5" font-size="12" text-anchor="middle">domain modules on the platform kernel</text><text class="s" x="250.0" y="504.5" font-size="12" text-anchor="middle">Java 21 · Spring Boot · Spring Modulith</text><polyline class="e" points="400,364 400,428" marker-end="url(#ah-containers)"/><text class="s" x="408" y="384" font-size="12" text-anchor="start">routes by tenant</text><rect class="n" x="60" y="580" width="186" height="50" rx="6" stroke-width="1.25"/><text class="t" x="153.0" y="609.5" font-size="12" text-anchor="middle">Attendance ingestion</text><rect class="n" x="254" y="580" width="186" height="50" rx="6" stroke-width="1.25"/><text class="t" x="347.0" y="609.5" font-size="12" text-anchor="middle">Workflow workers</text><rect class="n" x="60" y="642" width="186" height="50" rx="6" stroke-width="1.25"/><text class="t" x="153.0" y="671.5" font-size="12" text-anchor="middle">Notification service</text><rect class="n" x="254" y="642" width="186" height="50" rx="6" stroke-width="1.25"/><text class="t" x="347.0" y="671.5" font-size="12" text-anchor="middle">Webhook dispatcher (Svix)</text><rect class="n" x="60" y="704" width="186" height="50" rx="6" stroke-width="1.25"/><text class="t" x="153.0" y="733.5" font-size="12" text-anchor="middle">Document service</text><rect class="n" x="254" y="704" width="186" height="50" rx="6" stroke-width="1.25"/><text class="t" x="347.0" y="733.5" font-size="12" text-anchor="middle">Integration workers</text><rect class="n" x="60" y="766" width="186" height="50" rx="6" stroke-width="1.25"/><text class="t" x="153.0" y="795.5" font-size="12" text-anchor="middle">Search indexer</text><rect class="n" x="254" y="766" width="186" height="50" rx="6" stroke-width="1.25"/><text class="t" x="347.0" y="795.5" font-size="12" text-anchor="middle">Export and report workers</text><text class="t" x="60" y="570" font-size="12" text-anchor="start">Satellite services: consume events, write to the cell stores</text><text class="t" x="520" y="420" font-size="12" text-anchor="start">Cell data stores (never shared across cells)</text><rect class="n" x="520" y="432" width="320" height="70" rx="6" stroke-width="1.25"/><text class="t" x="680.0" y="463.5" font-size="13" text-anchor="middle">Aurora PostgreSQL</text><text class="s" x="680.0" y="479.5" font-size="12" text-anchor="middle">system of record, RLS</text><rect class="n" x="860" y="432" width="320" height="70" rx="6" stroke-width="1.25"/><text class="t" x="1020.0" y="463.5" font-size="13" text-anchor="middle">Kafka (MSK)</text><text class="s" x="1020.0" y="479.5" font-size="12" text-anchor="middle">domain events, CDC</text><rect class="n" x="520" y="528" width="320" height="70" rx="6" stroke-width="1.25"/><text class="t" x="680.0" y="559.5" font-size="13" text-anchor="middle">Temporal</text><text class="s" x="680.0" y="575.5" font-size="12" text-anchor="middle">durable workflows, timers</text><rect class="n" x="860" y="528" width="320" height="70" rx="6" stroke-width="1.25"/><text class="t" x="1020.0" y="559.5" font-size="13" text-anchor="middle">OpenSearch</text><text class="s" x="1020.0" y="575.5" font-size="12" text-anchor="middle">search, trimmed by access</text><rect class="n" x="520" y="624" width="320" height="70" rx="6" stroke-width="1.25"/><text class="t" x="680.0" y="655.5" font-size="13" text-anchor="middle">ElastiCache (Valkey)</text><text class="s" x="680.0" y="671.5" font-size="12" text-anchor="middle">cache, rate-limit counters</text><rect class="n" x="860" y="624" width="320" height="70" rx="6" stroke-width="1.25"/><text class="t" x="1020.0" y="655.5" font-size="13" text-anchor="middle">S3</text><text class="s" x="1020.0" y="671.5" font-size="12" text-anchor="middle">documents, exports, archive</text><rect class="n" x="520" y="720" width="320" height="70" rx="6" stroke-width="1.25"/><text class="t" x="680.0" y="751.5" font-size="13" text-anchor="middle">KMS</text><text class="s" x="680.0" y="767.5" font-size="12" text-anchor="middle">per-tenant data keys</text><rect class="n" x="860" y="720" width="320" height="70" rx="6" stroke-width="1.25"/><text class="t" x="1020.0" y="751.5" font-size="13" text-anchor="middle">Secrets Manager</text><text class="s" x="1020.0" y="767.5" font-size="12" text-anchor="middle">platform secrets</text><polyline class="e" points="440,476 518,476" marker-end="url(#ah-containers)"/><text class="s" x="479" y="468" font-size="12" text-anchor="middle">read/write</text><polyline class="e" points="448,705 482,705 482,560 518,560" marker-end="url(#ah-containers)"/><polyline class="e" points="1030,432 1030,366" marker-end="url(#ah-containers)"/><text class="s" x="1038" y="404" font-size="12" text-anchor="start">CDC</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1240 820" width="1240" height="820" role="img" aria-label="Container Architecture: Web clients access the FastAPI modular monolith backend, which enforces dual-plane security and PostgreSQL 16 Row-Level Security via dual roles." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif">
+  <style>
+    .bg{fill:#ffffff;stroke:#d5dde1}
+    .n{fill:#f4f6f7;stroke:#7b8a92}
+    .na{fill:#ddeaea;stroke:#0d6b6b}
+    .nx{fill:#ffffff;stroke:#7b8a92;stroke-dasharray:5 4}
+    .np{fill:#eceff1;stroke:#7b8a92}
+    .g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}
+    .gs{fill:#f9fbfb;stroke:#9aa7ae}
+    .t{fill:#16222a;font-weight:600}
+    .s{fill:#4f5e67}
+    .ta{fill:#0d6b6b;font-weight:600}
+    .tb{fill:#1e40af;font-weight:600}
+    .nb{fill:#eff6ff;stroke:#3b82f6}
+    .e{fill:none;stroke:#4f5e67;stroke-width:1.5}
+    .ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}
+    .ah{fill:#4f5e67}
+  </style>
+  <defs>
+    <marker id="ah-containers" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0.5" y="0.5" width="1239" height="819" rx="10"/>
+
+  <!-- TOP LAYER: CLIENT SURFACES -->
+  <rect class="g" x="20" y="16" width="1200" height="96" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="36" font-size="13">Client Layer · React 19 + TypeScript + Vite + Tailwind CSS</text>
+
+  <rect class="np" x="40" y="46" width="340" height="52" rx="12" stroke-width="1.25"/>
+  <text class="t" x="210" y="70" font-size="13" text-anchor="middle">Tenant HR &amp; Management Console</text>
+  <text class="s" x="210" y="86" font-size="11" text-anchor="middle">Dashboard · Org · People · Policy · Leave · Reports</text>
+
+  <rect class="np" x="450" y="46" width="340" height="52" rx="12" stroke-width="1.25"/>
+  <text class="t" x="620" y="70" font-size="13" text-anchor="middle">Employee Self-Service Portal</text>
+  <text class="s" x="620" y="86" font-size="11" text-anchor="middle">Daily Attendance · Punch In/Out · Leave Apply · KYC</text>
+
+  <rect class="nb" x="860" y="46" width="340" height="52" rx="12" stroke-width="1.25"/>
+  <text class="tb" x="1030" y="70" font-size="13" text-anchor="middle">Platform Admin Console (/platform/*)</text>
+  <text class="s" x="1030" y="86" font-size="11" text-anchor="middle">Tenant Provisioning · Company Linking · Audit Log</text>
+
+  <!-- Connection from Clients to Backend -->
+  <polyline class="e" points="620,112 620,158" marker-end="url(#ah-containers)"/>
+  <text class="s" x="630" y="140" font-size="12" text-anchor="start">HTTPS / REST (JSON) · JWT Bearer Auth · Port 8015</text>
+
+  <!-- MIDDLE LAYER: FASTAPI MODULAR MONOLITH -->
+  <rect class="g" x="20" y="160" width="1200" height="370" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="184" font-size="14">FastAPI Application · Python 3.12+ (Uvicorn ASGI Server, Port 8015)</text>
+
+  <!-- Platform Control Plane Sub-box -->
+  <rect class="nb" x="40" y="200" width="560" height="150" rx="6" stroke-width="1.25"/>
+  <text class="tb" x="54" y="224" font-size="13">Platform Control Plane (/v1/platform/*)</text>
+  <text class="s" x="54" y="244" font-size="11">Authenticated via separate Platform Token (typ: "platform", platform_admins table)</text>
+
+  <rect class="n" x="54" y="256" width="165" height="42" rx="4"/>
+  <text class="t" x="136" y="274" font-size="11" text-anchor="middle">Tenant Provisioning</text>
+  <text class="s" x="136" y="289" font-size="10" text-anchor="middle">bootstrap_tenant() logic</text>
+
+  <rect class="n" x="237" y="256" width="165" height="42" rx="4"/>
+  <text class="t" x="319" y="274" font-size="11" text-anchor="middle">Company Linking</text>
+  <text class="s" x="319" y="289" font-size="10" text-anchor="middle">Multi-Legal Entity Groups</text>
+
+  <rect class="n" x="420" y="256" width="165" height="42" rx="4"/>
+  <text class="t" x="502" y="274" font-size="11" text-anchor="middle">Platform Audit Log</text>
+  <text class="s" x="502" y="289" font-size="10" text-anchor="middle">Append-only system trail</text>
+
+  <rect class="n" x="54" y="304" width="256" height="34" rx="4"/>
+  <text class="s" x="182" y="325" font-size="11" text-anchor="middle">Role Checks: Live DB validation (ADMIN vs VIEWER)</text>
+
+  <rect class="n" x="328" y="304" width="256" height="34" rx="4"/>
+  <text class="s" x="456" y="325" font-size="11" text-anchor="middle">Subscription Plans: STARTER, GROWTH, ENTERPRISE</text>
+
+  <!-- Tenant Operations Plane Sub-box -->
+  <rect class="na" x="640" y="200" width="560" height="150" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="654" y="224" font-size="13">Tenant Operations Plane (/v1/*)</text>
+  <text class="s" x="654" y="244" font-size="11">Authenticated via Tenant Access Token (carries tenant_id, user_account_id, employment_id)</text>
+
+  <rect class="n" x="654" y="256" width="128" height="38" rx="4"/>
+  <text class="t" x="718" y="273" font-size="11" text-anchor="middle">Org &amp; People</text>
+  <text class="s" x="718" y="286" font-size="9" text-anchor="middle">Legal Entities · Trees · ID Schemes</text>
+
+  <rect class="n" x="792" y="256" width="128" height="38" rx="4"/>
+  <text class="t" x="856" y="273" font-size="11" text-anchor="middle">Time &amp; Attendance</text>
+  <text class="s" x="856" y="286" font-size="9" text-anchor="middle">Punches · Days · Overtime Review</text>
+
+  <rect class="n" x="930" y="256" width="128" height="38" rx="4"/>
+  <text class="t" x="994" y="273" font-size="11" text-anchor="middle">Work Policies</text>
+  <text class="s" x="994" y="286" font-size="9" text-anchor="middle">4-Tier Fallback · Alternate Sats</text>
+
+  <rect class="n" x="1068" y="256" width="120" height="38" rx="4"/>
+  <text class="t" x="1128" y="273" font-size="11" text-anchor="middle">Leave &amp; Comp-Off</text>
+  <text class="s" x="1128" y="286" font-size="9" text-anchor="middle">Multi-Tier · Monthly Accruals</text>
+
+  <rect class="n" x="654" y="302" width="128" height="38" rx="4"/>
+  <text class="t" x="718" y="319" font-size="11" text-anchor="middle">Employee KYC</text>
+  <text class="s" x="718" y="332" font-size="9" text-anchor="middle">Statutory IDs · Doc Verification</text>
+
+  <rect class="n" x="792" y="302" width="128" height="38" rx="4"/>
+  <text class="t" x="856" y="319" font-size="11" text-anchor="middle">Corrections</text>
+  <text class="s" x="856" y="332" font-size="9" text-anchor="middle">Punches · Auto Recomputation</text>
+
+  <rect class="n" x="930" y="302" width="128" height="38" rx="4"/>
+  <text class="t" x="994" y="319" font-size="11" text-anchor="middle">Onboarding</text>
+  <text class="s" x="994" y="332" font-size="9" text-anchor="middle">Checklists · Case Workflows</text>
+
+  <rect class="n" x="1068" y="302" width="120" height="38" rx="4"/>
+  <text class="t" x="1128" y="319" font-size="11" text-anchor="middle">Reports &amp; Export</text>
+  <text class="s" x="1128" y="332" font-size="9" text-anchor="middle">Dynamic Filters · CSV Streaming</text>
+
+  <!-- Core Infrastructure Middlewares & Guards -->
+  <rect class="np" x="40" y="364" width="1160" height="150" rx="6" stroke-width="1.25"/>
+  <text class="t" x="54" y="388" font-size="13">Core Infrastructure &amp; Security Layer (`backend/src/hrms/core`)</text>
+
+  <rect class="n" x="54" y="402" width="265" height="100" rx="4"/>
+  <text class="t" x="186" y="422" font-size="12" text-anchor="middle">Database Session Management</text>
+  <text class="s" x="186" y="440" font-size="10" text-anchor="middle">• get_session(tenant_id): asyncpg pool</text>
+  <text class="s" x="186" y="456" font-size="10" text-anchor="middle">• Executes: SELECT set_config('app.tenant_id')</text>
+  <text class="s" x="186" y="472" font-size="10" text-anchor="middle">• Real-time tenant active status validation</text>
+  <text class="s" x="186" y="488" font-size="10" text-anchor="middle">• Suspended tenants cut off immediately</text>
+
+  <rect class="n" x="339" y="402" width="265" height="100" rx="4"/>
+  <text class="t" x="471" y="422" font-size="12" text-anchor="middle">Pre-Auth / Anonymous Flow</text>
+  <text class="s" x="471" y="440" font-size="10" text-anchor="middle">• get_anonymous_session()</text>
+  <text class="s" x="471" y="456" font-size="10" text-anchor="middle">• app.tenant_id is deliberately unset</text>
+  <text class="s" x="471" y="472" font-size="10" text-anchor="middle">• Ordinary RLS tables return zero rows</text>
+  <text class="s" x="471" y="488" font-size="10" text-anchor="middle">• Uses login_lookup() SECURITY DEFINER</text>
+
+  <rect class="n" x="624" y="402" width="265" height="100" rx="4"/>
+  <text class="t" x="756" y="422" font-size="12" text-anchor="middle">Authorization &amp; Scoping Engine</text>
+  <text class="s" x="756" y="440" font-size="10" text-anchor="middle">• Roles: SUPER_ADMIN, HR_MANAGER, etc.</text>
+  <text class="s" x="756" y="456" font-size="10" text-anchor="middle">• 6 Scopes: ALL, LEGAL_ENTITY, ORG_UNIT</text>
+  <text class="s" x="756" y="472" font-size="10" text-anchor="middle">• SELF, DIRECT_REPORTS, ALL_REPORTS</text>
+  <text class="s" x="756" y="488" font-size="10" text-anchor="middle">• Compiles permissions into SQL predicates</text>
+
+  <rect class="n" x="909" y="402" width="275" height="100" rx="4"/>
+  <text class="t" x="1046" y="422" font-size="12" text-anchor="middle">Business Calendar &amp; DateTime Engine</text>
+  <text class="s" x="1046" y="440" font-size="10" text-anchor="middle">• 7-day bitmask working days calculation</text>
+  <text class="s" x="1046" y="456" font-size="10" text-anchor="middle">• Alternate Saturday pattern resolver</text>
+  <text class="s" x="1046" y="472" font-size="10" text-anchor="middle">• Automated compute_day() metrics</text>
+  <text class="s" x="1046" y="488" font-size="10" text-anchor="middle">• UUIDv7 and ULID sortable unique IDs</text>
+
+  <!-- Connection from Backend to Database -->
+  <polyline class="e" points="620,530 620,578" marker-end="url(#ah-containers)"/>
+  <text class="s" x="630" y="556" font-size="12" text-anchor="start">asyncpg connection pool · Unprivileged role: hrms_app (Port 5432)</text>
+
+  <!-- BOTTOM LAYER: POSTGRESQL DATABASE & STORAGE -->
+  <rect class="g" x="20" y="580" width="1200" height="220" rx="8" stroke-width="1.25"/>
+  <text class="t" x="34" y="604" font-size="14">Persistence &amp; Storage Tier · PostgreSQL 16 Alpine + Mounted Volumes</text>
+
+  <!-- Dual Roles Box -->
+  <rect class="n" x="40" y="620" width="370" height="160" rx="6" stroke-width="1.25"/>
+  <text class="t" x="54" y="642" font-size="13">Dual-Role Security Model</text>
+  <text class="s" x="54" y="662" font-size="11">1. Migration Superuser: hrms</text>
+  <text class="s" x="70" y="678" font-size="10">Runs Alembic DDL migrations (0001–0016) · Full privileges</text>
+  <text class="s" x="54" y="700" font-size="11">2. Runtime Application Role: hrms_app</text>
+  <text class="s" x="70" y="716" font-size="10">Created in migration 0005 with NOSUPERUSER &amp; NOBYPASSRLS</text>
+  <text class="s" x="70" y="732" font-size="10">Runs all application queries under set_config('app.tenant_id')</text>
+  <text class="s" x="70" y="748" font-size="10">PostgreSQL engine itself denies query if tenant_id doesn't match</text>
+
+  <!-- Row Level Security Box -->
+  <rect class="na" x="430" y="620" width="450" height="160" rx="6" stroke-width="1.25"/>
+  <text class="ta" x="444" y="642" font-size="13">Native Row-Level Security (RLS)</text>
+  <text class="s" x="444" y="662" font-size="11">Enforced across all 25+ tenant-scoped tables:</text>
+  <text class="s" x="458" y="678" font-size="10">• legal_entities, org_units, locations, jobs, grades, cost_centres</text>
+  <text class="s" x="458" y="694" font-size="10">• persons, employments, assignments, employee_kyc_records/documents</text>
+  <text class="s" x="458" y="710" font-size="10">• punches, attendance_days, holidays, leave_applications, balances</text>
+  <text class="s" x="458" y="726" font-size="10">• attendance_correction_requests, policy_templates, onboarding_cases</text>
+  <text class="s" x="444" y="750" font-size="11">RLS Policy: tenant_id = current_setting('app.tenant_id')::uuid</text>
+  <text class="s" x="444" y="766" font-size="10">Keys: Composite primary key (tenant_id, id) prevents cross-tenant references</text>
+
+  <!-- Storage Box -->
+  <rect class="n" x="900" y="620" width="300" height="160" rx="6" stroke-width="1.25"/>
+  <text class="t" x="914" y="642" font-size="13">Storage &amp; Persistence</text>
+  <text class="s" x="914" y="666" font-size="11">• PostgreSQL Data Volume:</text>
+  <text class="s" x="928" y="682" font-size="10">Named Docker volume postgres_data</text>
+  <text class="s" x="914" y="706" font-size="11">• Document Storage:</text>
+  <text class="s" x="928" y="722" font-size="10">Local directory: /app/storage/kyc</text>
+  <text class="s" x="928" y="738" font-size="10">Secured uploads: PAN, Aadhaar, Cheques</text>
+  <text class="s" x="914" y="762" font-size="11">• In-memory caching: LRU for policy trees</text>
+</svg>

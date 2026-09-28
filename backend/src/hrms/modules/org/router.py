@@ -18,10 +18,14 @@ from sqlmodel import select
 
 from hrms.core.authz import ScopeDep, require_permission
 from hrms.core.database import SessionDep
+from hrms.core.datetime_utils import now_utc
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
-from hrms.modules.org.models import Job, LegalEntity, Location, OrgUnit
+from hrms.modules.org.models import EmployeeIdScheme, Job, LegalEntity, Location, OrgUnit
 from hrms.modules.org.schemas import (
+    EmployeeIdSchemeCreate,
+    EmployeeIdSchemeResponse,
+    EmployeeIdSchemeUpdate,
     JobCreate,
     JobResponse,
     LegalEntityCreate,
@@ -44,6 +48,7 @@ def _entity_scope_ids(scope) -> list[UUID] | None:
 
 # ─── Legal Entities ──────────────────────────────────────────────────────────
 
+
 @router.post(
     "/legal-entities",
     response_model=LegalEntityResponse,
@@ -57,6 +62,7 @@ async def create_legal_entity(
     session: SessionDep,
     scope: ScopeDep,
 ) -> LegalEntityResponse:
+    scope = scope.for_permission("org.write")
     if not scope.is_all:
         raise HTTPException(
             status.HTTP_403_FORBIDDEN,
@@ -118,6 +124,7 @@ async def list_legal_entities(
 
 # ─── Locations ───────────────────────────────────────────────────────────────
 
+
 @router.post(
     "/locations",
     response_model=LocationResponse,
@@ -131,6 +138,7 @@ async def create_location(
     session: SessionDep,
     scope: ScopeDep,
 ) -> LocationResponse:
+    scope = scope.for_permission("org.write")
     uid = uuid4()
     le_uuid: UUID | None = None
     if body.legal_entity_id:
@@ -197,7 +205,11 @@ async def list_locations(
             {"tid": str(tenant_id), "ids": [str(i) for i in ids]},
         )
         loc_ids = [r[0] for r in result]
-        rows = await session.execute(select(Location).where(Location.id.in_(loc_ids))) if loc_ids else None
+        rows = (
+            await session.execute(select(Location).where(Location.id.in_(loc_ids)))
+            if loc_ids
+            else None
+        )
     scalars = rows.scalars() if rows is not None else []
     return [
         LocationResponse(
@@ -210,13 +222,16 @@ async def list_locations(
             timezone=r.timezone,
             status=r.status,
             version=r.version,
-            legal_entity_id=to_typed_id("legal_entity", r.legal_entity_id) if r.legal_entity_id else None,
+            legal_entity_id=to_typed_id("legal_entity", r.legal_entity_id)
+            if r.legal_entity_id
+            else None,
         )
         for r in scalars
     ]
 
 
 # ─── Org Units ────────────────────────────────────────────────────────────────
+
 
 @router.post(
     "/org-units",
@@ -231,6 +246,7 @@ async def create_org_unit(
     session: SessionDep,
     scope: ScopeDep,
 ) -> OrgUnitResponse:
+    scope = scope.for_permission("org.write")
     uid = uuid4()
     parent_uuid: UUID | None = None
     if body.parent_id:
@@ -301,7 +317,11 @@ async def list_org_units(
             {"tid": str(tenant_id), "ids": [str(i) for i in ids]},
         )
         unit_ids = [r[0] for r in result]
-        scalars = (await session.execute(select(OrgUnit).where(OrgUnit.id.in_(unit_ids)))).scalars() if unit_ids else []
+        scalars = (
+            (await session.execute(select(OrgUnit).where(OrgUnit.id.in_(unit_ids)))).scalars()
+            if unit_ids
+            else []
+        )
     return [
         OrgUnitResponse(
             id=to_typed_id("org_unit", r.id),
@@ -309,7 +329,9 @@ async def list_org_units(
             code=r.code,
             type=r.type,
             parent_id=to_typed_id("org_unit", r.parent_id) if r.parent_id else None,
-            legal_entity_id=to_typed_id("legal_entity", r.legal_entity_id) if r.legal_entity_id else None,
+            legal_entity_id=to_typed_id("legal_entity", r.legal_entity_id)
+            if r.legal_entity_id
+            else None,
             status=r.status,
             effective_from=r.effective_from,
             effective_to=r.effective_to,
@@ -321,8 +343,14 @@ async def list_org_units(
 
 # ─── Jobs (tenant-wide catalog — no per-company scoping) ──────────────────────
 
-@router.post("/jobs", response_model=JobResponse, status_code=status.HTTP_201_CREATED,
-             summary="Create a job", dependencies=[require_permission("org.write")])
+
+@router.post(
+    "/jobs",
+    response_model=JobResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a job",
+    dependencies=[require_permission("org.write")],
+)
 async def create_job(
     body: JobCreate,
     tenant_id: TenantDep,
@@ -354,9 +382,7 @@ async def list_jobs(
     session: SessionDep,
 ) -> list[JobResponse]:
     rows = await session.execute(
-        select(Job)
-        .where(Job.tenant_id == tenant_id)
-        .where(Job.archived_at.is_(None))  # type: ignore[attr-defined]
+        select(Job).where(Job.tenant_id == tenant_id).where(Job.archived_at.is_(None))  # type: ignore[attr-defined]
     )
     return [
         JobResponse(
@@ -369,3 +395,190 @@ async def list_jobs(
         )
         for r in rows.scalars()
     ]
+
+
+# ─── Employee ID schemes ──────────────────────────────────────────────────────
+#
+# Configurable employee-number generation (prefix + running number), either
+# tenant-wide or per legal entity — see EmployeeIdScheme's docstring for the
+# resolution order. Setting the tenant-wide scheme is a group-level change
+# (same bar as creating a legal entity); setting a company's own scheme only
+# needs that company within the caller's scope.
+
+
+@router.get(
+    "/employee-id-schemes",
+    response_model=list[EmployeeIdSchemeResponse],
+    summary="List employee ID schemes visible to the caller",
+)
+async def list_employee_id_schemes(
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> list[EmployeeIdSchemeResponse]:
+    q = (
+        select(EmployeeIdScheme, LegalEntity.name)
+        .outerjoin(LegalEntity, LegalEntity.id == EmployeeIdScheme.legal_entity_id)
+        .where(EmployeeIdScheme.tenant_id == tenant_id)
+        .where(EmployeeIdScheme.archived_at.is_(None))  # type: ignore[attr-defined]
+    )
+    ids = _entity_scope_ids(scope)
+    if ids is not None:
+        if not ids:
+            return []
+        # A scoped caller sees their own companies' schemes, plus the
+        # tenant-wide one (legal_entity_id IS NULL) if it exists — they're
+        # affected by it even though they can't create it.
+        q = q.where(
+            (EmployeeIdScheme.legal_entity_id.in_(ids))
+            | (EmployeeIdScheme.legal_entity_id.is_(None))
+        )
+    rows = await session.execute(q)
+    return [_eis_response(s, name) for s, name in rows]
+
+
+@router.post(
+    "/employee-id-schemes",
+    response_model=EmployeeIdSchemeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create an employee ID scheme (tenant-wide or for one company)",
+    dependencies=[require_permission("org.write")],
+)
+async def create_employee_id_scheme(
+    body: EmployeeIdSchemeCreate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> EmployeeIdSchemeResponse:
+    scope = scope.for_permission("org.write")
+    le_uuid: UUID | None = None
+    le_name: str | None = None
+    if body.legal_entity_id:
+        le_uuid = to_uuid(body.legal_entity_id)
+        if not scope.covers_entity(le_uuid):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this company")
+        le_row = await session.execute(
+            select(LegalEntity)
+            .where(LegalEntity.tenant_id == tenant_id)
+            .where(LegalEntity.id == le_uuid)
+        )
+        le = le_row.scalars().first()
+        if not le:
+            raise HTTPException(status.HTTP_404_NOT_FOUND, "Company not found")
+        le_name = le.name
+    elif not scope.is_all:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a group-level administrator can set the tenant-wide employee ID scheme",
+        )
+
+    existing = await session.execute(
+        select(EmployeeIdScheme)
+        .where(EmployeeIdScheme.tenant_id == tenant_id)
+        .where(EmployeeIdScheme.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(EmployeeIdScheme.legal_entity_id == le_uuid)
+    )
+    if existing.scalars().first():
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "An active employee ID scheme already exists — edit or remove it first",
+        )
+
+    uid = uuid4()
+    scheme = EmployeeIdScheme(
+        tenant_id=tenant_id,
+        id=uid,
+        legal_entity_id=le_uuid,
+        prefix=body.prefix,
+        separator=body.separator,
+        number_digits=body.number_digits,
+        next_number=body.next_number,
+    )
+    session.add(scheme)
+    await session.flush()
+    return _eis_response(scheme, le_name)
+
+
+@router.patch(
+    "/employee-id-schemes/{scheme_id}",
+    response_model=EmployeeIdSchemeResponse,
+    summary="Update an employee ID scheme",
+    dependencies=[require_permission("org.write")],
+)
+async def update_employee_id_scheme(
+    scheme_id: str,
+    body: EmployeeIdSchemeUpdate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> EmployeeIdSchemeResponse:
+    scope = scope.for_permission("org.write")
+    scheme, le_name = await _get_eis(session, tenant_id, scheme_id)
+    if scheme.legal_entity_id:
+        if not scope.covers_entity(scheme.legal_entity_id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this company")
+    elif not scope.is_all:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a group-level administrator can change the tenant-wide employee ID scheme",
+        )
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(scheme, k, v)
+    session.add(scheme)
+    await session.flush()
+    return _eis_response(scheme, le_name)
+
+
+@router.delete(
+    "/employee-id-schemes/{scheme_id}",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove an employee ID scheme",
+    dependencies=[require_permission("org.write")],
+)
+async def delete_employee_id_scheme(
+    scheme_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> None:
+    scope = scope.for_permission("org.write")
+    scheme, _ = await _get_eis(session, tenant_id, scheme_id)
+    if scheme.legal_entity_id:
+        if not scope.covers_entity(scheme.legal_entity_id):
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this company")
+    elif not scope.is_all:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a group-level administrator can remove the tenant-wide employee ID scheme",
+        )
+    scheme.archived_at = now_utc()
+    session.add(scheme)
+
+
+def _eis_response(s: EmployeeIdScheme, legal_entity_name: str | None) -> EmployeeIdSchemeResponse:
+    return EmployeeIdSchemeResponse(
+        id=to_typed_id("employee_id_scheme", s.id),
+        legal_entity_id=to_typed_id("legal_entity", s.legal_entity_id)
+        if s.legal_entity_id
+        else None,
+        legal_entity_name=legal_entity_name,
+        prefix=s.prefix,
+        separator=s.separator,
+        number_digits=s.number_digits,
+        next_number=s.next_number,
+        preview=f"{s.prefix}{s.separator}{str(s.next_number).zfill(s.number_digits)}",
+    )
+
+
+async def _get_eis(session, tenant_id, scheme_id: str) -> tuple[EmployeeIdScheme, str | None]:
+    uid = to_uuid(scheme_id)
+    row = await session.execute(
+        select(EmployeeIdScheme, LegalEntity.name)
+        .outerjoin(LegalEntity, LegalEntity.id == EmployeeIdScheme.legal_entity_id)
+        .where(EmployeeIdScheme.tenant_id == tenant_id)
+        .where(EmployeeIdScheme.id == uid)
+    )
+    result = row.first()
+    if not result:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee ID scheme not found")
+    return result

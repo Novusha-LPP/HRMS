@@ -1,1 +1,115 @@
-<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1000 440" width="1000" height="440" role="img" aria-label="A personnel action is approved, applied on its effective date as an effective-dated write plus audit entry in one transaction, and published as an event that every other module consumes." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif"><style>.bg{fill:#ffffff;stroke:#d5dde1}.n{fill:#f4f6f7;stroke:#7b8a92}.na{fill:#ddeaea;stroke:#0d6b6b}.nx{fill:#ffffff;stroke:#7b8a92;stroke-dasharray:5 4}.np{fill:#eceff1;stroke:#7b8a92}.g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}.gs{fill:#f9fbfb;stroke:#9aa7ae}.t{fill:#16222a;font-weight:600}.s{fill:#4f5e67}.ta{fill:#0d6b6b;font-weight:600}.e{fill:none;stroke:#4f5e67;stroke-width:1.5}.ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}.ah{fill:#4f5e67}.l{fill:none;stroke:#b4c0c7;stroke-width:1.25;stroke-dasharray:4 4}</style><defs><marker id="ah-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse"><path class="ah" d="M0,0 L10,5 L0,10 z"/></marker></defs><rect class="bg" x="0.5" y="0.5" width="999" height="439" rx="10"/><rect class="n" x="20" y="30" width="200" height="76" rx="6" stroke-width="1.25"/><text class="t" x="120.0" y="56.5" font-size="13" text-anchor="middle">Personnel action</text><text class="s" x="120.0" y="72.5" font-size="12" text-anchor="middle">Transfer to Vadodara</text><text class="s" x="120.0" y="88.5" font-size="12" text-anchor="middle">effective 01 Oct 2026</text><rect class="n" x="270" y="30" width="200" height="76" rx="6" stroke-width="1.25"/><text class="t" x="370.0" y="56.5" font-size="13" text-anchor="middle">Approval workflow</text><text class="s" x="370.0" y="72.5" font-size="12" text-anchor="middle">line manager → HR</text><text class="s" x="370.0" y="88.5" font-size="12" text-anchor="middle">reason required</text><rect class="n" x="520" y="30" width="200" height="76" rx="6" stroke-width="1.25"/><text class="t" x="620.0" y="56.5" font-size="13" text-anchor="middle">Scheduler</text><text class="s" x="620.0" y="72.5" font-size="12" text-anchor="middle">applies it on</text><text class="s" x="620.0" y="88.5" font-size="12" text-anchor="middle">01 Oct 2026</text><rect class="na" x="770" y="30" width="200" height="76" rx="6" stroke-width="1.25"/><text class="ta" x="870.0" y="56.5" font-size="13" text-anchor="middle">One transaction</text><text class="s" x="870.0" y="72.5" font-size="12" text-anchor="middle">assignment slice + audit</text><text class="s" x="870.0" y="88.5" font-size="12" text-anchor="middle">+ outbox record</text><polyline class="e" points="220,68 268,68" marker-end="url(#ah-flow)"/><text class="s" x="244.0" y="60" font-size="12" text-anchor="middle">submit</text><polyline class="e" points="470,68 518,68" marker-end="url(#ah-flow)"/><text class="s" x="494.0" y="60" font-size="12" text-anchor="middle">approve</text><polyline class="e" points="720,68 768,68" marker-end="url(#ah-flow)"/><text class="s" x="744.0" y="60" font-size="12" text-anchor="middle">on date</text><rect class="n" x="300" y="170" width="400" height="56" rx="6" stroke-width="1.25"/><text class="t" x="500.0" y="194.5" font-size="13" text-anchor="middle">Event bus (per cell)</text><text class="s" x="500.0" y="210.5" font-size="12" text-anchor="middle">AssignmentChanged · tenant · employee · from → to · effective</text><polyline class="e" points="870,106 870,140 500,140 500,168" marker-end="url(#ah-flow)"/><text class="s" x="690" y="134" font-size="12" text-anchor="middle">publish</text><rect class="n" x="20" y="300" width="128" height="76" rx="6" stroke-width="1.25"/><text class="t" x="84.0" y="326.5" font-size="12" text-anchor="middle">Attendance</text><text class="s" x="84.0" y="342.5" font-size="12" text-anchor="middle">new shift &amp; holiday</text><text class="s" x="84.0" y="358.5" font-size="12" text-anchor="middle">calendar from 01 Oct</text><polyline class="e" points="500,226 500,262 84,262 84,298" marker-end="url(#ah-flow)"/><rect class="n" x="158" y="300" width="128" height="76" rx="6" stroke-width="1.25"/><text class="t" x="222.0" y="326.5" font-size="12" text-anchor="middle">Leave</text><text class="s" x="222.0" y="342.5" font-size="12" text-anchor="middle">location holidays</text><text class="s" x="222.0" y="358.5" font-size="12" text-anchor="middle">in balance maths</text><polyline class="e" points="500,226 500,262 222,262 222,298" marker-end="url(#ah-flow)"/><rect class="n" x="296" y="300" width="128" height="76" rx="6" stroke-width="1.25"/><text class="t" x="360.0" y="326.5" font-size="12" text-anchor="middle">Access</text><text class="s" x="360.0" y="342.5" font-size="12" text-anchor="middle">recompute who</text><text class="s" x="360.0" y="358.5" font-size="12" text-anchor="middle">can see her</text><polyline class="e" points="500,226 500,262 360,262 360,298" marker-end="url(#ah-flow)"/><rect class="n" x="434" y="300" width="128" height="76" rx="6" stroke-width="1.25"/><text class="t" x="498.0" y="326.5" font-size="12" text-anchor="middle">Action Centre</text><text class="s" x="498.0" y="342.5" font-size="12" text-anchor="middle">induction at</text><text class="s" x="498.0" y="358.5" font-size="12" text-anchor="middle">the new site</text><polyline class="e" points="500,226 500,262 498,262 498,298" marker-end="url(#ah-flow)"/><rect class="n" x="572" y="300" width="128" height="76" rx="6" stroke-width="1.25"/><text class="t" x="636.0" y="326.5" font-size="12" text-anchor="middle">Notifications</text><text class="s" x="636.0" y="342.5" font-size="12" text-anchor="middle">employee, old and</text><text class="s" x="636.0" y="358.5" font-size="12" text-anchor="middle">new manager</text><polyline class="e" points="500,226 500,262 636,262 636,298" marker-end="url(#ah-flow)"/><rect class="n" x="710" y="300" width="128" height="76" rx="6" stroke-width="1.25"/><text class="t" x="774.0" y="326.5" font-size="12" text-anchor="middle">Search &amp; reads</text><text class="s" x="774.0" y="342.5" font-size="12" text-anchor="middle">index, 360,</text><text class="s" x="774.0" y="358.5" font-size="12" text-anchor="middle">dashboards</text><polyline class="e" points="500,226 500,262 774,262 774,298" marker-end="url(#ah-flow)"/><rect class="n" x="848" y="300" width="128" height="76" rx="6" stroke-width="1.25"/><text class="t" x="912.0" y="326.5" font-size="12" text-anchor="middle">Webhooks</text><text class="s" x="912.0" y="342.5" font-size="12" text-anchor="middle">directory,</text><text class="s" x="912.0" y="358.5" font-size="12" text-anchor="middle">payroll, ERP</text><polyline class="e" points="500,226 500,262 912,262 912,298" marker-end="url(#ah-flow)"/><text class="s" x="20" y="410" font-size="12" text-anchor="start">Modules never read each other's tables; they react to events. A retro-dated action also triggers recalculation of the affected periods.</text></svg>
+<svg xmlns="http://www.w3.org/2000/svg" class="dg" viewBox="0 0 1100 480" width="1100" height="480" role="img" aria-label="Action &amp; Approval Workflows: Multi-tier approval state machine, attendance regularization, and automated recomputation." font-family="'Noto Sans',system-ui,'Segoe UI',Helvetica,Arial,sans-serif">
+  <style>
+    .bg{fill:#ffffff;stroke:#d5dde1}
+    .n{fill:#f4f6f7;stroke:#7b8a92}
+    .na{fill:#ddeaea;stroke:#0d6b6b}
+    .nb{fill:#eff6ff;stroke:#3b82f6}
+    .g{fill:none;stroke:#9aa7ae;stroke-dasharray:6 5}
+    .t{fill:#16222a;font-weight:600}
+    .s{fill:#4f5e67}
+    .ta{fill:#0d6b6b;font-weight:600}
+    .tb{fill:#1e40af;font-weight:600}
+    .e{fill:none;stroke:#4f5e67;stroke-width:1.5}
+    .ed{fill:none;stroke:#4f5e67;stroke-width:1.5;stroke-dasharray:5 4}
+    .ah{fill:#4f5e67}
+  </style>
+  <defs>
+    <marker id="ah-flow" viewBox="0 0 10 10" refX="9" refY="5" markerWidth="7" markerHeight="7" orient="auto-start-reverse">
+      <path class="ah" d="M0,0 L10,5 L0,10 z"/>
+    </marker>
+  </defs>
+
+  <!-- Background -->
+  <rect class="bg" x="0.5" y="0.5" width="1099" height="479" rx="10"/>
+
+  <text class="t" x="30" y="32" font-size="14">Workflows &amp; State Machines: Approvals, Application &amp; Recomputation</text>
+  <text class="s" x="30" y="50" font-size="12">Multi-level approval state machines (`modules/leave`, `modules/corrections`, `modules/people`) with automated recalculation on approval.</text>
+
+  <!-- TOP WORKFLOW: CORRECTION & RECOMPUTATION -->
+  <rect class="g" x="30" y="80" width="1040" height="170" rx="6" stroke-width="1.25"/>
+  <text class="t" x="45" y="104" font-size="13">Workflow 1: Attendance Punch Correction (`modules/corrections` → `modules/time`)</text>
+
+  <!-- Step 1: Submit -->
+  <rect class="n" x="45" y="120" width="190" height="100" rx="4"/>
+  <text class="t" x="140" y="142" font-size="11" text-anchor="middle">1. Employee Submits</text>
+  <text class="s" x="55" y="162" font-size="10">• AttendanceCorrectionRequest</text>
+  <text class="s" x="55" y="176" font-size="10">• Type: MISSED_PUNCH, LATE</text>
+  <text class="s" x="55" y="190" font-size="10">• Date, requested times &amp; reason</text>
+  <text class="ta" x="55" y="206" font-size="10">• Status: PENDING_L1</text>
+
+  <!-- Step 2: Multi-Tier Approval -->
+  <rect class="nb" x="275" y="120" width="220" height="100" rx="4"/>
+  <text class="tb" x="385" y="142" font-size="11" text-anchor="middle">2. Multi-Level Approval</text>
+  <text class="s" x="285" y="162" font-size="10">• Policy sets 1 to 3 approval tiers</text>
+  <text class="s" x="285" y="176" font-size="10">• L1: Line Manager (reports_to)</text>
+  <text class="s" x="285" y="190" font-size="10">• L2: Dept Head / HR Manager</text>
+  <text class="s" x="285" y="206" font-size="10">• CorrectionApprovalAction logged</text>
+
+  <polyline class="e" points="235,170 273,170" marker-end="url(#ah-flow)"/>
+
+  <!-- Step 3: Approval Action -->
+  <rect class="na" x="535" y="120" width="220" height="100" rx="4"/>
+  <text class="ta" x="645" y="142" font-size="11" text-anchor="middle">3. Final Approval Event</text>
+  <text class="s" x="545" y="162" font-size="10">• Status → APPROVED</text>
+  <text class="s" x="545" y="176" font-size="10">• Atomic DB transaction:</text>
+  <text class="s" x="545" y="190" font-size="10">• Inserts corrected Punch row</text>
+  <text class="s" x="545" y="206" font-size="10">  (source: MANUAL, is_corrected: true)</text>
+
+  <polyline class="e" points="495,170 533,170" marker-end="url(#ah-flow)"/>
+
+  <!-- Step 4: Automated Recomputation -->
+  <rect class="na" x="795" y="120" width="260" height="100" rx="4"/>
+  <text class="ta" x="925" y="142" font-size="11" text-anchor="middle">4. Automated Recomputation</text>
+  <text class="s" x="805" y="162" font-size="10">• Calls datetime_utils.compute_day()</text>
+  <text class="s" x="805" y="176" font-size="10">• Updates AttendanceDay metrics &amp; status</text>
+  <text class="s" x="805" y="190" font-size="10">• apply_overtime() triggers:</text>
+  <text class="t" x="805" y="206" font-size="10">  Invalidates prior OT &amp; resets to PENDING</text>
+
+  <polyline class="e" points="755,170 793,170" marker-end="url(#ah-flow)"/>
+
+  <!-- BOTTOM WORKFLOW: LEAVE APPLICATION & BALANCE DEDUCTION -->
+  <rect class="g" x="30" y="270" width="1040" height="170" rx="6" stroke-width="1.25"/>
+  <text class="t" x="45" y="294" font-size="13">Workflow 2: Leave Application &amp; Monthly Accrual (`modules/leave`)</text>
+
+  <!-- Step 1: Leave Request -->
+  <rect class="n" x="45" y="310" width="220" height="106" rx="4"/>
+  <text class="t" x="155" y="330" font-size="11" text-anchor="middle">1. Leave Request Submitted</text>
+  <text class="s" x="55" y="348" font-size="10">• LeaveApplication created</text>
+  <text class="s" x="55" y="362" font-size="10">• Validates working_days_between()</text>
+  <text class="s" x="55" y="376" font-size="10">• Checks sufficient LeaveBalance</text>
+  <text class="ta" x="55" y="390" font-size="10">• Balance: pending_days += requested</text>
+
+  <!-- Step 2: Approval Chain -->
+  <rect class="nb" x="305" y="310" width="220" height="106" rx="4"/>
+  <text class="tb" x="415" y="330" font-size="11" text-anchor="middle">2. Approval State Machine</text>
+  <text class="s" x="315" y="348" font-size="10">• PENDING_L1 → PENDING_L2 → PENDING_L3</text>
+  <text class="s" x="315" y="362" font-size="10">• Scoped authorization checks</text>
+  <text class="s" x="315" y="376" font-size="10">• Approver notes recorded</text>
+  <text class="s" x="315" y="390" font-size="10">• Cancellation requires approval if flagged</text>
+
+  <polyline class="e" points="265,360 303,360" marker-end="url(#ah-flow)"/>
+
+  <!-- Step 3: Approved Execution -->
+  <rect class="na" x="565" y="310" width="220" height="106" rx="4"/>
+  <text class="ta" x="675" y="330" font-size="11" text-anchor="middle">3. Balance Deduction</text>
+  <text class="s" x="575" y="348" font-size="10">• Status → APPROVED</text>
+  <text class="s" x="575" y="362" font-size="10">• Balance updated:</text>
+  <text class="s" x="575" y="376" font-size="10">  pending_days -= count</text>
+  <text class="s" x="575" y="390" font-size="10">  used_days += count</text>
+  <text class="s" x="575" y="404" font-size="10">• AttendanceDay marked ON_LEAVE</text>
+
+  <polyline class="e" points="525,360 563,360" marker-end="url(#ah-flow)"/>
+
+  <!-- Step 4: Monthly Accruals -->
+  <rect class="n" x="825" y="310" width="230" height="106" rx="4"/>
+  <text class="t" x="940" y="330" font-size="11" text-anchor="middle">4. Monthly Accrual Engine</text>
+  <text class="s" x="835" y="348" font-size="10">• POST /v1/leave/accrual/run</text>
+  <text class="s" x="835" y="362" font-size="10">• Credits days_per_year / 12</text>
+  <text class="s" x="835" y="376" font-size="10">• Deduplication guard:</text>
+  <text class="s" x="835" y="390" font-size="10">  Checks last_accrued_period "YYYY-MM"</text>
+  <text class="s" x="835" y="404" font-size="10">• Returns AccrualRunResponse</text>
+
+  <polyline class="ed" points="785,360 823,360" marker-end="url(#ah-flow)"/>
+
+  <text class="s" x="30" y="465" font-size="11">Personnel actions, leaves, and corrections all share common transactional safety: status transitions and entity updates commit in one atomic unit.</text>
+</svg>

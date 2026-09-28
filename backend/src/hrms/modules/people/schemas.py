@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any, Optional
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -13,10 +13,10 @@ from hrms.modules.people.models import (
 class PersonCreate(BaseModel):
     legal_first_name: str = Field(max_length=100)
     legal_last_name: str = Field(max_length=100)
-    preferred_name: Optional[str] = Field(default=None)
-    date_of_birth: Optional[date] = Field(default=None)
-    gender: Optional[str] = Field(default=None)
-    nationality: Optional[str] = Field(default=None, max_length=2)
+    preferred_name: str | None = Field(default=None)
+    date_of_birth: date | None = Field(default=None)
+    gender: str | None = Field(default=None)
+    nationality: str | None = Field(default=None, max_length=2)
 
 
 class PersonResponse(BaseModel):
@@ -25,9 +25,9 @@ class PersonResponse(BaseModel):
     id: str  # typed: "per_..."
     legal_first_name: str
     legal_last_name: str
-    preferred_name: Optional[str]
-    date_of_birth: Optional[date]
-    gender: Optional[str]
+    preferred_name: str | None
+    date_of_birth: date | None
+    gender: str | None
     version: int
 
 
@@ -37,12 +37,12 @@ class MyProfileResponse(BaseModel):
     # matter, not self-service (see update_my_profile in router.py).
     legal_first_name: str
     legal_last_name: str
-    preferred_name: Optional[str]
-    date_of_birth: Optional[date]
-    gender: Optional[str]
-    nationality: Optional[str]
-    email: Optional[str]
-    mobile: Optional[str]
+    preferred_name: str | None
+    date_of_birth: date | None
+    gender: str | None
+    nationality: str | None
+    email: str | None
+    mobile: str | None
     version: int
 
 
@@ -52,21 +52,26 @@ class MyProfileUpdate(BaseModel):
     model_dump(exclude_unset=True) in the router) — sending a field clears
     it to null, omitting it leaves the current value untouched.
     """
-    preferred_name: Optional[str] = Field(default=None, max_length=100)
-    date_of_birth: Optional[date] = None
-    gender: Optional[str] = Field(default=None, max_length=20)
-    nationality: Optional[str] = Field(default=None, max_length=2)
-    mobile: Optional[str] = Field(default=None, max_length=20)
+
+    preferred_name: str | None = Field(default=None, max_length=100)
+    date_of_birth: date | None = None
+    gender: str | None = Field(default=None, max_length=20)
+    nationality: str | None = Field(default=None, max_length=2)
+    mobile: str | None = Field(default=None, max_length=20)
 
 
 # ──────────────────────────────────────────────────────────────────────────────
 
+
 class EmploymentCreate(BaseModel):
     person_id: str  # typed ID
     legal_entity_id: str  # typed ID
-    employee_number: str = Field(max_length=50)
+    # Omit to auto-generate from the company's (or tenant's) employee ID
+    # scheme, if one is configured — see org/models.py:EmployeeIdScheme.
+    # Required as before if no scheme exists.
+    employee_number: str | None = Field(default=None, max_length=50)
     hire_date: date
-    service_stage: Optional[str] = Field(default=None)
+    service_stage: str | None = Field(default=None)
 
 
 class EmploymentResponse(BaseModel):
@@ -77,41 +82,43 @@ class EmploymentResponse(BaseModel):
     legal_entity_id: str
     employee_number: str
     hire_date: date
-    separation_date: Optional[date]
+    separation_date: date | None
     employment_state: EmploymentState
-    service_stage: Optional[str]
+    service_stage: str | None
     version: int
     # From the employee's current (open) assignment, if one has been placed
     # yet — null for an employment that's been created but not yet HIREd
     # into a department (see POST /v1/personnel-actions).
-    legal_entity_name: Optional[str] = None
-    org_unit_id: Optional[str] = None
-    department: Optional[str] = None
-    job_id: Optional[str] = None
-    designation: Optional[str] = None
-    location_id: Optional[str] = None
-    location: Optional[str] = None
-    manager_employment_id: Optional[str] = None
-    manager_name: Optional[str] = None
+    legal_entity_name: str | None = None
+    org_unit_id: str | None = None
+    department: str | None = None
+    job_id: str | None = None
+    designation: str | None = None
+    location_id: str | None = None
+    location: str | None = None
+    manager_employment_id: str | None = None
+    manager_name: str | None = None
 
 
 # ──────────────────────────────────────────────────────────────────────────────
+
 
 class PersonnelActionCreate(BaseModel):
     """
     POST /v1/personnel-actions — the only write path for employment changes.
     """
+
     employment_id: str = Field(description="Typed employment ID (emp_...)")
     type: PersonnelActionType
-    reason_code: Optional[str] = Field(default=None)
+    reason_code: str | None = Field(default=None)
     effective_date: date
-    changes: Optional[dict[str, Any]] = Field(
+    changes: dict[str, Any] | None = Field(
         default=None,
-        description="Fields being changed and their new values. Keys are typed IDs where applicable.",
+        description="Changed fields and new values; use typed IDs for references.",
     )
-    idempotency_key: Optional[str] = Field(
+    idempotency_key: str | None = Field(
         default=None,
-        description="Client-generated key; duplicate requests with the same key return the original response.",
+        description="Client-generated key for deduplicating requests.",
     )
 
 
@@ -121,10 +128,10 @@ class PersonnelActionResponse(BaseModel):
     id: str  # typed: "pa_..."
     employment_id: str
     type: PersonnelActionType
-    reason_code: Optional[str]
+    reason_code: str | None
     effective_date: date
     status: PersonnelActionStatus
-    changes: Optional[dict[str, Any]]
+    changes: dict[str, Any] | None
     version: int
 
 
@@ -135,4 +142,4 @@ class PersonnelActionListItem(BaseModel):
     type: PersonnelActionType
     effective_date: date
     status: PersonnelActionStatus
-    submitted_at: Optional[datetime]
+    submitted_at: datetime | None

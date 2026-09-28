@@ -1,3 +1,4 @@
+from pydantic import model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
 
@@ -35,6 +36,20 @@ class Settings(BaseSettings):
 
     # Storage
     storage_dir: str = "storage"
+    max_upload_bytes: int = 10 * 1024 * 1024
+
+    @model_validator(mode="after")
+    def production_configuration(self):
+        if self.environment == "production":
+            if self.secret_key == "change-me-before-production" or len(self.secret_key) < 32:
+                raise ValueError(
+                    "Production requires a random signing secret of at least 32 characters"
+                )
+            if not self.app_database_url:
+                raise ValueError("Production requires HRMS_APP_DATABASE_URL")
+            if self.debug:
+                raise ValueError("Debug mode must be disabled in production")
+        return self
 
     @property
     def cors_origins_list(self) -> list[str]:

@@ -1,3 +1,4 @@
+import { kycApi } from "../api/kyc";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -60,11 +61,14 @@ export function LeavePage() {
   const apps = useQuery<LeaveApplication[]>({
     queryKey: ["leave-applications"],
     queryFn: () => leaveApi.listApplications(isHR ? undefined : (user!.employmentId ?? undefined)),
-    enabled: !!user?.employmentId,
+    // HR can review every request without being an employee themselves; everyone
+    // else only ever sees their own, which needs their employment id.
+    enabled: !!user && (isHR || !!user.employmentId),
   });
   const people = usePeopleDirectory(isApprover);
 
-  if (!user || !user.employmentId) return null;
+  if (!user) return null;
+  const employmentId = user.employmentId;
 
   const all = apps.data ?? [];
   const pending = all.filter((a) => needsDecision(a.status));
@@ -76,8 +80,16 @@ export function LeavePage() {
       <PageHeader
         title="Leave"
         description={isHR ? "Balances, requests and approvals across the organisation." : "Your balances and leave requests."}
-        actions={<button className="btn-primary" onClick={() => setApplyOpen(true)}><Plus size={15} /> Apply leave</button>}
+        actions={employmentId ? <button className="btn-primary" onClick={() => setApplyOpen(true)}><Plus size={15} /> Apply leave</button> : undefined}
       />
+
+      {!employmentId && (
+        <div className="mb-4">
+          <Notice tone="info" title="This account isn’t linked to an employee record">
+            You can approve requests and configure leave for the company, but you can’t apply for leave yourself.
+          </Notice>
+        </div>
+      )}
 
       {(apps.isError || balances.isError) && (
         <div className="mb-4">
@@ -87,7 +99,7 @@ export function LeavePage() {
         </div>
       )}
 
-      <section className="mb-6">
+      {employmentId && <section className="mb-6">
         <h2 className="eyebrow mb-3">My balance · {new Date().getFullYear()}</h2>
         {balances.isPending ? (
           <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">{[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[132px] rounded-xl" />)}</div>
@@ -100,7 +112,7 @@ export function LeavePage() {
             {balances.data.map((b) => <BalanceCard key={b.id} bal={b} />)}
           </div>
         )}
-      </section>
+      </section>}
 
       <div className="card overflow-hidden">
         {isApprover ? (
@@ -135,8 +147,8 @@ export function LeavePage() {
             <EmptyState
               icon={CalendarRange}
               title="No leave requests yet"
-              description="When you apply for leave, it’ll show up here with its approval status."
-              action={<button className="btn-primary" onClick={() => setApplyOpen(true)}><Plus size={15} /> Apply leave</button>}
+              description={employmentId ? "When you apply for leave, it’ll show up here with its approval status." : "Requests from people across the company will show up here."}
+              action={employmentId ? <button className="btn-primary" onClick={() => setApplyOpen(true)}><Plus size={15} /> Apply leave</button> : undefined}
             />
           )
         ) : (
@@ -165,18 +177,20 @@ export function LeavePage() {
         )}
       </div>
 
-      <ApplyLeaveSheet
-        open={applyOpen}
-        onClose={closeApply}
-        leaveTypes={(types.data ?? []).filter((t) => t.is_active)}
-        typesError={types.isError}
-        balances={balances.data ?? []}
-        employmentId={user.employmentId}
-      />
+      {employmentId && (
+        <ApplyLeaveSheet
+          open={applyOpen}
+          onClose={closeApply}
+          leaveTypes={(types.data ?? []).filter((t) => t.is_active)}
+          typesError={types.isError}
+          balances={balances.data ?? []}
+          employmentId={employmentId}
+        />
+      )}
       <LeaveDetailSheet
         app={selected}
         onClose={() => setOpenId(null)}
-        actorId={user.employmentId}
+        actorId={employmentId}
         isApprover={isApprover}
         requester={selected ? people.get(selected.employment_id) : undefined}
       />
@@ -217,7 +231,7 @@ function LeaveAdminPanel() {
   const year = new Date().getFullYear();
   const types = useQuery<LeaveType[]>({ queryKey: ["leave-types"], queryFn: () => leaveApi.listTypes() });
   const holidays = useQuery<Holiday[]>({ queryKey: ["holidays", year], queryFn: () => leaveApi.listHolidays(year) });
-  const employees = useQuery({ queryKey: ["employees-picker"], queryFn: () => peopleApi.listEmployees(undefined, 200) });
+  const employees = useQuery({ queryKey: ["employees-picker"], queryFn: () => peopleApi.listAllEmployees() });
   const directory = usePeopleDirectory(true);
   const employeeOptions = (employees.data ?? []).map((e) => ({ id: e.id, label: directory.get(e.id) ?? e.employee_number }));
 
@@ -522,6 +536,11 @@ function ApplyLeaveSheet({ open, onClose, leaveTypes, typesError, balances, empl
   const [to, setTo] = useState("");
   const [halfDay, setHalfDay] = useState("NONE");
   const [reason, setReason] = useState("");
+  const [documentId, setDocumentId] = useState("");
+  const documents = useQuery({
+    queryKey: ["leave-supporting-documents", employmentId],
+    queryFn: () => kycApi.getMyKyc(), enabled: open,
+  });
 
   const ltId = typeId || leaveTypes[0]?.id || "";
   const type = leaveTypes.find((t) => t.id === ltId);
@@ -533,7 +552,7 @@ function ApplyLeaveSheet({ open, onClose, leaveTypes, typesError, balances, empl
   const apply = useMutation({
     mutationFn: async () => {
       const app = await leaveApi.createApplication(employmentId, {
-        leave_type_id: ltId, from_date: from, to_date: end, half_day_option: halfDay, reason: reason.trim() || undefined,
+        leave_type_id: ltId, from_date: from, to_date: end, half_day_option: span > 1 ? "NONE" : halfDay, document_id: documentId || undefined, reason: reason.trim() || undefined,
       });
       return leaveApi.submit(app.id, employmentId);
     },
@@ -547,7 +566,7 @@ function ApplyLeaveSheet({ open, onClose, leaveTypes, typesError, balances, empl
     onError: (e) => toast.error("Couldn’t submit leave request", errorMessage(e)),
   });
 
-  const valid = !!ltId && !!from && span > 0;
+  const valid = !!ltId && !!from && span > 0 && (!type?.requires_document || !!documentId);
   const submit = (e: FormEvent) => { e.preventDefault(); if (valid) apply.mutate(); };
 
   return (
@@ -602,6 +621,14 @@ function ApplyLeaveSheet({ open, onClose, leaveTypes, typesError, balances, empl
             </select>
             {span > 1 && <p className="hint">Half days apply to single-day requests only.</p>}
           </div>
+          {type?.requires_document && <div>
+            <label className="label" htmlFor="lv-document">Supporting document</label>
+            <select id="lv-document" className="input" value={documentId} onChange={e => setDocumentId(e.target.value)}>
+              <option value="">Select an uploaded document</option>
+              {documents.data?.documents.map(doc => <option key={doc.id} value={doc.id}>{doc.document_title}</option>)}
+            </select>
+            <p className="hint">Upload supporting documents from your profile's KYC tab.</p>
+          </div>}
           <div>
             <label className="label" htmlFor="lv-reason">Reason <span className="font-normal text-fg-subtle">(optional)</span></label>
             <textarea id="lv-reason" rows={3} className="input" placeholder="A short note for your approver" value={reason} onChange={(e) => setReason(e.target.value)} />
@@ -618,10 +645,11 @@ function ApplyLeaveSheet({ open, onClose, leaveTypes, typesError, balances, empl
   );
 }
 
-function LeaveDetailSheet({ app, onClose, actorId, isApprover, requester }: {
+function LeaveDetailSheet({ app, onClose, actorId: actor, isApprover, requester }: {
   app: LeaveApplication | null;
   onClose: () => void;
-  actorId: string;
+  /** The signed-in user's employment; null for an admin-only account — it can approve, but has no requests of its own to cancel. */
+  actorId: string | null;
   isApprover: boolean;
   requester?: string;
 }) {
@@ -632,11 +660,11 @@ function LeaveDetailSheet({ app, onClose, actorId, isApprover, requester }: {
   const act = useMutation({
     mutationFn: ({ kind }: { kind: "approve" | "reject" | "cancel" | "cancelApprove" | "cancelReject" }) => {
       const id = app!.id;
-      if (kind === "approve") return leaveApi.approve(id, actorId, comments || undefined);
-      if (kind === "reject") return leaveApi.reject(id, actorId, comments || undefined);
-      if (kind === "cancelApprove") return leaveApi.cancelApprove(id, actorId, comments || undefined);
-      if (kind === "cancelReject") return leaveApi.cancelReject(id, actorId, comments || undefined);
-      return leaveApi.cancel(id, actorId, comments || undefined);
+      if (kind === "approve") return leaveApi.approve(id, comments || undefined);
+      if (kind === "reject") return leaveApi.reject(id, comments || undefined);
+      if (kind === "cancelApprove") return leaveApi.cancelApprove(id, comments || undefined);
+      if (kind === "cancelReject") return leaveApi.cancelReject(id, comments || undefined);
+      return leaveApi.cancel(id, actor as string, comments || undefined);
     },
     onSuccess: (_, { kind }) => {
       qc.invalidateQueries({ queryKey: ["leave-applications"] });
@@ -657,7 +685,7 @@ function LeaveDetailSheet({ app, onClose, actorId, isApprover, requester }: {
   const isPending = PENDING.includes(app.status);
   const isCancelPending = CANCEL_PENDING.includes(app.status);
   const canDecide = isApprover && (isPending || isCancelPending);
-  const canCancel = app.employment_id === actorId && ["DRAFT", ...PENDING, "APPROVED"].includes(app.status);
+  const canCancel = !!actor && app.employment_id === actor && ["DRAFT", ...PENDING, "APPROVED"].includes(app.status);
   const busy = act.isPending;
 
   const footer = canDecide ? (

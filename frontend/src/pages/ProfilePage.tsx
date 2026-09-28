@@ -3,7 +3,10 @@ import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { PageHeader } from "../components/ui/PageHeader";
-import { Skeleton } from "../components/ui/Feedback";
+import { NoEmployeeRecord, Skeleton } from "../components/ui/Feedback";
+import { Avatar } from "../components/ui/Avatar";
+import { humanize } from "../components/ui/StatusBadge";
+import { useAuth } from "../context/AuthContext";
 import { Tabs } from "../components/ui/Tabs";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { peopleApi } from "../api/people";
@@ -37,6 +40,46 @@ function toForm(p: { preferred_name: string | null; date_of_birth: string | null
 }
 
 export function ProfilePage() {
+  const { user } = useAuth();
+  // An administrator login created with the company has no person/employment
+  // behind it, so there is no personal profile to load — show the account instead.
+  if (user && !user.employmentId) return <AccountOnlyProfile user={user} />;
+  return <EmployeeProfile />;
+}
+
+function AccountOnlyProfile({ user }: { user: NonNullable<ReturnType<typeof useAuth>["user"]> }) {
+  const rows: [string, string][] = [
+    ["Email", user.email ?? "—"],
+    ["Access", user.roles.length ? user.roles.map(humanize).join(", ") : "—"],
+    ["Organisation", user.tenantName],
+    ["Companies", user.legalEntities.length ? user.legalEntities.map((e) => e.name).join(", ") : "—"],
+  ];
+  return (
+    <div className="max-w-4xl">
+      <PageHeader title="My profile" description="The account you’re signed in with." />
+      <div className="card mb-6 max-w-2xl p-6">
+        <div className="flex items-center gap-4">
+          <Avatar name={user.name} size="xl" />
+          <div className="min-w-0">
+            <p className="truncate text-base font-semibold text-fg">{user.name}</p>
+            <p className="text-[13px] text-fg-subtle">Administrator account</p>
+          </div>
+        </div>
+        <dl className="mt-5 divide-y divide-line rounded-xl border border-line text-[13px]">
+          {rows.map(([k, v]) => (
+            <div key={k} className="flex justify-between gap-6 px-4 py-2.5">
+              <dt className="shrink-0 text-fg-subtle">{k}</dt>
+              <dd className="text-right font-medium text-fg">{v}</dd>
+            </div>
+          ))}
+        </dl>
+      </div>
+      <div className="max-w-2xl"><NoEmployeeRecord feature="personal profile or KYC documents" /></div>
+    </div>
+  );
+}
+
+function EmployeeProfile() {
   const qc = useQueryClient();
   const toast = useToast();
   const [params, setParams] = useSearchParams();
@@ -70,6 +113,15 @@ export function ProfilePage() {
     onError: (e) => toast.error("Couldn't update profile", errorMessage(e)),
   });
 
+  if (profile.isError) {
+    return (
+      <>
+        <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." />
+        <div className="card p-6 text-sm text-danger">Couldn't load your profile. Try refreshing.</div>
+      </>
+    );
+  }
+
   if (profile.isPending || !form) {
     return (
       <>
@@ -81,14 +133,7 @@ export function ProfilePage() {
     );
   }
 
-  if (profile.isError || !profile.data) {
-    return (
-      <>
-        <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." />
-        <div className="card p-6 text-sm text-danger">Couldn't load your profile. Try refreshing.</div>
-      </>
-    );
-  }
+  if (!profile.data) return null;
 
   const p = profile.data;
   const dirty = form.preferredName !== (p.preferred_name ?? "")

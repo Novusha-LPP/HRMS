@@ -16,6 +16,7 @@ from fastapi import Depends, HTTPException, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.sql import text
 
+from hrms.core.authn import CurrentUser
 from hrms.core.config import settings
 from hrms.core.tenancy import TenantDep
 
@@ -35,7 +36,9 @@ AsyncSessionLocal = async_sessionmaker(
 )
 
 
-async def get_session(tenant_id: TenantDep) -> AsyncGenerator[AsyncSession, None]:
+async def get_session(
+    tenant_id: TenantDep, principal: CurrentUser
+) -> AsyncGenerator[AsyncSession, None]:
     """
     Yield a session with the tenant context already set in PostgreSQL.
     This makes RLS policies active for the life of the session.
@@ -56,19 +59,50 @@ async def get_session(tenant_id: TenantDep) -> AsyncGenerator[AsyncSession, None
         # up-to-8h JWT. tenants has no RLS, so this SELECT is unaffected by
         # the set_config just above.
         row = (
-            await session.execute(text("SELECT status, archived_at FROM tenants WHERE id = :tid"), {"tid": str(tenant_id)})
-        ).mappings().first()
+            (
+                await session.execute(
+                    text("SELECT status, archived_at FROM tenants WHERE id = :tid"),
+                    {"tid": str(tenant_id)},
+                )
+            )
+            .mappings()
+            .first()
+        )
         if not row or row["status"] != "ACTIVE" or row["archived_at"] is not None:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "This company's account is suspended")
+        account = (
+            (
+                await session.execute(
+                    text("""
+            SELECT status, employment_id FROM user_accounts
+            WHERE tenant_id = :tid AND id = :uid
+        """),
+                    {"tid": tenant_id, "uid": principal.user_account_id},
+                )
+            )
+            .mappings()
+            .first()
+        )
+        if (
+            not account
+            or account["status"] != "ACTIVE"
+            or account["employment_id"] != principal.employment_id
+        ):
+            raise HTTPException(401, "This account is no longer active; sign in again")
         try:
+            from hrms.modules.people.router import apply_due_actions
+
+            await apply_due_actions(session, tenant_id)
             yield session
             await session.commit()
+            _finish_files(session, committed=True)
         except Exception:
             await session.rollback()
+            _finish_files(session, committed=False)
             raise
 
 
-SessionDep = Annotated[AsyncSession, Depends(get_session)]
+SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]
 
 
 async def get_anonymous_session() -> AsyncGenerator[AsyncSession, None]:
@@ -84,9 +118,22 @@ async def get_anonymous_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
+            _finish_files(session, committed=True)
         except Exception:
             await session.rollback()
+            _finish_files(session, committed=False)
             raise
 
 
-AnonymousSessionDep = Annotated[AsyncSession, Depends(get_anonymous_session)]
+AnonymousSessionDep = Annotated[AsyncSession, Depends(get_anonymous_session, scope="function")]
+
+
+def _finish_files(session, committed):
+    import logging
+
+    for path in session.info.pop("delete_files" if committed else "created_files", []):
+        try:
+            path.unlink(missing_ok=True)
+        except OSError:
+            logging.getLogger(__name__).exception("Could not remove document file")
+    session.info.pop("created_files" if committed else "delete_files", None)

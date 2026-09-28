@@ -25,13 +25,17 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
   if (platformToken) headers["Authorization"] = `Bearer ${platformToken}`;
 
+  const requestToken = platformToken;
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  if (requestToken !== platformToken) throw new Error("Session changed");
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     throw new PlatformApiError(res.status, body.detail ?? res.statusText);
   }
   if (res.status === 204) return undefined as T;
-  return res.json();
+  const data = await res.json();
+  if (requestToken !== platformToken) throw new Error("Session changed");
+  return data;
 }
 
 export const platformApi = {

@@ -15,7 +15,7 @@ the caller's own employment and is checked against their scope if they ask
 for someone else's (a manager checking a direct report's history, say).
 """
 
-from datetime import date, datetime, timezone
+from datetime import UTC, date, datetime, timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -23,9 +23,16 @@ from sqlalchemy import text
 from sqlmodel import select
 
 from hrms.core.authn import CurrentUser
-from hrms.core.authz import ScopeDep, authorize_employment, require_permission, resolve_acting_employment_id
+from hrms.core.authz import (
+    ScopeDep,
+    authorize_employment,
+    authorize_write,
+    read_scope,
+    require_permission,
+    resolve_acting_employment_id,
+)
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import compute_day, is_working_day, now_utc
+from hrms.core.datetime_utils import is_working_day, now_utc, to_tz
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
 from hrms.modules.policy.engine import resolve_policy
@@ -35,8 +42,8 @@ from hrms.modules.time.models import (
     Holiday,
     OvertimeStatus,
     Punch,
+    PunchSource,
     PunchType,
-    apply_overtime,
 )
 from hrms.modules.time.schemas import (
     AttendanceDayResponse,
@@ -53,12 +60,14 @@ from hrms.modules.time.schemas import (
     PunchResponse,
     TodayStatusResponse,
 )
+from hrms.modules.time.service import events_for_day, lock_day, recompute_day, work_date_for
 
 router = APIRouter(prefix="/v1/time", tags=["Time & Attendance"])
 
 
-@router.post("/punches", response_model=PunchResponse, status_code=201,
-             summary="Record a punch (in or out)")
+@router.post(
+    "/punches", response_model=PunchResponse, status_code=201, summary="Record a punch (in or out)"
+)
 async def create_punch(
     body: PunchCreate,
     principal: CurrentUser,
@@ -66,68 +75,53 @@ async def create_punch(
     tenant_id: TenantDep,
     session: SessionDep,
     employment_id_header: str | None = Query(
-        default=None, alias="employment-id",
+        default=None,
+        alias="employment-id",
         description="Typed employment ID (emp_...). Defaults to your own.",
     ),
 ) -> PunchResponse:
     emp_uuid = resolve_acting_employment_id(principal, employment_id_header)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
 
+    await authorize_write(session, tenant_id, scope, principal, emp_uuid, "time.write")
+    if body.punched_at is not None or body.source not in (PunchSource.WEB, PunchSource.MOBILE):
+        raise HTTPException(
+            422, "Historical and device punches must use an authorized correction workflow"
+        )
     uid = uuid4()
-    punched_at = body.punched_at or now_utc()
-
+    punched_at = now_utc()
+    policy = await resolve_policy(emp_uuid, punched_at.date(), session, tenant_id)
+    day = work_date_for(punched_at, policy)
+    policy = await resolve_policy(emp_uuid, day, session, tenant_id)
+    ad = await lock_day(session, tenant_id, emp_uuid, day)
+    events = await events_for_day(session, tenant_id, emp_uuid, day, policy)
+    previous = events[-1].punch_type if events else None
+    allowed = {
+        None: {"IN"},
+        "OUT": {"IN"},
+        "IN": {"OUT", "BREAK_START"},
+        "BREAK_START": {"BREAK_END", "OUT"},
+        "BREAK_END": {"OUT", "BREAK_START"},
+    }
+    if body.punch_type not in allowed.get(previous, set()):
+        raise HTTPException(409, "Invalid punch sequence; use a correction for missing events")
     punch = Punch(
         tenant_id=tenant_id,
         id=uid,
         employment_id=emp_uuid,
         punch_type=body.punch_type,
         punched_at=punched_at,
+        work_date=day,
         source=body.source,
         latitude=body.latitude,
         longitude=body.longitude,
         device_id=body.device_id,
+        recorded_by=principal.user_account_id,
         recorded_at=now_utc(),
     )
     session.add(punch)
-
-    today = punched_at.date()
-    ad = await _get_or_create_attendance_day(session, tenant_id, emp_uuid, today)
-
-    if body.punch_type == PunchType.IN:
-        if ad.first_punch_in is None:
-            ad.first_punch_in = punched_at
-        ad.status = AttendanceStatus.PRESENT
-    elif body.punch_type == PunchType.OUT:
-        ad.last_punch_out = punched_at
-        if ad.first_punch_in:
-            policy = await resolve_policy(emp_uuid, today, session, tenant_id)
-            result = compute_day(
-                punch_in=ad.first_punch_in,
-                punch_out=punched_at,
-                break_minutes=policy.break_minutes,
-                expected_start=policy.expected_start_time,
-                expected_end=policy.expected_end_time,
-                grace_late_minutes=policy.grace_late_minutes,
-                grace_early_departure_minutes=policy.grace_early_departure_minutes,
-                half_day_threshold_pct=policy.half_day_threshold_pct,
-                ot_enabled=policy.ot_enabled,
-                ot_qualifying_minutes=policy.ot_qualifying_minutes,
-                ot_daily_cap_minutes=policy.ot_daily_cap_minutes,
-                tz_name=policy.timezone,
-                punch_rounding_minutes=policy.punch_rounding_minutes,
-                punch_rounding_direction=policy.punch_rounding_direction,
-                break_auto_deduct=policy.break_auto_deduct,
-            )
-            ad.gross_minutes = result.gross_minutes
-            ad.break_minutes = result.break_minutes
-            ad.effective_minutes = result.effective_minutes
-            ad.late_by_minutes = result.late_by_minutes
-            ad.early_departure_minutes = result.early_departure_minutes
-            ad.status = getattr(AttendanceStatus, result.status, AttendanceStatus.PRESENT)
-            apply_overtime(ad, result.ot_minutes)
-
-    session.add(ad)
     await session.flush()
+    await recompute_day(session, tenant_id, emp_uuid, day, policy, ad)
 
     return PunchResponse(
         id=to_typed_id("punch", uid),
@@ -141,22 +135,25 @@ async def create_punch(
     )
 
 
-@router.get("/today", response_model=TodayStatusResponse,
-            summary="Today's punch status for an employee")
+@router.get(
+    "/today", response_model=TodayStatusResponse, summary="Today's punch status for an employee"
+)
 async def today_status(
     principal: CurrentUser,
     scope: ScopeDep,
     tenant_id: TenantDep,
     session: SessionDep,
     employment_id: str | None = Query(default=None, description="Defaults to your own employment"),
-    work_date: date | None = Query(default=None, description="Target calendar date (defaults to today)"),
+    work_date: date | None = Query(
+        default=None, description="Target calendar date (defaults to today)"
+    ),
 ) -> TodayStatusResponse:
+    scope = read_scope(scope, "people.read")
     emp_uuid = resolve_acting_employment_id(principal, employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
-    target_date = work_date if isinstance(work_date, date) else date.today()
-    start_ts = datetime.combine(target_date, datetime.min.time(), tzinfo=timezone.utc)
-    end_ts = datetime.combine(target_date, datetime.max.time(), tzinfo=timezone.utc)
-
+    policy = await resolve_policy(emp_uuid, now_utc().date(), session, tenant_id)
+    target_date = work_date if isinstance(work_date, date) else work_date_for(now_utc(), policy)
+    policy = await resolve_policy(emp_uuid, target_date, session, tenant_id)
     ad_row = await session.execute(
         select(AttendanceDay)
         .where(AttendanceDay.tenant_id == tenant_id)
@@ -165,15 +162,7 @@ async def today_status(
     )
     ad = ad_row.scalars().first()
 
-    punches_row = await session.execute(
-        select(Punch)
-        .where(Punch.tenant_id == tenant_id)
-        .where(Punch.employment_id == emp_uuid)
-        .where(Punch.punched_at >= start_ts)
-        .where(Punch.punched_at <= end_ts)
-        .order_by(Punch.punched_at)  # type: ignore[attr-defined]
-    )
-    punches = list(punches_row.scalars())
+    punches = await events_for_day(session, tenant_id, emp_uuid, target_date, policy)
 
     is_punched_in = False
     if punches:
@@ -204,8 +193,11 @@ async def today_status(
     )
 
 
-@router.get("/attendance-days", response_model=list[AttendanceDayResponse],
-            summary="Attendance days for an employee in a date range")
+@router.get(
+    "/attendance-days",
+    response_model=list[AttendanceDayResponse],
+    summary="Attendance days for an employee in a date range",
+)
 async def list_attendance_days(
     principal: CurrentUser,
     scope: ScopeDep,
@@ -215,6 +207,7 @@ async def list_attendance_days(
     to_date: date = Query(...),
     employment_id: str | None = Query(default=None, description="Defaults to your own employment"),
 ) -> list[AttendanceDayResponse]:
+    scope = read_scope(scope, "people.read")
     emp_uuid = resolve_acting_employment_id(principal, employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
 
@@ -236,6 +229,7 @@ async def list_attendance_days(
 # it feeds both attendance status here and working-day counting in leave
 # applications (see working_days_between in leave/router.py).
 
+
 @router.get("/holidays", response_model=list[HolidayResponse], summary="Tenant holiday calendar")
 async def list_holidays(
     tenant_id: TenantDep,
@@ -243,18 +237,22 @@ async def list_holidays(
     year: int | None = Query(default=None),
 ) -> list[HolidayResponse]:
     q = (
-        select(Holiday)
-        .where(Holiday.tenant_id == tenant_id)
-        .where(Holiday.archived_at == None)  # noqa: E711
+        select(Holiday).where(Holiday.tenant_id == tenant_id).where(Holiday.archived_at == None)  # noqa: E711
     )
     if year:
-        q = q.where(Holiday.holiday_date >= date(year, 1, 1)).where(Holiday.holiday_date <= date(year, 12, 31))
+        q = q.where(Holiday.holiday_date >= date(year, 1, 1)).where(
+            Holiday.holiday_date <= date(year, 12, 31)
+        )
     rows = await session.execute(q.order_by(Holiday.holiday_date))  # type: ignore[attr-defined]
     return [_holiday_response(h) for h in rows.scalars()]
 
 
-@router.post("/holidays", response_model=HolidayResponse, status_code=201,
-             dependencies=[require_permission("leave.write")])
+@router.post(
+    "/holidays",
+    response_model=HolidayResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
 async def create_holiday(
     body: HolidayCreate,
     tenant_id: TenantDep,
@@ -274,8 +272,9 @@ async def create_holiday(
     return _holiday_response(h)
 
 
-@router.delete("/holidays/{holiday_id}", status_code=204,
-                dependencies=[require_permission("leave.write")])
+@router.delete(
+    "/holidays/{holiday_id}", status_code=204, dependencies=[require_permission("leave.write")]
+)
 async def delete_holiday(
     holiday_id: str,
     tenant_id: TenantDep,
@@ -302,15 +301,21 @@ async def delete_holiday(
 # role that already approves corrections (MANAGER, HR_MANAGER) is exactly
 # who should be reviewing OT too.
 
+
 @router.get(
-    "/overtime/pending", response_model=list[PendingOvertimeItem],
+    "/overtime/pending",
+    response_model=list[PendingOvertimeItem],
     summary="Attendance days with unreviewed overtime, within the caller's scope",
     dependencies=[require_permission("corrections.approve")],
 )
 async def list_pending_overtime(
-    tenant_id: TenantDep, session: SessionDep, scope: ScopeDep,
-    from_date: date | None = Query(default=None), to_date: date | None = Query(default=None),
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+    from_date: date | None = Query(default=None),
+    to_date: date | None = Query(default=None),
 ) -> list[PendingOvertimeItem]:
+    scope = scope.for_permission("corrections.approve")
     clause, params = scope.employment_filter_sql("ad")
     date_clause = ""
     if from_date:
@@ -321,53 +326,76 @@ async def list_pending_overtime(
         params["to_date"] = to_date
 
     rows = (
-        await session.execute(
-            text(f"""
-                SELECT ad.id, ad.employment_id, ad.work_date, ad.effective_minutes, ad.ot_minutes, ad.ot_status,
-                       e.employee_number, p.legal_first_name || ' ' || p.legal_last_name AS name, ou.name AS department
+        (
+            await session.execute(
+                text(f"""
+                SELECT ad.id, ad.employment_id, ad.work_date, ad.effective_minutes,
+                ad.ot_minutes, ad.ot_status,
+                       e.employee_number, p.legal_first_name || ' ' || p.legal_last_name AS
+                       name, ou.name AS department
                 FROM attendance_days ad
                 JOIN employments e ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
                 JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
-                LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id AND a.effective_to IS NULL
+                LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
+                AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND
+                a.effective_from <= CURRENT_DATE
                 LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
                 WHERE ad.tenant_id = CAST(:tid AS uuid) AND ad.ot_status = 'PENDING'
                 {clause} {date_clause}
                 ORDER BY ad.work_date DESC
             """),
-            {"tid": str(tenant_id), **params},
+                {"tid": str(tenant_id), **params},
+            )
         )
-    ).mappings().all()
+        .mappings()
+        .all()
+    )
 
     return [
         PendingOvertimeItem(
             attendance_day_id=to_typed_id("attendance_day", r["id"]),
             employment_id=to_typed_id("employment", r["employment_id"]),
-            employee_number=r["employee_number"], name=r["name"], department=r["department"],
-            work_date=r["work_date"], effective_minutes=r["effective_minutes"],
-            ot_minutes=r["ot_minutes"], ot_status=r["ot_status"],
+            employee_number=r["employee_number"],
+            name=r["name"],
+            department=r["department"],
+            work_date=r["work_date"],
+            effective_minutes=r["effective_minutes"],
+            ot_minutes=r["ot_minutes"],
+            ot_status=r["ot_status"],
         )
         for r in rows
     ]
 
 
 @router.patch(
-    "/overtime/{attendance_day_id}", response_model=AttendanceDayResponse,
+    "/overtime/{attendance_day_id}",
+    response_model=AttendanceDayResponse,
     summary="Approve or reject a day's overtime",
     dependencies=[require_permission("corrections.approve")],
 )
 async def review_overtime(
-    attendance_day_id: str, body: OvertimeReviewRequest,
-    principal: CurrentUser, scope: ScopeDep, tenant_id: TenantDep, session: SessionDep,
+    attendance_day_id: str,
+    body: OvertimeReviewRequest,
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> AttendanceDayResponse:
+    scope = scope.for_permission("corrections.approve")
     ad_uuid = to_uuid(attendance_day_id)
     row = await session.execute(
-        select(AttendanceDay).where(AttendanceDay.tenant_id == tenant_id).where(AttendanceDay.id == ad_uuid)
+        select(AttendanceDay)
+        .where(AttendanceDay.tenant_id == tenant_id)
+        .where(AttendanceDay.id == ad_uuid)
     )
     ad = row.scalars().first()
     if not ad:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Attendance day not found")
     if ad.ot_status != OvertimeStatus.PENDING:
-        raise HTTPException(status.HTTP_400_BAD_REQUEST, f"This day's overtime is already {ad.ot_status}, not pending")
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            f"This day's overtime is already {ad.ot_status}, not pending",
+        )
     await authorize_employment(session, tenant_id, scope, ad.employment_id)
     if ad.employment_id == principal.employment_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can't approve your own overtime")
@@ -381,26 +409,35 @@ async def review_overtime(
     return _attendance_day_response(ad)
 
 
-@router.get("/daily-analysis", response_model=DailyAnalysisResponse,
-            summary="Daily employee presence, punctuality, and attendance analysis")
+@router.get(
+    "/daily-analysis",
+    response_model=DailyAnalysisResponse,
+    summary="Daily employee presence, punctuality, and attendance analysis",
+    dependencies=[require_permission("people.read")],
+)
 async def daily_analysis(
     principal: CurrentUser,
     scope: ScopeDep,
     tenant_id: TenantDep,
     session: SessionDep,
-    work_date: date | None = Query(default=None, description="Target calendar date (defaults to today)"),
+    work_date: date | None = Query(
+        default=None, description="Target calendar date (defaults to today)"
+    ),
     department: str | None = Query(default=None, description="Filter by department name"),
     status: str | None = Query(default=None, description="Filter by attendance status"),
     search: str | None = Query(default=None, description="Search by employee name or number"),
 ) -> DailyAnalysisResponse:
+    scope = scope.for_permission("people.read")
     target_date = work_date if isinstance(work_date, date) else date.today()
-    start_ts = datetime.combine(target_date, datetime.min.time())
-    end_ts = datetime.combine(target_date, datetime.max.time())
+    start_ts = datetime.combine(target_date - timedelta(days=1), datetime.min.time(), tzinfo=UTC)
+    end_ts = datetime.combine(target_date + timedelta(days=2), datetime.min.time(), tzinfo=UTC)
 
-    # 1. Query all active employments in scope
-    emp_query = text("""
+    # 1. Query all active employments in scope — the caller's own company/team/self,
+    #    never the whole tenant (an employee of one company must not see another's staff).
+    scope_clause, scope_params = scope.employment_filter_sql("e")
+    emp_query = text(f"""
         SELECT
-            e.id, e.employee_number,
+            e.id, e.employee_number, e.legal_entity_id,
             p.legal_first_name || ' ' || p.legal_last_name AS name,
             ua.email AS email,
             ou.name AS department,
@@ -409,15 +446,27 @@ async def daily_analysis(
         FROM employments e
         JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
         LEFT JOIN user_accounts ua ON ua.tenant_id = e.tenant_id AND ua.employment_id = e.id
-        LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id AND a.effective_to IS NULL
+        LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id AND
+        (a.effective_to IS NULL OR a.effective_to > CAST(:target_date AS date)) AND
+        a.effective_from <= CAST(:target_date AS date)
         LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
         LEFT JOIN jobs j ON j.tenant_id = a.tenant_id AND j.id = a.job_id
         LEFT JOIN locations l ON l.tenant_id = a.tenant_id AND l.id = a.location_id
         WHERE e.tenant_id = CAST(:tid AS uuid)
-          AND e.employment_state NOT IN ('SEPARATED')
+          AND e.hire_date <= CAST(:target_date AS date)
+          AND (e.separation_date IS NULL OR e.separation_date > CAST(:target_date AS date))
+          {scope_clause}
         ORDER BY p.legal_first_name ASC
     """)
-    emp_rows = (await session.execute(emp_query, {"tid": str(tenant_id)})).mappings().all()
+    emp_rows = (
+        (
+            await session.execute(
+                emp_query, {"tid": str(tenant_id), "target_date": target_date, **scope_params}
+            )
+        )
+        .mappings()
+        .all()
+    )
 
     # 2. Query attendance_days for target_date
     ad_query = text("""
@@ -428,7 +477,11 @@ async def daily_analysis(
         WHERE ad.tenant_id = CAST(:tid AS uuid)
           AND ad.work_date = CAST(:target_date AS date)
     """)
-    ad_rows = (await session.execute(ad_query, {"tid": str(tenant_id), "target_date": target_date})).mappings().all()
+    ad_rows = (
+        (await session.execute(ad_query, {"tid": str(tenant_id), "target_date": target_date}))
+        .mappings()
+        .all()
+    )
     ad_map = {str(r["employment_id"]): r for r in ad_rows}
 
     # 3. Query approved leaves spanning target_date
@@ -441,7 +494,11 @@ async def daily_analysis(
           AND la.from_date <= CAST(:target_date AS date)
           AND la.to_date >= CAST(:target_date AS date)
     """)
-    leave_rows = (await session.execute(leave_query, {"tid": str(tenant_id), "target_date": target_date})).mappings().all()
+    leave_rows = (
+        (await session.execute(leave_query, {"tid": str(tenant_id), "target_date": target_date}))
+        .mappings()
+        .all()
+    )
     leave_map = {str(r["employment_id"]): r["leave_type_name"] for r in leave_rows}
 
     # 3b. Is target_date a tenant-wide holiday? (per-legal-entity holidays are
@@ -449,29 +506,37 @@ async def daily_analysis(
     # employee's legal entity — only the tenant-wide calendar applies.)
     holiday_row = await session.execute(
         text("""
-            SELECT name FROM holidays
+            SELECT legal_entity_id FROM holidays
             WHERE tenant_id = CAST(:tid AS uuid) AND holiday_date = CAST(:target_date AS date)
-              AND legal_entity_id IS NULL AND archived_at IS NULL
-            LIMIT 1
+              AND archived_at IS NULL AND is_optional = false
         """),
         {"tid": str(tenant_id), "target_date": target_date},
     )
-    is_holiday = holiday_row.scalar() is not None
+    holiday_entities = {r[0] for r in holiday_row}
 
     # 4. Query punches for target_date
     punch_query = text("""
-        SELECT p.employment_id, p.punch_type, p.punched_at
+        SELECT p.id, p.original_punch_id, p.work_date, p.employment_id, p.punch_type, p.punched_at
         FROM punches p
         WHERE p.tenant_id = CAST(:tid AS uuid)
           AND p.punched_at >= CAST(:start_ts AS timestamptz)
           AND p.punched_at <= CAST(:end_ts AS timestamptz)
         ORDER BY p.punched_at ASC
     """)
-    punch_rows = (await session.execute(punch_query, {
-        "tid": str(tenant_id),
-        "start_ts": start_ts,
-        "end_ts": end_ts,
-    })).mappings().all()
+    punch_rows = (
+        (
+            await session.execute(
+                punch_query,
+                {
+                    "tid": str(tenant_id),
+                    "start_ts": start_ts,
+                    "end_ts": end_ts,
+                },
+            )
+        )
+        .mappings()
+        .all()
+    )
 
     punches_by_emp: dict[str, list] = {}
     for p in punch_rows:
@@ -484,15 +549,37 @@ async def daily_analysis(
         emp_id = str(emp["id"])
         ad = ad_map.get(emp_id)
         leave_type = leave_map.get(emp_id)
-        emp_punches = punches_by_emp.get(emp_id, [])
+        emp_policy = await resolve_policy(emp["id"], target_date, session, tenant_id)
+        all_events = punches_by_emp.get(emp_id, [])
+        replaced = {p["original_punch_id"] for p in all_events if p["original_punch_id"]}
+        emp_punches = [
+            p
+            for p in all_events
+            if p["id"] not in replaced
+            and p["punch_type"] != "VOID"
+            and (
+                p["work_date"] == target_date
+                or (
+                    p["work_date"] is None
+                    and work_date_for(p["punched_at"], emp_policy) == target_date
+                )
+            )
+        ]
+        is_holiday = None in holiday_entities or emp["legal_entity_id"] in holiday_entities
 
         is_currently_in = False
         if emp_punches:
             last_punch = emp_punches[-1]
             is_currently_in = last_punch["punch_type"] in (PunchType.IN, PunchType.BREAK_END)
 
-        first_in = ad["first_punch_in"] if ad else (emp_punches[0]["punched_at"] if emp_punches else None)
-        last_out = ad["last_punch_out"] if ad else (emp_punches[-1]["punched_at"] if len(emp_punches) > 1 else None)
+        first_in = (
+            ad["first_punch_in"] if ad else (emp_punches[0]["punched_at"] if emp_punches else None)
+        )
+        last_out = (
+            ad["last_punch_out"]
+            if ad
+            else (emp_punches[-1]["punched_at"] if len(emp_punches) > 1 else None)
+        )
         effective = ad["effective_minutes"] if ad else 0
         gross = ad["gross_minutes"] if ad else 0
         brk = ad["break_minutes"] if ad else 0
@@ -508,14 +595,14 @@ async def daily_analysis(
         elif first_in:
             status_str = "LATE" if late_by > 0 else "PRESENT"
         else:
-            emp_policy = await resolve_policy(emp["id"], target_date, session, tenant_id)
             status_str = (
-                "ABSENT" if is_working_day(target_date, emp_policy.work_days, emp_policy.saturday_pattern)
+                "ABSENT"
+                if is_working_day(target_date, emp_policy.work_days, emp_policy.saturday_pattern)
                 else "WEEKEND"
             )
 
         if first_in:
-            hour_str = f"{first_in.hour:02d}:00"
+            hour_str = f"{to_tz(first_in, emp_policy.timezone).hour:02d}:00"
             if hour_str in hourly_counter:
                 hourly_counter[hour_str] += 1
 
@@ -558,8 +645,14 @@ async def daily_analysis(
     absent_count = len([r for r in records if r.status == "ABSENT"])
     on_leave_count = len([r for r in records if r.status == "ON_LEAVE"])
     half_day_count = len([r for r in records if r.status == "HALF_DAY"])
-    presence_rate = round((present_count / total_headcount * 100), 1) if total_headcount > 0 else 0.0
-    avg_minutes = round(sum(r.effective_minutes for r in present_records) / present_count) if present_count > 0 else 0
+    presence_rate = (
+        round((present_count / total_headcount * 100), 1) if total_headcount > 0 else 0.0
+    )
+    avg_minutes = (
+        round(sum(r.effective_minutes for r in present_records) / present_count)
+        if present_count > 0
+        else 0
+    )
     total_overtime = sum(r.overtime_minutes for r in records)
 
     # Department breakdown
@@ -592,26 +685,32 @@ async def daily_analysis(
     ]
 
     # Hourly arrivals
-    hourly_arrivals = [
-        HourlyArrivalStat(hour=h, count=c)
-        for h, c in hourly_counter.items()
-    ]
+    hourly_arrivals = [HourlyArrivalStat(hour=h, count=c) for h, c in hourly_counter.items()]
 
     # Apply filters to records if requested
     filtered_records = records
     if department:
-        filtered_records = [r for r in filtered_records if r.department and r.department.lower() == department.lower()]
+        filtered_records = [
+            r
+            for r in filtered_records
+            if r.department and r.department.lower() == department.lower()
+        ]
     if status:
         if status.upper() == "PRESENT":
-            filtered_records = [r for r in filtered_records if r.status in ("PRESENT", "LATE", "HALF_DAY")]
+            filtered_records = [
+                r for r in filtered_records if r.status in ("PRESENT", "LATE", "HALF_DAY")
+            ]
         elif status.upper() == "LATE":
-            filtered_records = [r for r in filtered_records if r.status == "LATE" or r.late_by_minutes > 0]
+            filtered_records = [
+                r for r in filtered_records if r.status == "LATE" or r.late_by_minutes > 0
+            ]
         else:
             filtered_records = [r for r in filtered_records if r.status.upper() == status.upper()]
     if search:
         s_lower = search.strip().lower()
         filtered_records = [
-            r for r in filtered_records
+            r
+            for r in filtered_records
             if s_lower in r.name.lower() or s_lower in r.employee_number.lower()
         ]
 
@@ -640,7 +739,9 @@ def _holiday_response(h: Holiday) -> HolidayResponse:
         id=to_typed_id("holiday", h.id),
         holiday_date=h.holiday_date,
         name=h.name,
-        legal_entity_id=to_typed_id("legal_entity", h.legal_entity_id) if h.legal_entity_id else None,
+        legal_entity_id=to_typed_id("legal_entity", h.legal_entity_id)
+        if h.legal_entity_id
+        else None,
         is_optional=h.is_optional,
     )
 
@@ -665,7 +766,9 @@ def _attendance_day_response(r: AttendanceDay) -> AttendanceDayResponse:
     )
 
 
-async def _get_or_create_attendance_day(session, tenant_id, employment_id, work_date: date) -> AttendanceDay:
+async def _get_or_create_attendance_day(
+    session, tenant_id, employment_id, work_date: date
+) -> AttendanceDay:
     row = await session.execute(
         select(AttendanceDay)
         .where(AttendanceDay.tenant_id == tenant_id)
@@ -684,4 +787,3 @@ async def _get_or_create_attendance_day(session, tenant_id, employment_id, work_
         )
         session.add(ad)
     return ad
-

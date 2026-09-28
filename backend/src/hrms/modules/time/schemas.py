@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Literal, Optional
+from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -8,11 +8,11 @@ from hrms.modules.time.models import AttendanceStatus, OvertimeStatus, PunchSour
 
 class PunchCreate(BaseModel):
     punch_type: PunchType
-    punched_at: Optional[datetime] = None  # defaults to now() server-side
+    punched_at: datetime | None = None  # defaults to now() server-side
     source: PunchSource = PunchSource.WEB
-    latitude: Optional[float] = None
-    longitude: Optional[float] = None
-    device_id: Optional[str] = None
+    latitude: float | None = None
+    longitude: float | None = None
+    device_id: str | None = None
 
 
 class PunchResponse(BaseModel):
@@ -23,18 +23,19 @@ class PunchResponse(BaseModel):
     punch_type: PunchType
     punched_at: datetime
     source: PunchSource
-    latitude: Optional[float]
-    longitude: Optional[float]
+    latitude: float | None
+    longitude: float | None
     is_corrected: bool
 
 
 class TodayStatusResponse(BaseModel):
     """What the employee sees when they open the punch clock."""
+
     employment_id: str
     work_date: date
     is_punched_in: bool
-    first_punch_in: Optional[datetime]
-    last_punch_out: Optional[datetime]
+    first_punch_in: datetime | None
+    last_punch_out: datetime | None
     effective_minutes: int
     status: AttendanceStatus
     # All punches today, for the timeline
@@ -47,8 +48,8 @@ class AttendanceDayResponse(BaseModel):
     id: str
     employment_id: str
     work_date: date
-    first_punch_in: Optional[datetime]
-    last_punch_out: Optional[datetime]
+    first_punch_in: datetime | None
+    last_punch_out: datetime | None
     effective_minutes: int
     late_by_minutes: int
     early_departure_minutes: int
@@ -56,14 +57,14 @@ class AttendanceDayResponse(BaseModel):
     is_locked: bool
     ot_minutes: int = 0
     ot_status: OvertimeStatus = OvertimeStatus.NONE
-    ot_reviewed_by: Optional[str] = None
-    ot_reviewed_at: Optional[datetime] = None
-    ot_review_notes: Optional[str] = None
+    ot_reviewed_by: str | None = None
+    ot_reviewed_at: datetime | None = None
+    ot_review_notes: str | None = None
 
 
 class OvertimeReviewRequest(BaseModel):
     status: Literal["APPROVED", "REJECTED"]
-    notes: Optional[str] = Field(default=None, max_length=500)
+    notes: str | None = Field(default=None, max_length=500)
 
 
 class PendingOvertimeItem(BaseModel):
@@ -71,7 +72,7 @@ class PendingOvertimeItem(BaseModel):
     employment_id: str
     employee_number: str
     name: str
-    department: Optional[str] = None
+    department: str | None = None
     work_date: date
     effective_minutes: int
     ot_minutes: int
@@ -81,7 +82,7 @@ class PendingOvertimeItem(BaseModel):
 class HolidayCreate(BaseModel):
     holiday_date: date
     name: str = Field(max_length=200)
-    legal_entity_id: Optional[str] = Field(default=None, description="Omit for a tenant-wide holiday")
+    legal_entity_id: str | None = Field(default=None, description="Omit for a tenant-wide holiday")
     is_optional: bool = False
 
 
@@ -91,7 +92,7 @@ class HolidayResponse(BaseModel):
     id: str
     holiday_date: date
     name: str
-    legal_entity_id: Optional[str]
+    legal_entity_id: str | None
     is_optional: bool
 
 
@@ -99,13 +100,13 @@ class DailyEmployeeRecord(BaseModel):
     employment_id: str
     employee_number: str
     name: str
-    email: Optional[str] = None
-    department: Optional[str] = None
-    designation: Optional[str] = None
-    location: Optional[str] = None
+    email: str | None = None
+    department: str | None = None
+    designation: str | None = None
+    location: str | None = None
     status: str
-    first_punch_in: Optional[datetime] = None
-    last_punch_out: Optional[datetime] = None
+    first_punch_in: datetime | None = None
+    last_punch_out: datetime | None = None
     effective_minutes: int = 0
     gross_minutes: int = 0
     break_minutes: int = 0
@@ -113,7 +114,7 @@ class DailyEmployeeRecord(BaseModel):
     early_departure_minutes: int = 0
     overtime_minutes: int = 0
     overtime_status: OvertimeStatus = OvertimeStatus.NONE
-    leave_type: Optional[str] = None
+    leave_type: str | None = None
     punches_count: int = 0
     is_currently_in: bool = False
 

@@ -43,6 +43,11 @@ export function AppShell({ children }: { children: ReactNode }) {
     scrollRef.current?.scrollTo({ top: 0 });
   }, [location.pathname]);
 
+  const { user } = useAuth();
+  useEffect(() => {
+    document.title = user?.tenantName ? `${user.tenantName} · HRMS` : "HRMS";
+  }, [user?.tenantName]);
+
   useEffect(() => {
     const onKey = (e: KeyboardEvent) => {
       if ((e.metaKey || e.ctrlKey) && e.key.toLowerCase() === "k") {

@@ -35,20 +35,28 @@ class PlatformAdminContext:
 
 
 async def get_platform_admin_context(
-    principal: CurrentPlatformAdmin, session: AnonymousSessionDep,
+    principal: CurrentPlatformAdmin,
+    session: AnonymousSessionDep,
 ) -> PlatformAdminContext:
     row = (
-        await session.execute(
-            text("SELECT name, email, role, status FROM platform_admins WHERE id = :id"),
-            {"id": str(principal.admin_id)},
+        (
+            await session.execute(
+                text("SELECT name, email, role, status FROM platform_admins WHERE id = :id"),
+                {"id": str(principal.admin_id)},
+            )
         )
-    ).mappings().first()
+        .mappings()
+        .first()
+    )
     if not row or row["status"] != "ACTIVE":
         raise HTTPException(
-            status.HTTP_401_UNAUTHORIZED, "This account is no longer active",
+            status.HTTP_401_UNAUTHORIZED,
+            "This account is no longer active",
             headers={"WWW-Authenticate": "Bearer"},
         )
-    return PlatformAdminContext(admin_id=principal.admin_id, name=row["name"], email=row["email"], role=row["role"])
+    return PlatformAdminContext(
+        admin_id=principal.admin_id, name=row["name"], email=row["email"], role=row["role"]
+    )
 
 
 CurrentPlatformAdminCtx = Annotated[PlatformAdminContext, Depends(get_platform_admin_context)]
@@ -57,7 +65,10 @@ CurrentPlatformAdminCtx = Annotated[PlatformAdminContext, Depends(get_platform_a
 def require_platform_role(*roles: str):
     async def _dep(ctx: CurrentPlatformAdminCtx) -> PlatformAdminContext:
         if ctx.role not in roles:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "You have read-only access — ask an admin to make this change")
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "You have read-only access — ask an admin to make this change",
+            )
         return ctx
 
     return Depends(_dep)

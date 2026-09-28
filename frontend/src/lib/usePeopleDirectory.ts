@@ -4,8 +4,8 @@ import { peopleApi } from "../api/people";
 
 /** Maps employment IDs to display names. Shares cache with the Employees page. */
 export function usePeopleDirectory(enabled: boolean) {
-  const emps = useQuery({ queryKey: ["employees"], queryFn: () => peopleApi.listEmployees(undefined, 200), enabled });
-  const persons = useQuery({ queryKey: ["persons"], queryFn: () => peopleApi.listPersons(), enabled: enabled && !!emps.data?.length });
+  const emps = useQuery({ queryKey: ["employees"], queryFn: () => peopleApi.listAllEmployees(), enabled });
+  const persons = useQuery({ queryKey: ["persons"], queryFn: () => peopleApi.listAllPersons(), enabled: enabled && !!emps.data?.length });
 
   return useMemo(() => {
     const personName = new Map(

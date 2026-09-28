@@ -22,7 +22,7 @@ has no employment).
 """
 
 import json
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import Annotated
 from uuid import UUID
 
@@ -40,27 +40,63 @@ from hrms.core.tenancy import TenantDep
 # can grant them without touching code. "*" grants everything.
 ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "SUPER_ADMIN": frozenset({"*"}),
-    "HR_MANAGER": frozenset({
-        "people.read", "people.write",
-        "org.read", "org.write",
-        "iam.read", "iam.write",
-        "leave.read", "leave.approve", "leave.write",
-        "corrections.read", "corrections.approve",
-        "onboarding.read", "onboarding.write",
-        "policy.read", "policy.write",
-        "reports.read", "reports.write",
-        "dashboard.hr",
-        "kyc.read", "kyc.write", "kyc.verify",
-    }),
-    "MANAGER": frozenset({
-        "people.read",
-        "leave.approve", "corrections.approve",
-        "onboarding.read",
-        "reports.read",
-        "dashboard.manager",
-        "kyc.read",
-    }),
-    "EMPLOYEE": frozenset({"self.read", "self.write", "leave.apply", "corrections.request", "reports.read", "kyc.self"}),
+    "HR_MANAGER": frozenset(
+        {
+            "self.read",
+            "self.write",
+            "leave.apply",
+            "corrections.request",
+            "people.read",
+            "people.write",
+            "org.read",
+            "org.write",
+            "iam.read",
+            "iam.write",
+            "leave.read",
+            "leave.approve",
+            "leave.write",
+            "corrections.read",
+            "corrections.approve",
+            "corrections.write",
+            "time.write",
+            "onboarding.read",
+            "onboarding.write",
+            "policy.read",
+            "policy.write",
+            "reports.read",
+            "reports.write",
+            "dashboard.hr",
+            "kyc.self",
+            "kyc.read",
+            "kyc.write",
+            "kyc.verify",
+        }
+    ),
+    "MANAGER": frozenset(
+        {
+            "self.read",
+            "self.write",
+            "leave.apply",
+            "corrections.request",
+            "people.read",
+            "leave.approve",
+            "corrections.approve",
+            "onboarding.read",
+            "reports.read",
+            "dashboard.manager",
+            "kyc.read",
+        }
+    ),
+    "EMPLOYEE": frozenset(
+        {
+            "self.read",
+            "self.write",
+            "leave.apply",
+            "corrections.request",
+            "reports.read",
+            "kyc.self",
+        }
+    ),
     "ACCOUNTANT": frozenset({"people.read", "reports.read", "dashboard.hr", "kyc.read"}),
 }
 
@@ -86,6 +122,15 @@ class Scope:
     permissions: frozenset[str]
     own_employment_id: UUID | None
     role_names: frozenset[str]
+    org_unit_ids: frozenset[UUID] = frozenset()
+    grants: tuple["Scope", ...] = field(default=(), repr=False)
+
+    def for_permission(self, permission: str) -> "Scope":
+        """Keep the scope attached to each grant of this permission."""
+        self.require(permission)
+        if not self.grants:
+            return self
+        return merge_scopes([g for g in self.grants if g.has(permission)], self.own_employment_id)
 
     def has(self, permission: str) -> bool:
         return "*" in self.permissions or permission in self.permissions
@@ -109,19 +154,35 @@ class Scope:
         """
         if self.is_all:
             return "", {}
-        if self.employment_ids is not None:
-            if not self.employment_ids:
-                return "AND FALSE", {}
-            return (
-                f"AND {alias}.id = ANY(CAST(:scope_employment_ids AS uuid[]))",
-                {"scope_employment_ids": [str(i) for i in self.employment_ids]},
-            )
+        clauses = []
+        params: dict[str, object] = {}
+        if self.employment_ids:
+            clauses.append(f"{alias}.id = ANY(CAST(:scope_employment_ids AS uuid[]))")
+            params["scope_employment_ids"] = [str(i) for i in self.employment_ids]
         if self.legal_entity_ids:
-            return (
-                f"AND {alias}.legal_entity_id = ANY(CAST(:scope_entity_ids AS uuid[]))",
-                {"scope_entity_ids": [str(i) for i in self.legal_entity_ids]},
-            )
-        return "AND FALSE", {}
+            clauses.append(f"{alias}.legal_entity_id = ANY(CAST(:scope_entity_ids AS uuid[]))")
+            params["scope_entity_ids"] = [str(i) for i in self.legal_entity_ids]
+        return ("AND (" + " OR ".join(clauses) + ")", params) if clauses else ("AND FALSE", {})
+
+
+def merge_scopes(grants: list[Scope], own: UUID | None) -> Scope:
+    grants = [leaf for grant in grants for leaf in (grant.grants or (grant,))]
+
+    def union(name):
+        return frozenset().union(*(getattr(g, name) or frozenset() for g in grants))
+
+    return Scope(
+        is_all=any(g.is_all for g in grants),
+        legal_entity_ids=union("legal_entity_ids"),
+        employment_ids=union("employment_ids")
+        if union("employment_ids") or not union("legal_entity_ids")
+        else None,
+        permissions=union("permissions"),
+        own_employment_id=own,
+        role_names=union("role_names"),
+        org_unit_ids=union("org_unit_ids"),
+        grants=tuple(grants),
+    )
 
 
 def _decode_scope_ids(raw: str | None) -> set[UUID]:
@@ -138,7 +199,7 @@ def _decode_scope_ids(raw: str | None) -> set[UUID]:
             continue
         try:
             out.add(to_uuid(v) if "_" in v else UUID(v))
-        except (ValueError, IndexError):
+        except (ValueError, IndexError, HTTPException):
             continue
     return out
 
@@ -148,32 +209,31 @@ def _decode_scope_ids(raw: str | None) -> set[UUID]:
 decode_scope_ids = _decode_scope_ids
 
 
-async def _entities_for_org_units(
-    session: AsyncSession, tenant_id: UUID, org_unit_ids: set[UUID]
-) -> set[UUID]:
+async def _department_scope(session, tenant_id: UUID, org_unit_ids: set[UUID]):
     if not org_unit_ids:
-        return set()
+        return frozenset(), frozenset()
     rows = await session.execute(
         text("""
-            WITH RECURSIVE descendants AS (
-                SELECT id, legal_entity_id
-                FROM org_units
-                WHERE tenant_id = CAST(:tid AS uuid)
-                  AND id = ANY(CAST(:ids AS uuid[]))
-                UNION ALL
-                SELECT ou.id, ou.legal_entity_id
-                FROM org_units ou
-                JOIN descendants d ON ou.parent_id = d.id
-                WHERE ou.tenant_id = CAST(:tid AS uuid)
-            )
-            SELECT DISTINCT legal_entity_id FROM descendants WHERE legal_entity_id IS NOT NULL
-        """),
-        {"tid": str(tenant_id), "ids": [str(i) for i in org_unit_ids]},
+        WITH RECURSIVE descendants AS (
+            SELECT id FROM org_units WHERE tenant_id = :tid AND id = ANY(CAST(:ids AS uuid[]))
+            UNION
+            SELECT ou.id FROM org_units ou JOIN descendants d ON ou.parent_id = d.id
+            WHERE ou.tenant_id = :tid
+        )
+        SELECT d.id, a.employment_id FROM descendants d
+        LEFT JOIN assignments a ON a.tenant_id = :tid AND a.org_unit_id = d.id
+            AND a.effective_from <= CURRENT_DATE
+            AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
+    """),
+        {"tid": tenant_id, "ids": [str(i) for i in org_unit_ids]},
     )
-    return {r[0] for r in rows}
+    rows = list(rows)
+    return frozenset(r[0] for r in rows), frozenset(r[1] for r in rows if r[1])
 
 
-async def _direct_reports(session: AsyncSession, tenant_id: UUID, manager_employment_id: UUID) -> set[UUID]:
+async def _direct_reports(
+    session: AsyncSession, tenant_id: UUID, manager_employment_id: UUID
+) -> set[UUID]:
     rows = await session.execute(
         text("""
             SELECT DISTINCT a.employment_id
@@ -181,14 +241,19 @@ async def _direct_reports(session: AsyncSession, tenant_id: UUID, manager_employ
             JOIN assignments a ON a.tenant_id = am.tenant_id AND a.id = am.assignment_id
             WHERE am.tenant_id = CAST(:tid AS uuid)
               AND am.manager_employment_id = CAST(:mgr AS uuid)
-              AND am.effective_to IS NULL
+              AND am.effective_from <= CURRENT_DATE
+              AND (am.effective_to IS NULL OR am.effective_to > CURRENT_DATE)
+              AND a.effective_from <= CURRENT_DATE
+              AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
         """),
         {"tid": str(tenant_id), "mgr": str(manager_employment_id)},
     )
     return {r[0] for r in rows}
 
 
-async def _all_reports(session: AsyncSession, tenant_id: UUID, manager_employment_id: UUID) -> set[UUID]:
+async def _all_reports(
+    session: AsyncSession, tenant_id: UUID, manager_employment_id: UUID
+) -> set[UUID]:
     """Direct reports, their reports, and so on (depth-capped against cycles)."""
     rows = await session.execute(
         text("""
@@ -198,14 +263,18 @@ async def _all_reports(session: AsyncSession, tenant_id: UUID, manager_employmen
                 JOIN assignments a ON a.tenant_id = am.tenant_id AND a.id = am.assignment_id
                 WHERE am.tenant_id = CAST(:tid AS uuid)
                   AND am.manager_employment_id = CAST(:mgr AS uuid)
-                  AND am.effective_to IS NULL
+                  AND am.effective_from <= CURRENT_DATE
+              AND (am.effective_to IS NULL OR am.effective_to > CURRENT_DATE)
+              AND a.effective_from <= CURRENT_DATE
+              AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
                 UNION ALL
                 SELECT a2.employment_id, chain.depth + 1
                 FROM chain
                 JOIN assignment_managers am2
                     ON am2.tenant_id = CAST(:tid AS uuid)
                    AND am2.manager_employment_id = chain.employment_id
-                   AND am2.effective_to IS NULL
+                   AND am2.effective_from <= CURRENT_DATE
+                   AND (am2.effective_to IS NULL OR am2.effective_to > CURRENT_DATE)
                 JOIN assignments a2
                     ON a2.tenant_id = CAST(:tid AS uuid) AND a2.id = am2.assignment_id
                 WHERE chain.depth < 12
@@ -231,55 +300,41 @@ async def resolve_scope(session: AsyncSession, tenant_id: UUID, principal: Princ
     )
     grants = rows.mappings().all()
 
-    is_all = False
-    legal_entity_ids: set[UUID] = set()
-    employment_ids: set[UUID] | None = None
-    permissions: set[str] = set()
-    role_names: set[str] = set()
-    has_broad_grant = False  # ALL / LEGAL_ENTITY / ORG_UNIT lifts any narrow employment_ids cap
-
+    resolved = []
     for g in grants:
-        role_names.add(g["role_name"])
-        permissions |= ROLE_PERMISSIONS.get(g["role_name"], frozenset())
-
-        scope_type = g["scope_type"]
-        if scope_type == "ALL":
-            is_all = True
-            has_broad_grant = True
-        elif scope_type == "LEGAL_ENTITY":
-            legal_entity_ids |= _decode_scope_ids(g["scope_value"])
-            has_broad_grant = True
-        elif scope_type == "ORG_UNIT":
-            org_unit_ids = _decode_scope_ids(g["scope_value"])
-            legal_entity_ids |= await _entities_for_org_units(session, tenant_id, org_unit_ids)
-            has_broad_grant = True
-        elif scope_type == "SELF" and principal.employment_id:
-            employment_ids = (employment_ids or set()) | {principal.employment_id}
-        elif scope_type == "DIRECT_REPORTS" and principal.employment_id:
-            reports = await _direct_reports(session, tenant_id, principal.employment_id)
-            employment_ids = (employment_ids or set()) | reports | {principal.employment_id}
-        elif scope_type == "ALL_REPORTS" and principal.employment_id:
-            reports = await _all_reports(session, tenant_id, principal.employment_id)
-            employment_ids = (employment_ids or set()) | reports | {principal.employment_id}
-
-    if has_broad_grant:
-        employment_ids = None  # a company/department grant supersedes a narrower one
-
-    if not grants:
-        # No role at all: fail closed to "only my own record" rather than "all".
-        employment_ids = {principal.employment_id} if principal.employment_id else set()
-
-    return Scope(
-        is_all=is_all,
-        legal_entity_ids=frozenset(legal_entity_ids),
-        employment_ids=frozenset(employment_ids) if employment_ids is not None else None,
-        permissions=frozenset(permissions),
-        own_employment_id=principal.employment_id,
-        role_names=frozenset(role_names),
-    )
+        kind = g["scope_type"]
+        entities = frozenset()
+        employees = frozenset()
+        departments = frozenset()
+        if kind == "LEGAL_ENTITY":
+            entities = frozenset(_decode_scope_ids(g["scope_value"]))
+        elif kind == "ORG_UNIT":
+            departments, employees = await _department_scope(
+                session, tenant_id, _decode_scope_ids(g["scope_value"])
+            )
+        elif principal.employment_id and kind in ("SELF", "DIRECT_REPORTS", "ALL_REPORTS"):
+            employees = frozenset({principal.employment_id})
+            if kind == "DIRECT_REPORTS":
+                employees |= await _direct_reports(session, tenant_id, principal.employment_id)
+            elif kind == "ALL_REPORTS":
+                employees |= await _all_reports(session, tenant_id, principal.employment_id)
+        resolved.append(
+            Scope(
+                is_all=kind == "ALL",
+                legal_entity_ids=entities,
+                employment_ids=employees,
+                permissions=ROLE_PERMISSIONS.get(g["role_name"], frozenset()),
+                own_employment_id=principal.employment_id,
+                role_names=frozenset({g["role_name"]}),
+                org_unit_ids=departments,
+            )
+        )
+    return merge_scopes(resolved, principal.employment_id)
 
 
-async def get_current_scope(principal: CurrentUser, tenant_id: TenantDep, session: SessionDep) -> Scope:
+async def get_current_scope(
+    principal: CurrentUser, tenant_id: TenantDep, session: SessionDep
+) -> Scope:
     # tenant_id is declared here (not just read off principal) so that
     # tenant_from_request — which sets the RLS/session tenant context —
     # is guaranteed to run before this function's own `session` dependency
@@ -299,7 +354,9 @@ def require_permission(permission: str):
     return Depends(_dep)
 
 
-async def employment_legal_entity(session: AsyncSession, tenant_id: UUID, employment_id: UUID) -> UUID | None:
+async def employment_legal_entity(
+    session: AsyncSession, tenant_id: UUID, employment_id: UUID
+) -> UUID | None:
     row = await session.execute(
         text("""
             SELECT legal_entity_id FROM employments
@@ -310,7 +367,9 @@ async def employment_legal_entity(session: AsyncSession, tenant_id: UUID, employ
     return row.scalar()
 
 
-async def org_unit_legal_entity(session: AsyncSession, tenant_id: UUID, org_unit_id: UUID) -> UUID | None:
+async def org_unit_legal_entity(
+    session: AsyncSession, tenant_id: UUID, org_unit_id: UUID
+) -> UUID | None:
     row = await session.execute(
         text("""
             SELECT legal_entity_id FROM org_units
@@ -325,12 +384,14 @@ async def authorize_org_unit(
     session: AsyncSession, tenant_id: UUID, scope: Scope, org_unit_id: UUID
 ) -> None:
     """Raise 403/404 unless the caller's scope covers this org unit's legal entity."""
-    if scope.is_all:
+    if scope.is_all or org_unit_id in scope.org_unit_ids:
         return
     entity_id = await org_unit_legal_entity(session, tenant_id, org_unit_id)
     if entity_id is not None and scope.covers_entity(entity_id):
         return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this department")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this department"
+    )
 
 
 async def authorize_employment(
@@ -345,7 +406,9 @@ async def authorize_employment(
         entity_id = await employment_legal_entity(session, tenant_id, target_employment_id)
         if entity_id is not None and entity_id in scope.legal_entity_ids:
             return
-    raise HTTPException(status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee")
+    raise HTTPException(
+        status_code=status.HTTP_403_FORBIDDEN, detail="Not authorized for this employee"
+    )
 
 
 def resolve_acting_employment_id(principal: Principal, requested: str | None) -> UUID:
@@ -360,3 +423,53 @@ def resolve_acting_employment_id(principal: Principal, requested: str | None) ->
     if principal.employment_id is None:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "This account has no employment record")
     return principal.employment_id
+
+
+async def authorize_write(
+    session,
+    tenant_id: UUID,
+    scope: Scope,
+    principal: Principal,
+    target: UUID,
+    permission: str,
+    self_permission: str = "self.write",
+) -> None:
+    if target == principal.employment_id:
+        # Staff with an employment can use self-service, too. Read-only roles cannot.
+        if not (scope.has(self_permission) or scope.has(permission)):
+            raise HTTPException(403, "Missing self-service permission")
+        return
+    await authorize_employment(session, tenant_id, scope.for_permission(permission), target)
+
+
+async def visible_employment_ids(session, tenant_id: UUID, scope: Scope) -> list[UUID]:
+    clause, params = scope.employment_filter_sql("e")
+    rows = await session.execute(
+        text(f"SELECT e.id FROM employments e WHERE e.tenant_id = :tid {clause}"),
+        {"tid": tenant_id, **params},
+    )
+    return [r[0] for r in rows]
+
+
+def require_global_permission(permission: str):
+    async def dependency(scope: ScopeDep):
+        if not scope.for_permission(permission).is_all:
+            raise HTTPException(403, "Tenant-wide configuration requires all-company access")
+
+    return Depends(dependency)
+
+
+def read_scope(scope: Scope, *permissions: str) -> Scope:
+    grants = [scope.for_permission(p) for p in permissions if scope.has(p)]
+    if scope.own_employment_id and scope.has("self.read"):
+        grants.append(
+            Scope(
+                False,
+                frozenset(),
+                frozenset({scope.own_employment_id}),
+                frozenset({"self.read"}),
+                scope.own_employment_id,
+                frozenset(),
+            )
+        )
+    return merge_scopes(grants, scope.own_employment_id)
