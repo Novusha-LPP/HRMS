@@ -8,23 +8,41 @@ this module existed, the ONLY way to create a user_accounts row was the
 seed script's raw SQL — there was no runtime path at all, so a freshly
 onboarded company had no way to get anyone signed in.
 
-Two escalation guards, since granting a login is granting authority:
+Managing an existing login:
+  PATCH /v1/users/{id}                 — ACTIVE / INACTIVE. INACTIVE locks the
+                                          person out at once, tokens included.
+  POST  /v1/users/{id}/reset-password  — set a temporary password; the person
+                                          must replace it at next sign-in and
+                                          every session they had is ended.
+(A separated employee is locked out automatically — see core/database.get_session
+— so INACTIVE is for everything else: a suspended contractor, a shared login
+that should stop, an account created by mistake.)
+
+Escalation guards, since granting or managing a login is granting authority:
   - scope guard: the requested scope_type/legal_entity_ids/employment_id
     must be inside what the CALLER can already see (same rule org.write
     uses for locations/org-units — scope.covers_entity / authorize_employment).
   - permission guard: the target role's permission bundle must be a subset
     of the caller's own permissions, so an HR_MANAGER (no "*") can't mint a
-    SUPER_ADMIN account for themselves or anyone else.
+    SUPER_ADMIN account for themselves or anyone else — nor disable or take
+    over one that already exists.
+  - role/scope guard: EMPLOYEE is a self-service-only role, so it can only be
+    granted with SELF scope. Read endpoints filter by the union of a user's
+    scopes, so an EMPLOYEE login with a company-wide scope would be able to
+    read the whole company's records.
 """
 
 import json
+from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import text
 
+from hrms.core.authn import CurrentUser
 from hrms.core.authz import (
     ROLE_PERMISSIONS,
+    Scope,
     ScopeDep,
     authorize_employment,
     decode_scope_ids,
@@ -32,10 +50,16 @@ from hrms.core.authz import (
 )
 from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
-from hrms.core.security import hash_password
+from hrms.core.security import ahash_password
 from hrms.core.tenancy import TenantDep
 from hrms.modules.kernel.models import RoleAssignment, UserAccount
-from hrms.modules.kernel.users.schemas import RoleResponse, UserCreate, UserResponse
+from hrms.modules.kernel.users.schemas import (
+    PasswordReset,
+    RoleResponse,
+    UserCreate,
+    UserResponse,
+    UserUpdate,
+)
 
 router = APIRouter(tags=["Users"])
 
@@ -60,20 +84,22 @@ async def list_roles(tenant_id: TenantDep, session: SessionDep) -> list[RoleResp
     ]
 
 
-_USER_SELECT = """
+def _user_select(*, role_join: str = "JOIN", extra_where: str = "") -> str:
+    return f"""
     SELECT
         ua.id AS account_id, ua.email, ua.status, ua.employment_id,
-        ua.created_at, ua.last_login_at,
+        ua.created_at, ua.last_login_at, ua.must_change_password,
         r.name AS role_name,
         ra.scope_type, ra.scope_value,
-        e.legal_entity_id AS employment_legal_entity_id,
+        e.legal_entity_id AS employment_legal_entity_id, e.employment_state,
         p.legal_first_name, p.legal_last_name
     FROM user_accounts ua
-    JOIN role_assignments ra ON ra.tenant_id = ua.tenant_id AND ra.user_account_id = ua.id
-    JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
+    {role_join} role_assignments ra
+        ON ra.tenant_id = ua.tenant_id AND ra.user_account_id = ua.id
+    {role_join} roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
     LEFT JOIN employments e ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
     LEFT JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
-    WHERE ua.tenant_id = CAST(:tid AS uuid)
+    WHERE ua.tenant_id = CAST(:tid AS uuid) {extra_where}
     ORDER BY ua.email, r.name
 """
 
@@ -85,13 +111,16 @@ def _user_row_response(r) -> UserResponse:
         id=to_typed_id("user", r["account_id"]),
         email=r["email"],
         status=r["status"],
-        role=r["role_name"],
-        scope_type=r["scope_type"],
+        role=r["role_name"] or "",
+        scope_type=r["scope_type"] or "",
         legal_entity_ids=legal_entity_ids,
         employment_id=to_typed_id("employment", r["employment_id"]) if r["employment_id"] else None,
         employee_name=name,
         created_at=r["created_at"],
         last_login_at=r["last_login_at"],
+        employment_state=r["employment_state"],
+        can_sign_in=r["status"] == "ACTIVE" and r["employment_state"] != "SEPARATED",
+        must_change_password=bool(r["must_change_password"]),
     )
 
 
@@ -105,7 +134,7 @@ async def list_users(
     tenant_id: TenantDep, session: SessionDep, scope: ScopeDep
 ) -> list[UserResponse]:
     scope = scope.for_permission("iam.read")
-    rows = (await session.execute(text(_USER_SELECT), {"tid": str(tenant_id)})).mappings().all()
+    rows = (await session.execute(text(_user_select()), {"tid": str(tenant_id)})).mappings().all()
     if scope.is_all:
         return [_user_row_response(r) for r in rows]
 
@@ -150,6 +179,12 @@ async def create_user(
     )
     if not role_row:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, f"Unknown role: {body.role}")
+
+    if body.role == "EMPLOYEE" and body.scope_type != "SELF":
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "EMPLOYEE is a self-service role and can only be granted with SELF scope",
+        )
 
     target_permissions = ROLE_PERMISSIONS.get(body.role, frozenset())
     if not scope.has("*") and not target_permissions.issubset(scope.permissions):
@@ -206,9 +241,10 @@ async def create_user(
         tenant_id=tenant_id,
         id=account_id,
         email=body.email,
-        password_hash=hash_password(body.password),
+        password_hash=await ahash_password(body.password),
         employment_id=employment_uuid,
         status="ACTIVE",
+        must_change_password=body.must_change_password,
     )
     session.add(account)
 
@@ -227,35 +263,184 @@ async def create_user(
     session.add(assignment)
     await session.flush()
 
-    name = None
-    if employment_uuid:
-        person_row = (
-            (
-                await session.execute(
-                    text("""
-                    SELECT p.legal_first_name, p.legal_last_name
-                    FROM employments e JOIN persons p ON p.tenant_id = e.tenant_id AND p.id =
-                    e.person_id
-                    WHERE e.tenant_id = CAST(:tid AS uuid) AND e.id = CAST(:eid AS uuid)
-                """),
-                    {"tid": str(tenant_id), "eid": str(employment_uuid)},
-                )
-            )
-            .mappings()
-            .first()
-        )
-        if person_row:
-            name = f"{person_row['legal_first_name']} {person_row['legal_last_name']}"
+    rows = await _fetch_user_rows(session, tenant_id, account_id)
+    return _user_row_response(rows[0])
 
-    return UserResponse(
-        id=to_typed_id("user", account_id),
-        email=account.email,
-        status=account.status,
-        role=body.role,
-        scope_type=body.scope_type,
-        legal_entity_ids=[to_typed_id("legal_entity", i) for i in legal_entity_uuids],
-        employment_id=to_typed_id("employment", employment_uuid) if employment_uuid else None,
-        employee_name=name,
-        created_at=account.created_at,
-        last_login_at=None,
+
+# ─── Managing an existing login ──────────────────────────────────────────────
+
+
+async def _fetch_user_rows(session, tenant_id: UUID, account_id: UUID):
+    rows = (
+        (
+            await session.execute(
+                text(
+                    _user_select(
+                        role_join="LEFT JOIN", extra_where="AND ua.id = CAST(:uid AS uuid)"
+                    )
+                ),
+                {"tid": str(tenant_id), "uid": str(account_id)},
+            )
+        )
+        .mappings()
+        .all()
     )
+    if not rows:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    return rows
+
+
+async def _load_manageable_account(
+    session, tenant_id: UUID, principal, scope: Scope, user_id: str
+) -> tuple[UUID, set[str]]:
+    """
+    Resolve the target login and refuse anything the caller isn't entitled to
+    manage: themselves (use change-password), accounts holding more authority
+    than the caller, group-wide accounts unless the caller is group-wide, and
+    employees outside the caller's scope.
+    """
+    account_id = to_uuid(user_id)
+    account = (
+        (
+            await session.execute(
+                text("""
+                    SELECT id, employment_id FROM user_accounts
+                    WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:uid AS uuid)
+                """),
+                {"tid": str(tenant_id), "uid": str(account_id)},
+            )
+        )
+        .mappings()
+        .first()
+    )
+    if not account:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "User not found")
+    if account_id == principal.user_account_id:
+        raise HTTPException(
+            status.HTTP_400_BAD_REQUEST,
+            "You can't change your own account here — use change-password instead",
+        )
+
+    grants = (
+        (
+            await session.execute(
+                text("""
+                    SELECT r.name AS role_name, ra.scope_type
+                    FROM role_assignments ra
+                    JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
+                    WHERE ra.tenant_id = CAST(:tid AS uuid)
+                      AND ra.user_account_id = CAST(:uid AS uuid)
+                """),
+                {"tid": str(tenant_id), "uid": str(account_id)},
+            )
+        )
+        .mappings()
+        .all()
+    )
+    role_names = {g["role_name"] for g in grants}
+    target_permissions: set[str] = set()
+    for name in role_names:
+        target_permissions |= ROLE_PERMISSIONS.get(name, frozenset())
+    if not scope.has("*") and not target_permissions <= set(scope.permissions):
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "You can't manage an account that holds more permissions than you do",
+        )
+    if any(g["scope_type"] == "ALL" for g in grants) and not scope.is_all:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a group-level administrator can manage an account with all-company access",
+        )
+    if account["employment_id"]:
+        await authorize_employment(session, tenant_id, scope, account["employment_id"])
+    elif not scope.is_all:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a group-level administrator can manage an account with no employee record",
+        )
+    return account_id, role_names
+
+
+@router.patch(
+    "/v1/users/{user_id}",
+    response_model=UserResponse,
+    summary="Activate or deactivate a login",
+    dependencies=[require_permission("iam.write")],
+)
+async def update_user(
+    user_id: str,
+    body: UserUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> UserResponse:
+    scope = scope.for_permission("iam.write")
+    account_id, role_names = await _load_manageable_account(
+        session, tenant_id, principal, scope, user_id
+    )
+
+    if body.status == "INACTIVE" and "SUPER_ADMIN" in role_names:
+        other_admins = (
+            await session.execute(
+                text("""
+                    SELECT count(*) FROM user_accounts ua
+                    JOIN role_assignments ra
+                      ON ra.tenant_id = ua.tenant_id AND ra.user_account_id = ua.id
+                    JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
+                    WHERE ua.tenant_id = CAST(:tid AS uuid) AND ua.status = 'ACTIVE'
+                      AND r.name = 'SUPER_ADMIN' AND ua.id <> CAST(:uid AS uuid)
+                """),
+                {"tid": str(tenant_id), "uid": str(account_id)},
+            )
+        ).scalar()
+        if not other_admins:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "This is the last active administrator — make another one first",
+            )
+
+    await session.execute(
+        text("""
+            UPDATE user_accounts SET status = :status, version = version + 1
+            WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:uid AS uuid)
+        """),
+        {"status": body.status, "tid": str(tenant_id), "uid": str(account_id)},
+    )
+    return _user_row_response((await _fetch_user_rows(session, tenant_id, account_id))[0])
+
+
+@router.post(
+    "/v1/users/{user_id}/reset-password",
+    response_model=UserResponse,
+    summary="Set a temporary password the user must replace at next sign-in",
+    dependencies=[require_permission("iam.write")],
+)
+async def reset_user_password(
+    user_id: str,
+    body: PasswordReset,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> UserResponse:
+    scope = scope.for_permission("iam.write")
+    account_id, _ = await _load_manageable_account(session, tenant_id, principal, scope, user_id)
+
+    new_hash = await ahash_password(body.password)
+    await session.execute(
+        text("""
+            UPDATE user_accounts
+            SET password_hash = :hash, must_change_password = true,
+                password_changed_at = :changed_at, token_epoch = token_epoch + 1,
+                version = version + 1
+            WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:uid AS uuid)
+        """),
+        {
+            "hash": new_hash,
+            "changed_at": datetime.now(UTC),
+            "tid": str(tenant_id),
+            "uid": str(account_id),
+        },
+    )
+    return _user_row_response((await _fetch_user_rows(session, tenant_id, account_id))[0])

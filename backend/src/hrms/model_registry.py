@@ -1,4 +1,13 @@
-"""Complete model metadata for the application and Alembic."""
+"""
+Complete model metadata for the application and Alembic.
+
+The migrations are hand-written and are the source of truth for the schema; the
+models exist for the ORM. Where the two legitimately differ in ways the model
+classes can't express (composite tenant-aware foreign keys, constraints added by
+migration), this module declares them so that `alembic check` — run in CI — can
+tell a real omission (a model field with no migration) from noise, and so that
+autogenerate never proposes to undo something a migration deliberately did.
+"""
 
 from sqlalchemy import DateTime, ForeignKeyConstraint, UniqueConstraint
 from sqlmodel import SQLModel
@@ -66,22 +75,57 @@ RELATIONS = {
     },
     "employee_kyc_records": {"employment_id": "employments", "person_id": "persons"},
     "employee_kyc_documents": {"employment_id": "employments"},
+    "kyc_access_log": {"employment_id": "employments", "actor_user_account_id": "user_accounts"},
     "onboarding_cases": {"employment_id": "employments", "template_id": "onboarding_templates"},
     "onboarding_items": {"case_id": "onboarding_cases"},
     "onboarding_template_items": {"template_id": "onboarding_templates"},
 }
+# Bookkeeping timestamps are `NOT NULL` in the Python models (they always carry a
+# default_factory) but nullable-with-a-server-default in the database. The
+# database is the truth here, so say so.
+# (Tables whose migrations declare them NOT NULL are listed in _STRICT_TABLES.)
+_STRICT_TABLES = {"api_keys", "import_batches", "auth_throttle", "kyc_access_log"}
+_NULLABLE_TIMESTAMPS = {
+    "created_at",
+    "recorded_at",
+    "granted_at",
+    "started_at",
+    "updated_at",
+    "uploaded_at",
+}
+
+
+def _is_datetime(column) -> bool:
+    # SQLModel types datetimes with a TypeDecorator (UTCDateTime), which is not a
+    # DateTime subclass — look through it to the type it wraps.
+    return isinstance(getattr(column.type, "impl", column.type), DateTime)
+
+
 for table in metadata.tables.values():
     for column in table.c:
         if isinstance(column.type, DateTime):
             column.type.timezone = True
+        if (
+            _is_datetime(column)
+            and column.name in _NULLABLE_TIMESTAMPS
+            and table.name not in _STRICT_TABLES
+        ):
+            column.nullable = True
+    # Every tenant-scoped table references tenants(id) (the migrations add it to each).
+    if (
+        "tenant_id" in table.c
+        and table.name != "tenants"
+        and not any(fk.column.table.name == "tenants" for fk in table.c.tenant_id.foreign_keys)
+    ):
+        table.append_constraint(ForeignKeyConstraint(["tenant_id"], ["tenants.id"]))
 for table_name, references in RELATIONS.items():
     table = metadata.tables[table_name]
-    for column, target in references.items():
+    for fk_column, target in references.items():
         table.append_constraint(
             ForeignKeyConstraint(
-                ["tenant_id", column],
+                ["tenant_id", fk_column],
                 [f"{target}.tenant_id", f"{target}.id"],
-                name=f"fk_{table_name}_{column}",
+                name=f"fk_{table_name}_{fk_column}",
                 deferrable=True,
                 initially="DEFERRED",
             )
@@ -96,3 +140,14 @@ metadata.tables["employments"].append_constraint(
         "tenant_id", "legal_entity_id", "employee_number", name="uq_company_employee_number"
     )
 )
+
+# Uniqueness the migrations create that the model classes don't spell out.
+for unique_table, unique_columns, unique_name in (
+    ("attendance_days", ("tenant_id", "employment_id", "work_date"), "uq_attendance_day"),
+    ("employee_kyc_records", ("tenant_id", "employment_id"), "uq_tenant_kyc_employment"),
+    ("platform_admins", ("email",), "platform_admins_email_key"),
+    ("tenants", ("slug",), "tenants_slug_key"),
+):
+    metadata.tables[unique_table].append_constraint(
+        UniqueConstraint(*unique_columns, name=unique_name)
+    )

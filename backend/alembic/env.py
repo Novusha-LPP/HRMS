@@ -4,6 +4,7 @@ from sqlalchemy import pool
 from sqlalchemy.ext.asyncio import async_engine_from_config
 from alembic import context
 
+from hrms.alembic_hooks import compare_type, include_object
 from hrms.model_registry import metadata
 
 import os
@@ -19,7 +20,6 @@ if db_url:
 
 target_metadata = metadata
 
-
 def run_migrations_offline() -> None:
     url = config.get_main_option("sqlalchemy.url")
     context.configure(
@@ -27,13 +27,20 @@ def run_migrations_offline() -> None:
         target_metadata=target_metadata,
         literal_binds=True,
         dialect_opts={"paramstyle": "named"},
+        include_object=include_object,
+        compare_type=compare_type,
     )
     with context.begin_transaction():
         context.run_migrations()
 
 
 def do_run_migrations(connection):  # type: ignore[no-untyped-def]
-    context.configure(connection=connection, target_metadata=target_metadata)
+    context.configure(
+        connection=connection,
+        target_metadata=target_metadata,
+        include_object=include_object,
+        compare_type=compare_type,
+    )
     with context.begin_transaction():
         context.run_migrations()
 

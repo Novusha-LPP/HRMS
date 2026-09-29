@@ -75,7 +75,7 @@
   <text class="s" x="60" y="322" font-size="11">Before authentication, the tenant is unknown (`POST /v1/auth/login`).</text>
   <text class="s" x="60" y="342" font-size="11">• app.tenant_id is left deliberately UNSET in the database session.</text>
   <text class="s" x="60" y="362" font-size="11">• Because RLS is active on user_accounts, normal SELECT queries return zero rows.</text>
-  <text class="s" x="60" y="382" font-size="11">• Login handler executes only the `login_lookup(:email)` function.</text>
+  <text class="s" x="60" y="382" font-size="11">• Login handler executes only the `login_lookup(:identifier)` function.</text>
   <text class="s" x="60" y="402" font-size="11">• `login_lookup()` is a SECURITY DEFINER function returning only password_hash,</text>
   <text class="s" x="60" y="418" font-size="11">  tenant_id, and account_id. No other tenant data is exposed.</text>
   <text class="ta" x="60" y="438" font-size="11">✓ Zero possibility of unauthenticated tenant data leakage.</text>

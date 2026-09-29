@@ -17,8 +17,10 @@ Usage:
     uv run python scripts/seed_demo.py
 """
 
+import argparse
 import asyncio
 import json
+import sys
 from datetime import date
 from pathlib import Path
 from uuid import UUID, uuid4
@@ -45,23 +47,47 @@ def uid() -> UUID:
 async def wipe_tenant(session) -> None:
     """Delete-by-tenant in FK-safe order so this script is re-runnable."""
     tables = [
-        "employee_kyc_documents", "employee_kyc_records",
-        "correction_approval_actions", "attendance_correction_requests",
-        "leave_approval_actions", "leave_applications",
-        "leave_encashments", "comp_off_grants", "leave_balances", "leave_types",
+        "employee_kyc_documents",
+        "employee_kyc_records",
+        "correction_approval_actions",
+        "attendance_correction_requests",
+        "leave_approval_actions",
+        "leave_applications",
+        "leave_encashments",
+        "comp_off_grants",
+        "leave_balances",
+        "leave_types",
         "holidays",
-        "employee_policy_assignments", "policy_templates",
+        "employee_policy_assignments",
+        "policy_templates",
         "report_definitions",
-        "onboarding_items", "onboarding_cases", "onboarding_template_items", "onboarding_templates",
-        "attendance_days", "punches",
-        "personnel_actions", "assignment_managers", "assignments",
-        "employments", "persons",
+        "onboarding_items",
+        "onboarding_cases",
+        "onboarding_template_items",
+        "onboarding_templates",
+        "attendance_days",
+        "punches",
+        "personnel_actions",
+        "assignment_managers",
+        "assignments",
+        "employments",
+        "persons",
         "employee_id_schemes",
-        "positions", "cost_centres", "grades", "jobs", "org_units", "locations", "legal_entities",
-        "role_assignments", "roles", "user_accounts",
+        "positions",
+        "cost_centres",
+        "grades",
+        "jobs",
+        "org_units",
+        "locations",
+        "legal_entities",
+        "role_assignments",
+        "roles",
+        "user_accounts",
     ]
     for t in tables:
-        await session.execute(text(f"DELETE FROM {t} WHERE tenant_id = :tid"), {"tid": str(TENANT_ID)})
+        await session.execute(
+            text(f"DELETE FROM {t} WHERE tenant_id = :tid"), {"tid": str(TENANT_ID)}
+        )
     await session.execute(text("DELETE FROM tenants WHERE id = :tid"), {"tid": str(TENANT_ID)})
 
 
@@ -108,11 +134,17 @@ async def main() -> None:
                     INSERT INTO locations (tenant_id, id, name, type, city, country_code, timezone, legal_entity_id, status)
                     VALUES (:tid, :id, :name, 'OFFICE', :city, 'IN', 'Asia/Kolkata', :le, 'ACTIVE')
                 """),
-                {"tid": str(TENANT_ID), "id": str(lid), "name": f"{code} Head Office", "city": cities[code], "le": str(eid)},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(lid),
+                    "name": f"{code} Head Office",
+                    "city": cities[code],
+                    "le": str(eid),
+                },
             )
 
         # ── Org units: Company -> {Finance, HR, Operations} per entity ────
-        org_unit_ids: dict[str, UUID] = {}          # "SFPL" -> company node
+        org_unit_ids: dict[str, UUID] = {}  # "SFPL" -> company node
         dept_ids: dict[tuple[str, str], UUID] = {}  # ("SFPL", "Finance") -> dept node
         for code, eid in entity_ids.items():
             company_ou = uid()
@@ -122,8 +154,14 @@ async def main() -> None:
                     INSERT INTO org_units (tenant_id, id, name, code, type, legal_entity_id, effective_from, status)
                     VALUES (:tid, :id, :name, :code, 'COMPANY', :le, :ef, 'ACTIVE')
                 """),
-                {"tid": str(TENANT_ID), "id": str(company_ou), "name": entities[code], "code": code,
-                 "le": str(eid), "ef": date(2019, 1, 1)},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(company_ou),
+                    "name": entities[code],
+                    "code": code,
+                    "le": str(eid),
+                    "ef": date(2019, 1, 1),
+                },
             )
             for dept in ("Finance", "HR", "Operations"):
                 did = uid()
@@ -133,17 +171,32 @@ async def main() -> None:
                         INSERT INTO org_units (tenant_id, id, name, code, type, parent_id, legal_entity_id, effective_from, status)
                         VALUES (:tid, :id, :name, :code, 'DEPARTMENT', :parent, :le, :ef, 'ACTIVE')
                     """),
-                    {"tid": str(TENANT_ID), "id": str(did), "name": dept, "code": f"{code}-{dept[:3].upper()}",
-                     "parent": str(company_ou), "le": str(eid), "ef": date(2019, 1, 1)},
+                    {
+                        "tid": str(TENANT_ID),
+                        "id": str(did),
+                        "name": dept,
+                        "code": f"{code}-{dept[:3].upper()}",
+                        "parent": str(company_ou),
+                        "le": str(eid),
+                        "ef": date(2019, 1, 1),
+                    },
                 )
 
         # ── Jobs (shared across entities) ───────────────────────────────
         job_ids: dict[str, UUID] = {}
-        for title in ("HR Manager", "Accountant", "Operations Manager", "Software Engineer", "Executive"):
+        for title in (
+            "HR Manager",
+            "Accountant",
+            "Operations Manager",
+            "Software Engineer",
+            "Executive",
+        ):
             jid = uid()
             job_ids[title] = jid
             await session.execute(
-                text("INSERT INTO jobs (tenant_id, id, title, status) VALUES (:tid, :id, :title, 'ACTIVE')"),
+                text(
+                    "INSERT INTO jobs (tenant_id, id, title, status) VALUES (:tid, :id, :title, 'ACTIVE')"
+                ),
                 {"tid": str(TENANT_ID), "id": str(jid), "title": title},
             )
 
@@ -173,34 +226,56 @@ async def main() -> None:
             )
             return pid
 
-        async def make_employment(person_id: UUID, entity_code: str, emp_no: str, hire: date, state: str = "ACTIVE") -> UUID:
+        async def make_employment(
+            person_id: UUID, entity_code: str, emp_no: str, hire: date, state: str = "ACTIVE"
+        ) -> UUID:
             eid = uid()
             await session.execute(
                 text("""
                     INSERT INTO employments (tenant_id, id, person_id, legal_entity_id, employee_number, hire_date, employment_state)
                     VALUES (:tid, :id, :pid, :le, :num, :hire, :state)
                 """),
-                {"tid": str(TENANT_ID), "id": str(eid), "pid": str(person_id), "le": str(entity_ids[entity_code]),
-                 "num": emp_no, "hire": hire, "state": state},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(eid),
+                    "pid": str(person_id),
+                    "le": str(entity_ids[entity_code]),
+                    "num": emp_no,
+                    "hire": hire,
+                    "state": state,
+                },
             )
             return eid
 
-        async def make_assignment(employment_id: UUID, entity_code: str, dept: str, job_title: str) -> UUID:
+        async def make_assignment(
+            employment_id: UUID, entity_code: str, dept: str, job_title: str
+        ) -> UUID:
             aid = uid()
             await session.execute(
                 text("""
                     INSERT INTO assignments (tenant_id, id, employment_id, effective_from, org_unit_id, location_id, job_id)
                     VALUES (:tid, :id, :eid, :ef, :ou, :loc, :job)
                 """),
-                {"tid": str(TENANT_ID), "id": str(aid), "eid": str(employment_id), "ef": date(2019, 1, 1),
-                 "ou": str(dept_ids[(entity_code, dept)]), "loc": str(location_ids[entity_code]), "job": str(job_ids[job_title])},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(aid),
+                    "eid": str(employment_id),
+                    "ef": date(2019, 1, 1),
+                    "ou": str(dept_ids[(entity_code, dept)]),
+                    "loc": str(location_ids[entity_code]),
+                    "job": str(job_ids[job_title]),
+                },
             )
             return aid
 
         login_employments: list[UUID] = []
 
         async def make_login(
-            employment_id: UUID | None, email: str, role: str, scope_type: str, scope_value: list[str] | None,
+            employment_id: UUID | None,
+            email: str,
+            role: str,
+            scope_type: str,
+            scope_value: list[str] | None,
         ) -> None:
             if employment_id:
                 login_employments.append(employment_id)
@@ -210,16 +285,27 @@ async def main() -> None:
                     INSERT INTO user_accounts (tenant_id, id, email, password_hash, employment_id, status)
                     VALUES (:tid, :id, :email, :pw, :emp, 'ACTIVE')
                 """),
-                {"tid": str(TENANT_ID), "id": str(account_id), "email": email, "pw": pw_hash,
-                 "emp": str(employment_id) if employment_id else None},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(account_id),
+                    "email": email,
+                    "pw": pw_hash,
+                    "emp": str(employment_id) if employment_id else None,
+                },
             )
             await session.execute(
                 text("""
                     INSERT INTO role_assignments (tenant_id, id, user_account_id, role_id, scope_type, scope_value)
                     VALUES (:tid, :id, :uid, :rid, :st, :sv)
                 """),
-                {"tid": str(TENANT_ID), "id": str(uid()), "uid": str(account_id), "rid": str(role_ids[role]),
-                 "st": scope_type, "sv": json.dumps(scope_value) if scope_value else None},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(uid()),
+                    "uid": str(account_id),
+                    "rid": str(role_ids[role]),
+                    "st": scope_type,
+                    "sv": json.dumps(scope_value) if scope_value else None,
+                },
             )
 
         def le(*codes: str) -> list[str]:
@@ -244,14 +330,18 @@ async def main() -> None:
         p = await make_person("Meera", "Joshi")
         emp = await make_employment(p, "SRCC", "SRCC-0001", date(2020, 2, 1))
         await make_assignment(emp, "SRCC", "HR", "HR Manager")
-        await make_login(emp, "meera.joshi@sfplgroup.in", "HR_MANAGER", "LEGAL_ENTITY", le("SRCC", "NOVUSHA"))
+        await make_login(
+            emp, "meera.joshi@sfplgroup.in", "HR_MANAGER", "LEGAL_ENTITY", le("SRCC", "NOVUSHA")
+        )
 
         # Suresh Kumar — the shared accountant: employed by SFPL, books time at SFPL
         # and Novusha, sees only those two companies' people/reports/dashboard.
         p = await make_person("Suresh", "Kumar")
         emp = await make_employment(p, "SFPL", "SFPL-0003", date(2018, 4, 10))
         await make_assignment(emp, "SFPL", "Finance", "Accountant")
-        await make_login(emp, "suresh.kumar@sfplgroup.in", "ACCOUNTANT", "LEGAL_ENTITY", le("SFPL", "NOVUSHA"))
+        await make_login(
+            emp, "suresh.kumar@sfplgroup.in", "ACCOUNTANT", "LEGAL_ENTITY", le("SFPL", "NOVUSHA")
+        )
 
         # Priya Menon — manager at SFPL Operations, sees herself + her direct reports
         p = await make_person("Priya", "Menon")
@@ -270,7 +360,13 @@ async def main() -> None:
                     INSERT INTO assignment_managers (tenant_id, id, assignment_id, manager_employment_id, manager_type, effective_from)
                     VALUES (:tid, :id, :asgn, :mgr, 'LINE', :ef)
                 """),
-                {"tid": str(TENANT_ID), "id": str(uid()), "asgn": str(asgn), "mgr": str(mgr_emp), "ef": date(2021, 1, 10)},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(uid()),
+                    "asgn": str(asgn),
+                    "mgr": str(mgr_emp),
+                    "ef": date(2021, 1, 10),
+                },
             )
             if first == "Arjun":
                 emp_arjun = emp
@@ -314,7 +410,14 @@ async def main() -> None:
                     INSERT INTO leave_types (tenant_id, id, name, code, days_per_year, is_active, approval_levels, color)
                     VALUES (:tid, :id, :name, :code, :days, true, 1, :color)
                 """),
-                {"tid": str(TENANT_ID), "id": str(ltid), "name": name, "code": code, "days": days, "color": color},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(ltid),
+                    "name": name,
+                    "code": code,
+                    "days": days,
+                    "color": color,
+                },
             )
         for emp_id in login_employments:
             for code, ltid in leave_type_ids.items():
@@ -323,18 +426,34 @@ async def main() -> None:
                         INSERT INTO leave_balances (tenant_id, id, employment_id, leave_type_id, year, allocated_days)
                         VALUES (:tid, :id, :emp, :lt, :yr, :days)
                     """),
-                    {"tid": str(TENANT_ID), "id": str(uid()), "emp": str(emp_id), "lt": str(ltid),
-                     "yr": date.today().year, "days": 12.0 if code == "CL" else 10.0},
+                    {
+                        "tid": str(TENANT_ID),
+                        "id": str(uid()),
+                        "emp": str(emp_id),
+                        "lt": str(ltid),
+                        "yr": date.today().year,
+                        "days": 12.0 if code == "CL" else 10.0,
+                    },
                 )
 
         # ── KYC Records & Documents ──────────────────────────────────────────
         storage_dir = Path("storage/kyc") / str(TENANT_ID)
         storage_dir.mkdir(parents=True, exist_ok=True)
 
-        async def seed_kyc_doc(emp_id: UUID, doc_type: str, title: str, doc_num: str, fname: str, status: str, rej_reason: str = None):
+        async def seed_kyc_doc(
+            emp_id: UUID,
+            doc_type: str,
+            title: str,
+            doc_num: str,
+            fname: str,
+            status: str,
+            rej_reason: str = None,
+        ):
             doc_id = uid()
             fpath = storage_dir / f"{doc_id}_{fname}"
-            fpath.write_text(f"Mock Document Content for {title}\nDocument Type: {doc_type}\nDoc Number: {doc_num}\nTenant: {TENANT_ID}\nTimestamp: 2026-09-24\nStatus: {status}")
+            fpath.write_text(
+                f"Mock Document Content for {title}\nDocument Type: {doc_type}\nDoc Number: {doc_num}\nTenant: {TENANT_ID}\nTimestamp: 2026-09-24\nStatus: {status}"
+            )
             await session.execute(
                 text("""
                     INSERT INTO employee_kyc_documents (
@@ -346,11 +465,18 @@ async def main() -> None:
                     )
                 """),
                 {
-                    "tid": str(TENANT_ID), "id": str(doc_id), "emp": str(emp_id),
-                    "dtype": doc_type, "title": title, "num": doc_num,
-                    "fname": fname, "fsize": 1024, "fpath": str(fpath),
-                    "status": status, "rej": rej_reason,
-                }
+                    "tid": str(TENANT_ID),
+                    "id": str(doc_id),
+                    "emp": str(emp_id),
+                    "dtype": doc_type,
+                    "title": title,
+                    "num": doc_num,
+                    "fname": fname,
+                    "fsize": 1024,
+                    "fpath": str(fpath),
+                    "status": status,
+                    "rej": rej_reason,
+                },
             )
 
         # 1. Rahul Iyer (HR Manager) — fully verified
@@ -373,9 +499,25 @@ async def main() -> None:
             """),
             {"tid": str(TENANT_ID), "id": str(rec_id), "emp": str(emp_rahul)},
         )
-        await seed_kyc_doc(emp_rahul, "PAN_CARD", "PAN Card Copy", "ABCDE1234F", "rahul_pan.pdf", "VERIFIED")
-        await seed_kyc_doc(emp_rahul, "AADHAAR_FRONT", "Aadhaar Card Front", "987654321012", "rahul_aadhaar.pdf", "VERIFIED")
-        await seed_kyc_doc(emp_rahul, "BANK_PROOF", "HDFC Cancelled Cheque", "50100234567890", "rahul_cheque.pdf", "VERIFIED")
+        await seed_kyc_doc(
+            emp_rahul, "PAN_CARD", "PAN Card Copy", "ABCDE1234F", "rahul_pan.pdf", "VERIFIED"
+        )
+        await seed_kyc_doc(
+            emp_rahul,
+            "AADHAAR_FRONT",
+            "Aadhaar Card Front",
+            "987654321012",
+            "rahul_aadhaar.pdf",
+            "VERIFIED",
+        )
+        await seed_kyc_doc(
+            emp_rahul,
+            "BANK_PROOF",
+            "HDFC Cancelled Cheque",
+            "50100234567890",
+            "rahul_cheque.pdf",
+            "VERIFIED",
+        )
 
         # 2. Priya Menon (Operations Manager) — fully verified
         rec_id = uid()
@@ -397,9 +539,25 @@ async def main() -> None:
             """),
             {"tid": str(TENANT_ID), "id": str(rec_id), "emp": str(mgr_emp)},
         )
-        await seed_kyc_doc(mgr_emp, "PAN_CARD", "PAN Card Copy", "FGHIJ5678K", "priya_pan.pdf", "VERIFIED")
-        await seed_kyc_doc(mgr_emp, "AADHAAR_FRONT", "Aadhaar Card Front", "876543210987", "priya_aadhaar.pdf", "VERIFIED")
-        await seed_kyc_doc(mgr_emp, "BANK_PROOF", "ICICI Bank Passbook", "001105012345", "priya_bank.pdf", "VERIFIED")
+        await seed_kyc_doc(
+            mgr_emp, "PAN_CARD", "PAN Card Copy", "FGHIJ5678K", "priya_pan.pdf", "VERIFIED"
+        )
+        await seed_kyc_doc(
+            mgr_emp,
+            "AADHAAR_FRONT",
+            "Aadhaar Card Front",
+            "876543210987",
+            "priya_aadhaar.pdf",
+            "VERIFIED",
+        )
+        await seed_kyc_doc(
+            mgr_emp,
+            "BANK_PROOF",
+            "ICICI Bank Passbook",
+            "001105012345",
+            "priya_bank.pdf",
+            "VERIFIED",
+        )
 
         # 3. Arjun Sharma (Employee) — SUBMITTED (Pending HR Review)
         rec_id = uid()
@@ -421,9 +579,25 @@ async def main() -> None:
             """),
             {"tid": str(TENANT_ID), "id": str(rec_id), "emp": str(emp_arjun)},
         )
-        await seed_kyc_doc(emp_arjun, "PAN_CARD", "PAN Card Copy", "KLMNO9012P", "arjun_pan.pdf", "PENDING")
-        await seed_kyc_doc(emp_arjun, "AADHAAR_FRONT", "Aadhaar Card Front", "765432109876", "arjun_aadhaar_front.pdf", "PENDING")
-        await seed_kyc_doc(emp_arjun, "BANK_PROOF", "SBI Cancelled Cheque", "30245678901", "arjun_cheque.pdf", "PENDING")
+        await seed_kyc_doc(
+            emp_arjun, "PAN_CARD", "PAN Card Copy", "KLMNO9012P", "arjun_pan.pdf", "PENDING"
+        )
+        await seed_kyc_doc(
+            emp_arjun,
+            "AADHAAR_FRONT",
+            "Aadhaar Card Front",
+            "765432109876",
+            "arjun_aadhaar_front.pdf",
+            "PENDING",
+        )
+        await seed_kyc_doc(
+            emp_arjun,
+            "BANK_PROOF",
+            "SBI Cancelled Cheque",
+            "30245678901",
+            "arjun_cheque.pdf",
+            "PENDING",
+        )
 
         # 4. Neha Patil (Employee) — DRAFT (Partially filled, 1 doc)
         rec_id = uid()
@@ -443,7 +617,9 @@ async def main() -> None:
             """),
             {"tid": str(TENANT_ID), "id": str(rec_id), "emp": str(emp_neha)},
         )
-        await seed_kyc_doc(emp_neha, "PAN_CARD", "PAN Card", "PQRST3456M", "neha_pan.pdf", "PENDING")
+        await seed_kyc_doc(
+            emp_neha, "PAN_CARD", "PAN Card", "PQRST3456M", "neha_pan.pdf", "PENDING"
+        )
 
         # 5. Vikram Rao (Novusha Operations) — ACTION REQUIRED / REJECTED with comments
         rec_id = uid()
@@ -461,14 +637,26 @@ async def main() -> None:
             """),
             {"tid": str(TENANT_ID), "id": str(rec_id), "emp": str(emp_vikram)},
         )
-        await seed_kyc_doc(emp_vikram, "PAN_CARD", "PAN Card", "UVWXY7890Z", "vikram_pan.pdf", "VERIFIED")
-        await seed_kyc_doc(emp_vikram, "AADHAAR_FRONT", "Aadhaar Card Front", "543210987654", "vikram_aadhaar.pdf", "REJECTED", "Document image is blurred and unreadable. Please upload clear scan.")
+        await seed_kyc_doc(
+            emp_vikram, "PAN_CARD", "PAN Card", "UVWXY7890Z", "vikram_pan.pdf", "VERIFIED"
+        )
+        await seed_kyc_doc(
+            emp_vikram,
+            "AADHAAR_FRONT",
+            "Aadhaar Card Front",
+            "543210987654",
+            "vikram_aadhaar.pdf",
+            "REJECTED",
+            "Document image is blurred and unreadable. Please upload clear scan.",
+        )
 
         # ── Daily Attendance & Punches (Today) ───────────────────────────────
         today = date.today()
         from datetime import datetime, timezone, time
 
-        async def seed_attendance(emp_id: UUID, status: str, in_time: time, out_time: time, late_mins: int = 0):
+        async def seed_attendance(
+            emp_id: UUID, status: str, in_time: time, out_time: time, late_mins: int = 0
+        ):
             ad_id = uid()
             in_dt = datetime.combine(today, in_time).replace(tzinfo=timezone.utc)
             out_dt = datetime.combine(today, out_time).replace(tzinfo=timezone.utc)
@@ -491,10 +679,17 @@ async def main() -> None:
                     )
                 """),
                 {
-                    "tid": str(TENANT_ID), "id": str(ad_id), "emp": str(emp_id), "wdate": today,
-                    "pin": in_dt, "pout": out_dt,
-                    "gross": diff_mins, "brk": break_mins, "eff": eff_mins,
-                    "late": late_mins, "status": status,
+                    "tid": str(TENANT_ID),
+                    "id": str(ad_id),
+                    "emp": str(emp_id),
+                    "wdate": today,
+                    "pin": in_dt,
+                    "pout": out_dt,
+                    "gross": diff_mins,
+                    "brk": break_mins,
+                    "eff": eff_mins,
+                    "late": late_mins,
+                    "status": status,
                 },
             )
 
@@ -518,7 +713,7 @@ async def main() -> None:
         # Lookup all employment IDs by employee_number
         emp_lookup_res = await session.execute(
             text("SELECT id, employee_number FROM employments WHERE tenant_id = :tid"),
-            {"tid": str(TENANT_ID)}
+            {"tid": str(TENANT_ID)},
         )
         emp_by_num = {r._mapping["employee_number"]: r._mapping["id"] for r in emp_lookup_res}
 
@@ -538,9 +733,13 @@ async def main() -> None:
         if "NOVUSHA-9001" in emp_by_num:
             await seed_attendance(emp_by_num["NOVUSHA-9001"], "LATE", time(9, 25), time(18, 20), 15)
         if "ALLUVIUM-9002" in emp_by_num:
-            await seed_attendance(emp_by_num["ALLUVIUM-9002"], "PRESENT", time(9, 5), time(18, 35), 0)
+            await seed_attendance(
+                emp_by_num["ALLUVIUM-9002"], "PRESENT", time(9, 5), time(18, 35), 0
+            )
         if "ALLUVIUM-9003" in emp_by_num:
-            await seed_attendance(emp_by_num["ALLUVIUM-9003"], "PRESENT", time(9, 0), time(18, 0), 0)
+            await seed_attendance(
+                emp_by_num["ALLUVIUM-9003"], "PRESENT", time(9, 0), time(18, 0), 0
+            )
         if "SFPL-9004" in emp_by_num:
             await seed_attendance(emp_by_num["SFPL-9004"], "LATE", time(9, 30), time(18, 40), 20)
 
@@ -557,7 +756,13 @@ async def main() -> None:
                         :today, :today, 1.0, 'Personal work at bank', 'APPROVED'
                     )
                 """),
-                {"tid": str(TENANT_ID), "id": str(uid()), "emp": str(emp_by_num["SRCC-0002"]), "lt": str(cl_id), "today": today},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(uid()),
+                    "emp": str(emp_by_num["SRCC-0002"]),
+                    "lt": str(cl_id),
+                    "today": today,
+                },
             )
 
         # Approved Leave for Meera (Sick Leave)
@@ -573,7 +778,13 @@ async def main() -> None:
                         :today, :today, 1.0, 'Viral fever recovery', 'APPROVED'
                     )
                 """),
-                {"tid": str(TENANT_ID), "id": str(uid()), "emp": str(emp_by_num["SRCC-0001"]), "lt": str(sl_id), "today": today},
+                {
+                    "tid": str(TENANT_ID),
+                    "id": str(uid()),
+                    "emp": str(emp_by_num["SRCC-0001"]),
+                    "lt": str(sl_id),
+                    "today": today,
+                },
             )
 
         await session.commit()
@@ -585,16 +796,55 @@ async def main() -> None:
     rows = [
         ("kavita.singh@sfplgroup.in", "SUPER_ADMIN", "ALL", "Every company (platform admin)"),
         ("rahul.iyer@sfplgroup.in", "HR_MANAGER", "ALL", "Every company (group HR)"),
-        ("meera.joshi@sfplgroup.in", "HR_MANAGER", "SRCC + Novusha", "Only those two companies — not SFPL/Alluvium"),
-        ("suresh.kumar@sfplgroup.in", "ACCOUNTANT", "SFPL + Novusha", "Shared accountant — read-only, those two companies"),
-        ("priya.menon@sfplgroup.in", "MANAGER", "Direct reports", "Herself + Arjun + Divya, nothing else"),
+        (
+            "meera.joshi@sfplgroup.in",
+            "HR_MANAGER",
+            "SRCC + Novusha",
+            "Only those two companies — not SFPL/Alluvium",
+        ),
+        (
+            "suresh.kumar@sfplgroup.in",
+            "ACCOUNTANT",
+            "SFPL + Novusha",
+            "Shared accountant — read-only, those two companies",
+        ),
+        (
+            "priya.menon@sfplgroup.in",
+            "MANAGER",
+            "Direct reports",
+            "Herself + Arjun + Divya, nothing else",
+        ),
         ("arjun.sharma@sfplgroup.in", "EMPLOYEE", "Self", "Only his own records"),
-        ("neha.patil@sfplgroup.in", "EMPLOYEE", "Self (SRCC)", "Only her own records — proves SFPL managers can't see her"),
+        (
+            "neha.patil@sfplgroup.in",
+            "EMPLOYEE",
+            "Self (SRCC)",
+            "Only her own records — proves SFPL managers can't see her",
+        ),
     ]
     for email, role, scope, desc in rows:
         print(f"{email:<32} {role:<13} {scope:<28} {desc}")
     print()
 
 
-if __name__ == "__main__":
+def cli() -> int:
+    parser = argparse.ArgumentParser(description="Seed the SFPL demo tenant (known password!)")
+    parser.add_argument("--yes", action="store_true", help="Don't ask for confirmation")
+    args = parser.parse_args()
+    if settings.environment == "production":
+        print("Refusing to seed demo accounts with a published password in production.")
+        return 2
+    if not args.yes:
+        print(
+            "This (re)creates the demo tenant 'SFPL Group' with accounts whose password is "
+            f"{DEMO_PASSWORD!r}, in the database at {engine.url.render_as_string(hide_password=True)}."
+        )
+        if input("Type 'seed' to continue: ").strip() != "seed":
+            print("Aborted — nothing was changed.")
+            return 1
     asyncio.run(main())
+    return 0
+
+
+if __name__ == "__main__":
+    sys.exit(cli())

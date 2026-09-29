@@ -100,6 +100,10 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     "ACCOUNTANT": frozenset({"people.read", "reports.read", "dashboard.hr", "kyc.read"}),
 }
 
+# Roles that only ever act on the caller's own record, whatever scope their
+# role assignment claims — see resolve_scope and users/router.create_user.
+SELF_SERVICE_ONLY_ROLES = frozenset({"EMPLOYEE"})
+
 # Human-readable blurb for each system role — the single source of truth for
 # both the seed script and tenant registration, which both bootstrap the same
 # five roles for a brand-new tenant.
@@ -303,9 +307,16 @@ async def resolve_scope(session: AsyncSession, tenant_id: UUID, principal: Princ
     resolved = []
     for g in grants:
         kind = g["scope_type"]
-        entities = frozenset()
-        employees = frozenset()
-        departments = frozenset()
+        if g["role_name"] in SELF_SERVICE_ONLY_ROLES:
+            # "Self-service only" is what the role means. Read endpoints filter by
+            # the caller's scope, so an EMPLOYEE assignment stored with a company
+            # scope (an import that assigned every account the same scope did
+            # exactly that) would expose the whole company's records. Whatever is
+            # stored, this role never resolves to more than the caller's own record.
+            kind = "SELF"
+        entities: frozenset[UUID] = frozenset()
+        employees: frozenset[UUID] = frozenset()
+        departments: frozenset[UUID] = frozenset()
         if kind == "LEGAL_ENTITY":
             entities = frozenset(_decode_scope_ids(g["scope_value"]))
         elif kind == "ORG_UNIT":

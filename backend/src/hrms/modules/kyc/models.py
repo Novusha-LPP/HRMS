@@ -107,3 +107,21 @@ class EmployeeKycDocument(SQLModel, table=True):
     verified_by: UUID | None = Field(default=None)
     verified_at: datetime | None = Field(default=None)
     version: int = Field(default=0)
+
+
+class KycAccessLog(SQLModel, table=True):
+    """
+    Who opened someone else's KYC dossier or documents, and whether they saw
+    the identity/bank numbers unmasked. Append-only: the application role has
+    INSERT and SELECT on this table, never UPDATE or DELETE (migration 0019).
+    """
+
+    __tablename__ = "kyc_access_log"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    actor_user_account_id: UUID = Field()
+    employment_id: UUID = Field()
+    action: str = Field(max_length=30)  # VIEW_DOSSIER | VIEW_DOCUMENT | DOWNLOAD_DOCUMENT
+    unmasked: bool = Field(default=False)
+    occurred_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

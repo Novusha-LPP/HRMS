@@ -6,8 +6,12 @@ tenant it belongs to — nothing downstream trusts a client-supplied tenant or
 employment id. See core/authn.py for how the token is turned into a Principal.
 """
 
+import asyncio
+import functools
 import hashlib
+import os
 import secrets
+from concurrent.futures import ThreadPoolExecutor
 from datetime import UTC, datetime, timedelta
 from typing import Any
 from uuid import UUID
@@ -24,15 +28,33 @@ TOKEN_TYPE = "hrms_access"
 PLATFORM_TOKEN_TYPE = "hrms_platform"
 _BCRYPT_MAX_BYTES = 72  # bcrypt silently ignores anything past this; reject instead
 
+# bcrypt is deliberately slow (~170 ms) and CPU-bound. Calling it directly in
+# an `async def` freezes the whole event loop — every other request on the
+# worker — for that long, so async code must go through ahash_password /
+# averify_password below. A small dedicated pool also bounds how much CPU a
+# burst of logins can take from the rest of the API.
+_PASSWORD_POOL = ThreadPoolExecutor(
+    max_workers=max(2, min(4, os.cpu_count() or 2)), thread_name_prefix="bcrypt"
+)
+
 
 class TokenError(Exception):
     """Raised for any invalid, expired or malformed access token."""
 
 
+class PasswordTooLong(ValueError):
+    """The password is longer than bcrypt's 72-byte limit (counted in UTF-8 bytes)."""
+
+
+def password_fits_bcrypt(plain: str) -> bool:
+    """Schemas count characters; bcrypt counts bytes — a 30-emoji password is 120 bytes."""
+    return len(plain.encode("utf-8")) <= _BCRYPT_MAX_BYTES
+
+
 def hash_password(plain: str) -> str:
     raw = plain.encode("utf-8")
     if len(raw) > _BCRYPT_MAX_BYTES:
-        raise ValueError(f"Password must be at most {_BCRYPT_MAX_BYTES} bytes")
+        raise PasswordTooLong(f"Password must be at most {_BCRYPT_MAX_BYTES} bytes")
     return bcrypt.hashpw(raw, bcrypt.gensalt()).decode("ascii")
 
 
@@ -48,6 +70,34 @@ def verify_password(plain: str, hashed: str | None) -> bool:
         return False
 
 
+async def ahash_password(plain: str) -> str:
+    """hash_password without blocking the event loop."""
+    return await asyncio.get_running_loop().run_in_executor(_PASSWORD_POOL, hash_password, plain)
+
+
+async def averify_password(plain: str, hashed: str | None) -> bool:
+    """verify_password without blocking the event loop."""
+    if not hashed:
+        return False
+    return await asyncio.get_running_loop().run_in_executor(
+        _PASSWORD_POOL, verify_password, plain, hashed
+    )
+
+
+@functools.cache
+def _dummy_hash() -> str:
+    return bcrypt.hashpw(b"not-a-real-password", bcrypt.gensalt()).decode("ascii")
+
+
+async def spend_verification_time(plain: str) -> None:
+    """
+    Burn the same time a real password check takes. Login calls this when the
+    identifier matched no usable account, so "no such account" and "wrong
+    password" cost the same and can't be told apart by timing.
+    """
+    await averify_password(plain, _dummy_hash())
+
+
 def create_access_token(
     *,
     user_account_id: UUID,
@@ -55,6 +105,7 @@ def create_access_token(
     employment_id: UUID | None,
     role_names: list[str],
     expires_minutes: int | None = None,
+    token_epoch: int = 0,
 ) -> str:
     now = datetime.now(UTC)
     expires_minutes = expires_minutes or settings.access_token_expire_minutes
@@ -64,6 +115,7 @@ def create_access_token(
         "tenant_id": str(tenant_id),
         "employment_id": str(employment_id) if employment_id else None,
         "roles": role_names,
+        "ep": token_epoch,
         "iat": int(now.timestamp()),
         "exp": now + timedelta(minutes=expires_minutes),
     }

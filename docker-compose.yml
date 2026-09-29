@@ -5,10 +5,12 @@ services:
     image: postgres:16-alpine
     environment:
       POSTGRES_USER: hrms
-      POSTGRES_PASSWORD: hrms
+      POSTGRES_PASSWORD: ${HRMS_DB_PASSWORD:-hrms}
       POSTGRES_DB: hrms
     ports:
-      - "5432:5432"
+      # Localhost only. This database holds every tenant's employee records and, in development, has
+      # well-known credentials — never publish it on all interfaces.
+      - "127.0.0.1:5432:5432"
     volumes:
       - postgres_data:/var/lib/postgresql/data
     healthcheck:
@@ -24,11 +26,13 @@ services:
     env_file: ./backend/.env
     environment:
       # Superuser — migrations need DDL rights. Never used by request handling.
-      HRMS_DATABASE_URL: postgresql+asyncpg://hrms:hrms@db:5432/hrms
+      HRMS_DATABASE_URL: postgresql+asyncpg://hrms:${HRMS_DB_PASSWORD:-hrms}@db:5432/hrms
       # NOSUPERUSER / NOBYPASSRLS role (created by migration 0005) that the
       # running app actually connects as, so Postgres RLS enforces tenant
       # isolation even if an app-layer WHERE tenant_id = ... is ever missed.
-      HRMS_APP_DATABASE_URL: postgresql+asyncpg://hrms_app:hrms_app_dev_password@db:5432/hrms
+      # Migration 0005 creates the role with HRMS_APP_ROLE_PASSWORD (default: the published dev password).
+      HRMS_APP_ROLE_PASSWORD: ${HRMS_APP_ROLE_PASSWORD:-hrms_app_dev_password}
+      HRMS_APP_DATABASE_URL: postgresql+asyncpg://hrms_app:${HRMS_APP_ROLE_PASSWORD:-hrms_app_dev_password}@db:5432/hrms
     ports:
       - "8015:8015"
     depends_on:

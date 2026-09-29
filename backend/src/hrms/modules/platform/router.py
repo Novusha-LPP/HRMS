@@ -28,9 +28,10 @@ data itself), computed the same RLS-bypassing way as the company count.
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Request, status
 from sqlalchemy import text
 
+from hrms.core import throttle
 from hrms.core.audit import record_audit
 from hrms.core.config import settings
 from hrms.core.database import AnonymousSessionDep
@@ -41,11 +42,12 @@ from hrms.core.platform_authz import (
     require_platform_role,
 )
 from hrms.core.security import (
+    ahash_password,
+    averify_password,
     create_platform_token,
     generate_reset_token,
-    hash_password,
     hash_reset_token,
-    verify_password,
+    spend_verification_time,
 )
 from hrms.core.tenant_provisioning import bootstrap_tenant
 from hrms.modules.org.models import LegalEntity
@@ -73,12 +75,17 @@ from hrms.modules.platform.schemas import (
 router = APIRouter(prefix="/v1/platform", tags=["Platform"])
 
 RESET_TOKEN_TTL_MINUTES = 60
+PLATFORM_LOGIN_REALM = "platform-login"
 
 
 @router.post("/login", response_model=PlatformLoginResponse, summary="Platform admin sign-in")
 async def platform_login(
-    body: PlatformLoginRequest, session: AnonymousSessionDep
+    body: PlatformLoginRequest, request: Request, session: AnonymousSessionDep
 ) -> PlatformLoginResponse:
+    # The console that can see and change every tenant: same brute-force protection and
+    # timing discipline as tenant sign-in (see modules/kernel/auth/router.py).
+    ip = throttle.client_ip(request)
+    await throttle.check_login_allowed(body.email, ip, PLATFORM_LOGIN_REALM)
     row = (
         (
             await session.execute(
@@ -94,10 +101,15 @@ async def platform_login(
     )
 
     invalid = HTTPException(status.HTTP_401_UNAUTHORIZED, "Invalid email or password")
-    if not row or row["status"] != "ACTIVE":
+    if row and row["status"] == "ACTIVE" and row["password_hash"]:
+        password_ok = await averify_password(body.password, row["password_hash"])
+    else:
+        await spend_verification_time(body.password)
+        password_ok = False
+    if not password_ok:
+        await throttle.record_login_failure(body.email, ip, PLATFORM_LOGIN_REALM)
         raise invalid
-    if not verify_password(body.password, row["password_hash"]):
-        raise invalid
+    await throttle.record_login_success(body.email, ip, PLATFORM_LOGIN_REALM)
 
     admin_id: UUID = row["id"]
     await session.execute(
@@ -138,7 +150,7 @@ async def platform_me(admin: CurrentPlatformAdminCtx) -> PlatformMe:
     summary="Request a password reset link",
 )
 async def forgot_password(
-    body: ForgotPasswordRequest, session: AnonymousSessionDep
+    body: ForgotPasswordRequest, request: Request, session: AnonymousSessionDep
 ) -> ForgotPasswordResponse:
     """
     Always returns the same generic message regardless of whether the email
@@ -147,6 +159,10 @@ async def forgot_password(
     HRMS_DEBUG mode the reset link is returned directly in the response —
     production deployment needs a real mailer here instead.
     """
+    # Anonymous, and each real request writes a token row — cap it per address.
+    await throttle.rate_limit(
+        "platform-forgot:ip", throttle.client_ip(request), max_per_hour=10
+    )
     generic = ForgotPasswordResponse(
         message="If that email has an account, a reset link has been generated."
     )
@@ -215,7 +231,7 @@ async def reset_password(
 
     await session.execute(
         text("UPDATE platform_admins SET password_hash = :pw WHERE id = :id"),
-        {"pw": hash_password(body.new_password), "id": str(row["admin_id"])},
+        {"pw": await ahash_password(body.new_password), "id": str(row["admin_id"])},
     )
     await session.execute(
         text("UPDATE platform_password_reset_tokens SET used_at = :now WHERE id = :id"),
@@ -538,7 +554,7 @@ async def create_admin(
             "id": str(new_id),
             "email": body.email,
             "name": body.name,
-            "pw": hash_password(body.password),
+            "pw": await ahash_password(body.password),
             "role": body.role,
         },
     )

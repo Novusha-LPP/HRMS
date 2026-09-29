@@ -23,13 +23,17 @@ const ReportsPage = lazy(() => import("./pages/ReportsPage").then(m => ({ defaul
 const OrganizationPage = lazy(() => import("./pages/OrganizationPage").then(m => ({ default: m.OrganizationPage })));
 const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ default: m.ProfilePage })));
 const DailyAnalysisPage = lazy(() => import("./pages/DailyAnalysisPage").then(m => ({ default: m.DailyAnalysisPage })));
+const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage").then(m => ({ default: m.ChangePasswordPage })));
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
-function RequireAuth({ children }: { children: ReactNode }) {
+function RequireAuth({ children, allowPasswordChange = false }: { children: ReactNode; allowPasswordChange?: boolean }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
+  // An imported / admin-reset account must set its own password before anything else. The API refuses
+  // every other request until it has (403 PASSWORD_CHANGE_REQUIRED); this just takes the user there.
+  if (user.mustChangePassword && !allowPasswordChange) return <Navigate to="/change-password" replace />;
   return <>{children}</>;
 }
 
@@ -51,6 +55,7 @@ export default function App() {
               <Routes>
                 <Route path="/login" element={<LoginPage />} />
                 <Route path="/register" element={<RegisterCompanyPage />} />
+                <Route path="/change-password" element={<RequireAuth allowPasswordChange><ChangePasswordPage /></RequireAuth>} />
                 <Route
                   path="/platform/*"
                   element={

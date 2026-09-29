@@ -3,10 +3,11 @@ import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { differenceInMonths, format } from "date-fns";
+import { formatDateOnly } from "../lib/dates";
 import {
   Download, Plus, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Users,
   Mail, MapPin, Briefcase, Building2, CalendarDays, Hash, UserRound, SearchX, ArrowLeftRight,
-  ShieldCheck, Landmark,
+  ShieldCheck, Landmark, Cake,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
@@ -32,6 +33,8 @@ interface Row {
   designation?: string;
   location?: string;
   hireDate: string;
+  dateOfBirth?: string;
+  gender?: string;
   type?: string;
   state: string;
   manager?: string;
@@ -56,13 +59,15 @@ function tenure(hireDate: string) {
   return y ? `${y}y ${m % 12}m` : `${m}m`;
 }
 
-function toRow(e: Employment, name: string, company?: string): Row {
+function toRow(e: Employment, name: string, company?: string, dob?: string | null, gender?: string | null): Row {
   return {
     id: e.id,
     company,
     employeeNumber: e.employee_number,
     name,
     hireDate: e.hire_date,
+    dateOfBirth: dob ?? e.date_of_birth ?? undefined,
+    gender: gender ?? e.gender ?? undefined,
     state: e.employment_state,
     stage: e.service_stage ?? undefined,
     department: e.department ?? undefined,
@@ -103,17 +108,27 @@ export function EmployeePage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const [status, setStatus] = useState<StatusTab>("ALL");
-  const [company, setCompany] = useState("");
+  // Deep links (?company=… from the dashboard, ?new=1 from a quick action) seed the initial state once.
+  const [company, setCompany] = useState(() => params.get("company") ?? "");
   const [dept, setDept] = useState("");
   const [type, setType] = useState("");
   const [sort, setSort] = useState<{ key: SortKey; dir: "asc" | "desc" }>({ key: "name", dir: "asc" });
   const [perPage, setPerPage] = useState(10);
   const [selected, setSelected] = useState<Set<string>>(new Set());
-  const [detail, setDetail] = useState<Row | null>(null);
-  const [adding, setAdding] = useState(false);
-  const [transferring, setTransferring] = useState<Row | null>(null);
-
+  // The open detail panel is either a row the user clicked, or the one a deep link (?id=…) points at.
+  const [picked, setPicked] = useState<Row | null>(null);
+  const linkedId = params.get("id") ?? "";
   const canPlace = !!user && (user.permissions.includes("people.write") || user.permissions.includes("*"));
+  const [adding, setAdding] = useState(() => params.get("new") === "1" && canPlace);
+  const closeAdding = () => {
+    setAdding(false);
+    if (params.get("new")) {
+      const next = new URLSearchParams(params);
+      next.delete("new");
+      setParams(next, { replace: true });
+    }
+  };
+  const [transferring, setTransferring] = useState<Row | null>(null);
 
   const search = params.get("q") ?? "";
   const setSearch = (v: string) => {
@@ -136,8 +151,16 @@ export function EmployeePage() {
     const companyById = new Map((user?.legalEntities ?? []).map((l) => [l.id, l.name]));
     return (emps.data ?? []).map((e) => {
       const p = byId.get(e.person_id);
-      const name = p ? `${p.preferred_name || p.legal_first_name} ${p.legal_last_name}` : e.employee_number;
-      return toRow(e, name, companyById.get(e.legal_entity_id) ?? e.legal_entity_name ?? undefined);
+      const name = p
+        ? `${p.preferred_name || p.legal_first_name} ${p.legal_last_name}`
+        : (e.full_name || e.employee_number);
+      return toRow(
+        e,
+        name,
+        companyById.get(e.legal_entity_id) ?? e.legal_entity_name ?? undefined,
+        p?.date_of_birth ?? e.date_of_birth,
+        p?.gender ?? e.gender,
+      );
     });
   }, [emps.data, persons.data, user?.legalEntities]);
 
@@ -146,6 +169,23 @@ export function EmployeePage() {
     for (const r of rows) c[bucket(r.state)]++;
     return c;
   }, [rows]);
+
+  // Derived during render — no effect, so a background refresh of the list can't re-open anything.
+  // (An effect keyed on `rows` used to re-open the "Add employee" dialog every time the list
+  // refreshed — right after adding an employee — and re-open the detail panel after it was closed.)
+  const linked = useMemo(
+    () => (linkedId ? rows.find((r) => r.id === linkedId || r.employeeNumber === linkedId) ?? null : null),
+    [linkedId, rows],
+  );
+  const detail = picked ?? linked;
+  const setDetail = (row: Row | null) => {
+    setPicked(row);
+    if (!row && linkedId) { // closing a deep-linked panel also drops the link, or it would reopen
+      const next = new URLSearchParams(params);
+      next.delete("id");
+      setParams(next, { replace: true });
+    }
+  };
 
   const companies = useMemo(() => [...new Set(rows.map((r) => r.company).filter(Boolean))].sort() as string[], [rows]);
   const departments = useMemo(() => [...new Set(rows.map((r) => r.department).filter(Boolean))].sort() as string[], [rows]);
@@ -397,7 +437,7 @@ export function EmployeePage() {
         onClose={() => setDetail(null)}
         onTransfer={() => { if (detail) { setTransferring(detail); setDetail(null); } }}
       />
-      <AddEmployeeSheet open={adding} onClose={() => setAdding(false)} />
+      <AddEmployeeSheet open={adding} onClose={closeAdding} />
       <TransferSheet row={transferring} onClose={() => setTransferring(null)} />
     </>
   );
@@ -419,6 +459,8 @@ function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
         { icon: UserRound, label: "Reports to", value: row.manager },
         { icon: MapPin, label: "Location", value: row.location },
         { icon: CalendarDays, label: "Joined", value: `${format(new Date(row.hireDate), "d MMM yyyy")} · ${tenure(row.hireDate)}` },
+        { icon: Cake, label: "Date of birth", value: row.dateOfBirth ? formatDateOnly(row.dateOfBirth) : "—" },
+        ...(row.gender ? [{ icon: UserRound, label: "Gender", value: row.gender }] : []),
         // Only shown when known — the employee list doesn't carry login emails.
         ...(row.email ? [{ icon: Mail, label: "Email", value: row.email }] : []),
       ]
@@ -568,11 +610,12 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
   const qc = useQueryClient();
   const toast = useToast();
   const empty = {
-    first: "", last: "", number: "", hireDate: format(new Date(), "yyyy-MM-dd"), entity: "",
+    first: "", last: "", number: "", hireDate: format(new Date(), "yyyy-MM-dd"),
+    dob: "", gender: "", entity: "",
     orgUnitId: "", jobId: "", locationId: "", managerEmploymentId: "",
   };
   const [form, setForm] = useState(empty);
-  const set = (k: "first" | "last" | "number" | "hireDate" | "entity") => (e: { target: { value: string } }) =>
+  const set = (k: "first" | "last" | "number" | "hireDate" | "dob" | "gender" | "entity") => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
   const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities(), enabled: open });
@@ -583,7 +626,12 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
 
   const hire = useMutation({
     mutationFn: async () => {
-      const person = await peopleApi.createPerson({ legal_first_name: form.first.trim(), legal_last_name: form.last.trim() });
+      const person = await peopleApi.createPerson({
+        legal_first_name: form.first.trim(),
+        legal_last_name: form.last.trim(),
+        date_of_birth: form.dob || null,
+        gender: form.gender || null,
+      });
       const employment = await peopleApi.createEmployment({
         person_id: person.id,
         legal_entity_id: entityId,
@@ -650,6 +698,21 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
           <div>
             <label className="label" htmlFor="ae-last">Last name</label>
             <input id="ae-last" className="input" value={form.last} onChange={set("last")} autoComplete="off" />
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="ae-dob">Date of birth <span className="font-normal text-fg-subtle">(optional)</span></label>
+            <input id="ae-dob" type="date" className="input" value={form.dob} onChange={set("dob")} />
+          </div>
+          <div>
+            <label className="label" htmlFor="ae-gender">Gender <span className="font-normal text-fg-subtle">(optional)</span></label>
+            <select id="ae-gender" className="input" value={form.gender} onChange={set("gender")}>
+              <option value="">Choose…</option>
+              <option value="MALE">Male</option>
+              <option value="FEMALE">Female</option>
+              <option value="OTHER">Other</option>
+            </select>
           </div>
         </div>
         <div className="grid grid-cols-2 gap-3">

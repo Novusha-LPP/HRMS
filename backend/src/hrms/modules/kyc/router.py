@@ -1,4 +1,14 @@
-"""Employee KYC router: Handles self-service and HR-managed KYC workflows."""
+"""
+Employee KYC router: Handles self-service and HR-managed KYC workflows.
+
+PAN, Aadhaar, bank and other identity numbers are sensitive enough that people
+who only need to know *whether* someone's KYC is complete (a manager, an
+accountant — both hold kyc.read) never receive them: every response built for
+anyone without kyc.write / kyc.verify carries them masked to the last four
+characters. Raw document scans (which show the same numbers) need the same
+permission, and every time someone other than the employee opens a dossier or a
+document it is recorded in the append-only kyc_access_log.
+"""
 
 import re
 from datetime import UTC, datetime
@@ -21,9 +31,11 @@ from hrms.modules.kyc.models import (
     DocumentStatus,
     EmployeeKycDocument,
     EmployeeKycRecord,
+    KycAccessLog,
     KycStatus,
 )
 from hrms.modules.kyc.schemas import (
+    KycAccessLogEntry,
     KycDocumentResponse,
     KycEmployeeListItem,
     KycRecordResponse,
@@ -99,6 +111,107 @@ def _to_doc_response(doc: EmployeeKycDocument) -> KycDocumentResponse:
         verified_at=doc.verified_at,
         download_url=f"/v1/kyc/documents/{doc_typed_id}/download",
         preview_url=f"/v1/kyc/documents/{doc_typed_id}/preview",
+    )
+
+
+# Numbers that identify a person to a government or a bank.
+_SENSITIVE_NUMBER_FIELDS = (
+    "pan_number",
+    "aadhaar_number",
+    "uan_number",
+    "pf_number",
+    "esi_number",
+    "passport_number",
+    "driving_license",
+    "voter_id",
+    "account_number",
+)
+_RECORD_FIELDS = (
+    *_SENSITIVE_NUMBER_FIELDS,
+    "passport_expiry",
+    "bank_name",
+    "account_holder_name",
+    "ifsc_code",
+    "branch_name",
+    "father_or_spouse_name",
+    "marital_status",
+    "blood_group",
+    "emergency_contact_name",
+    "emergency_contact_relation",
+    "emergency_contact_phone",
+    "current_address",
+    "permanent_address",
+    "status",
+    "submitted_at",
+    "verified_at",
+    "rejection_reason",
+    "updated_at",
+)
+
+
+def mask_identifier(value: str | None, keep: int = 4) -> str | None:
+    """'ABCDE1234F' -> '••••••234F'. Anything too short to hide is hidden entirely."""
+    if not value:
+        return value
+    value = value.strip()
+    if len(value) <= keep:
+        return "•" * len(value)
+    return "•" * (len(value) - keep) + value[-keep:]
+
+
+def _kyc_full_access_permission(scope) -> str | None:
+    """The permission that lets the caller see unmasked numbers and raw documents."""
+    for permission in ("kyc.verify", "kyc.write"):
+        if scope.has(permission):
+            return permission
+    return None
+
+
+async def _log_access(
+    session, tenant_id: UUID, user, employment_id: UUID, action: str, unmasked: bool
+) -> None:
+    if user.employment_id == employment_id:
+        return  # your own record is not an access event
+    session.add(
+        KycAccessLog(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            actor_user_account_id=user.user_account_id,
+            employment_id=employment_id,
+            action=action,
+            unmasked=unmasked,
+        )
+    )
+
+
+async def _build_dossier(
+    session, tenant_id: UUID, employment_id: UUID, *, mask: bool
+) -> KycRecordResponse:
+    rec = await _get_or_create_record(session, tenant_id, employment_id)
+    meta = await _get_employee_meta(session, tenant_id, employment_id)
+
+    docs_res = await session.execute(
+        select(EmployeeKycDocument)
+        .where(EmployeeKycDocument.tenant_id == tenant_id)
+        .where(EmployeeKycDocument.employment_id == employment_id)
+        .order_by(EmployeeKycDocument.uploaded_at.desc())  # type: ignore
+    )
+    docs = list(docs_res.scalars())
+
+    fields = {name: getattr(rec, name) for name in _RECORD_FIELDS}
+    if mask:
+        for name in _SENSITIVE_NUMBER_FIELDS:
+            fields[name] = mask_identifier(fields[name])
+    return KycRecordResponse(
+        id=to_typed_id("kyc_record", rec.id),
+        employment_id=to_typed_id("employment", rec.employment_id),
+        employee_name=meta["employee_name"],
+        employee_number=meta["employee_number"],
+        department=meta["department"],
+        designation=meta["designation"],
+        documents=[_to_doc_response(d) for d in docs],
+        completion_percentage=_calc_completion(rec, docs),
+        **fields,
     )
 
 
@@ -186,56 +299,7 @@ async def get_my_kyc(
             detail="Current account does not have an associated employment record",
         )
 
-    rec = await _get_or_create_record(session, tenant_id, user.employment_id)
-    meta = await _get_employee_meta(session, tenant_id, user.employment_id)
-
-    docs_res = await session.execute(
-        select(EmployeeKycDocument)
-        .where(EmployeeKycDocument.tenant_id == tenant_id)
-        .where(EmployeeKycDocument.employment_id == user.employment_id)
-        .order_by(EmployeeKycDocument.uploaded_at.desc())  # type: ignore
-    )
-    docs = list(docs_res.scalars())
-    doc_responses = [_to_doc_response(d) for d in docs]
-    completion = _calc_completion(rec, docs)
-
-    return KycRecordResponse(
-        id=to_typed_id("kyc_record", rec.id),
-        employment_id=to_typed_id("employment", rec.employment_id),
-        employee_name=meta["employee_name"],
-        employee_number=meta["employee_number"],
-        department=meta["department"],
-        designation=meta["designation"],
-        pan_number=rec.pan_number,
-        aadhaar_number=rec.aadhaar_number,
-        uan_number=rec.uan_number,
-        pf_number=rec.pf_number,
-        esi_number=rec.esi_number,
-        passport_number=rec.passport_number,
-        passport_expiry=rec.passport_expiry,
-        driving_license=rec.driving_license,
-        voter_id=rec.voter_id,
-        bank_name=rec.bank_name,
-        account_holder_name=rec.account_holder_name,
-        account_number=rec.account_number,
-        ifsc_code=rec.ifsc_code,
-        branch_name=rec.branch_name,
-        father_or_spouse_name=rec.father_or_spouse_name,
-        marital_status=rec.marital_status,
-        blood_group=rec.blood_group,
-        emergency_contact_name=rec.emergency_contact_name,
-        emergency_contact_relation=rec.emergency_contact_relation,
-        emergency_contact_phone=rec.emergency_contact_phone,
-        current_address=rec.current_address,
-        permanent_address=rec.permanent_address,
-        status=rec.status,
-        submitted_at=rec.submitted_at,
-        verified_at=rec.verified_at,
-        rejection_reason=rec.rejection_reason,
-        updated_at=rec.updated_at,
-        documents=doc_responses,
-        completion_percentage=completion,
-    )
+    return await _build_dossier(session, tenant_id, user.employment_id, mask=False)
 
 
 @router.patch("/me", response_model=KycRecordResponse, summary="Update own KYC details")
@@ -500,64 +564,47 @@ async def list_employees_kyc(
 )
 async def get_employee_kyc(
     employment_id: str,
+    user: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
 ) -> KycRecordResponse:
     emp_uuid = to_uuid(employment_id)
-    scope = scope.for_permission("kyc.read")
+    full_access = _kyc_full_access_permission(scope) is not None
+    await authorize_employment(session, tenant_id, scope.for_permission("kyc.read"), emp_uuid)
+    await _log_access(session, tenant_id, user, emp_uuid, "VIEW_DOSSIER", unmasked=full_access)
+    return await _build_dossier(session, tenant_id, emp_uuid, mask=not full_access)
+
+
+@router.get(
+    "/employees/{employment_id}/access-log",
+    response_model=list[KycAccessLogEntry],
+    summary="Who has opened this employee's KYC dossier or documents",
+)
+async def get_employee_kyc_access_log(
+    employment_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+    limit: int = Query(100, le=500),
+) -> list[KycAccessLogEntry]:
+    emp_uuid = to_uuid(employment_id)
+    scope = scope.for_permission("kyc.verify")
     await authorize_employment(session, tenant_id, scope, emp_uuid)
-
-    rec = await _get_or_create_record(session, tenant_id, emp_uuid)
-    meta = await _get_employee_meta(session, tenant_id, emp_uuid)
-
-    docs_res = await session.execute(
-        select(EmployeeKycDocument)
-        .where(EmployeeKycDocument.tenant_id == tenant_id)
-        .where(EmployeeKycDocument.employment_id == emp_uuid)
-        .order_by(EmployeeKycDocument.uploaded_at.desc())  # type: ignore
+    rows = await session.execute(
+        text("""
+            SELECT COALESCE(ua.email, ua.employee_code) AS actor, l.action, l.unmasked,
+                   l.occurred_at
+            FROM kyc_access_log l
+            LEFT JOIN user_accounts ua
+              ON ua.tenant_id = l.tenant_id AND ua.id = l.actor_user_account_id
+            WHERE l.tenant_id = CAST(:tid AS uuid) AND l.employment_id = CAST(:eid AS uuid)
+            ORDER BY l.occurred_at DESC
+            LIMIT :limit
+        """),
+        {"tid": str(tenant_id), "eid": str(emp_uuid), "limit": limit},
     )
-    docs = list(docs_res.scalars())
-    doc_responses = [_to_doc_response(d) for d in docs]
-    completion = _calc_completion(rec, docs)
-
-    return KycRecordResponse(
-        id=to_typed_id("kyc_record", rec.id),
-        employment_id=to_typed_id("employment", rec.employment_id),
-        employee_name=meta["employee_name"],
-        employee_number=meta["employee_number"],
-        department=meta["department"],
-        designation=meta["designation"],
-        pan_number=rec.pan_number,
-        aadhaar_number=rec.aadhaar_number,
-        uan_number=rec.uan_number,
-        pf_number=rec.pf_number,
-        esi_number=rec.esi_number,
-        passport_number=rec.passport_number,
-        passport_expiry=rec.passport_expiry,
-        driving_license=rec.driving_license,
-        voter_id=rec.voter_id,
-        bank_name=rec.bank_name,
-        account_holder_name=rec.account_holder_name,
-        account_number=rec.account_number,
-        ifsc_code=rec.ifsc_code,
-        branch_name=rec.branch_name,
-        father_or_spouse_name=rec.father_or_spouse_name,
-        marital_status=rec.marital_status,
-        blood_group=rec.blood_group,
-        emergency_contact_name=rec.emergency_contact_name,
-        emergency_contact_relation=rec.emergency_contact_relation,
-        emergency_contact_phone=rec.emergency_contact_phone,
-        current_address=rec.current_address,
-        permanent_address=rec.permanent_address,
-        status=rec.status,
-        submitted_at=rec.submitted_at,
-        verified_at=rec.verified_at,
-        rejection_reason=rec.rejection_reason,
-        updated_at=rec.updated_at,
-        documents=doc_responses,
-        completion_percentage=completion,
-    )
+    return [KycAccessLogEntry(**r) for r in rows.mappings()]
 
 
 @router.patch(
@@ -592,7 +639,7 @@ async def update_employee_kyc(
     session.add(rec)
     await session.flush()
 
-    return await get_employee_kyc(employment_id, tenant_id, session, scope)
+    return await get_employee_kyc(employment_id, user, tenant_id, session, scope)
 
 
 @router.post(
@@ -721,7 +768,7 @@ async def verify_overall_kyc(
     session.add(rec)
     await session.flush()
 
-    return await get_employee_kyc(employment_id, tenant_id, session, scope)
+    return await get_employee_kyc(employment_id, user, tenant_id, session, scope)
 
 
 @router.delete(
@@ -819,8 +866,24 @@ async def _serve_doc_file(
 
     is_self = user.employment_id == doc.employment_id
     if not is_self:
-        scope = scope.for_permission("kyc.read")
-        await authorize_employment(session, tenant_id, scope, doc.employment_id)
+        # A scan of an Aadhaar or PAN card shows exactly the numbers masked in the
+        # dossier, so it takes the same permission as seeing them unmasked.
+        permission = _kyc_full_access_permission(scope)
+        if permission is None:
+            raise HTTPException(
+                status.HTTP_403_FORBIDDEN, "Missing permission: kyc.verify or kyc.write"
+            )
+        await authorize_employment(
+            session, tenant_id, scope.for_permission(permission), doc.employment_id
+        )
+        await _log_access(
+            session,
+            tenant_id,
+            user,
+            doc.employment_id,
+            "VIEW_DOCUMENT" if inline else "DOWNLOAD_DOCUMENT",
+            unmasked=True,
+        )
 
     file_path = Path(doc.storage_path)
     if not file_path.exists():

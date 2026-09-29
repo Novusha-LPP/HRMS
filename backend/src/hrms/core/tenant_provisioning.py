@@ -15,7 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hrms.core.authz import ROLE_DESCRIPTIONS
-from hrms.core.security import hash_password
+from hrms.core.security import ahash_password
 from hrms.modules.kernel.models import Role, RoleAssignment, Tenant, UserAccount
 from hrms.modules.org.models import LegalEntity
 
@@ -100,7 +100,7 @@ async def bootstrap_tenant(
             tenant_id=tenant_id,
             id=account_id,
             email=admin_email,
-            password_hash=hash_password(admin_password),
+            password_hash=await ahash_password(admin_password),
             status="ACTIVE",
         )
     )

@@ -21,6 +21,10 @@ class Principal:
     user_account_id: UUID
     employment_id: UUID | None
     role_names: frozenset[str]
+    # The account's token epoch when this token was issued (claim "ep"; absent
+    # on tokens from before it existed = 0). A password change or reset bumps
+    # the account's epoch, ending every session — see core/database.get_session.
+    token_epoch: int = 0
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -51,14 +55,19 @@ async def get_current_principal(request: Request) -> Principal:
     except (KeyError, ValueError, TypeError) as exc:
         raise _unauthorized("Malformed token") from exc
 
-    employment_raw = claims.get("employment_id")
-    employment_id = UUID(employment_raw) if employment_raw else None
+    try:
+        employment_raw = claims.get("employment_id")
+        employment_id = UUID(employment_raw) if employment_raw else None
+        token_epoch = int(claims.get("ep") or 0)
+    except (ValueError, TypeError) as exc:
+        raise _unauthorized("Malformed token") from exc
 
     principal = Principal(
         tenant_id=tenant_id,
         user_account_id=user_account_id,
         employment_id=employment_id,
         role_names=frozenset(claims.get("roles") or []),
+        token_epoch=token_epoch,
     )
     # Kept for any code that still reads request.state directly (e.g. logging).
     request.state.principal = principal

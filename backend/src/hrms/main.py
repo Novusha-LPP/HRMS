@@ -1,11 +1,13 @@
 """
 HRMS Platform — FastAPI application entry point.
 
-Multi-tenant: every request must carry a tenant identity (JWT or X-Tenant-ID
-header in development).  The tenant ID is propagated into PostgreSQL via
-set_config('app.tenant_id', ...) so RLS policies can enforce row-level isolation.
+Multi-tenant: every request carries its tenant identity in a signed JWT (there
+is no client-supplied tenant header). The tenant ID is propagated into
+PostgreSQL via set_config('app.tenant_id', ...) so RLS policies can enforce
+row-level isolation.
 """
 
+import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
@@ -17,6 +19,8 @@ from sqlalchemy.exc import IntegrityError
 from hrms import model_registry  # noqa: F401
 from hrms.core.config import settings
 from hrms.core.database import engine
+from hrms.core.errors import CodedHTTPException
+from hrms.core.security import PasswordTooLong
 from hrms.modules.corrections.router import router as corrections_router
 from hrms.modules.dashboard.router import router as dashboard_router
 from hrms.modules.kernel.auth.router import router as auth_router
@@ -91,8 +95,34 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "version": settings.app_version}
 
 
+logger = logging.getLogger(__name__)
+
+
+@app.exception_handler(CodedHTTPException)
+async def coded_http_exception(request, exc: CodedHTTPException):
+    return JSONResponse(
+        status_code=exc.status_code,
+        content={"detail": exc.detail, "code": exc.code},
+        headers=exc.headers,
+    )
+
+
+@app.exception_handler(PasswordTooLong)
+async def password_too_long(request, exc):
+    return JSONResponse(status_code=422, content={"detail": str(exc)})
+
+
 @app.exception_handler(IntegrityError)
 async def integrity_error(request, exc):
+    # The client only learns "conflict"; the constraint name goes to the log so
+    # a 409 can actually be diagnosed (and a NOT NULL/CHECK bug isn't mistaken
+    # for a duplicate).
+    logger.warning(
+        "Integrity violation on %s %s: %s",
+        request.method,
+        request.url.path,
+        getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None) or exc.orig,
+    )
     return JSONResponse(
         status_code=409,
         content={

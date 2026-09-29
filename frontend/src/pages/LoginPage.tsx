@@ -3,6 +3,7 @@ import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
 import { ArrowRight, Clock, ShieldCheck, Workflow, BarChart3, Loader2 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
+import { SignInError } from "../lib/signInError";
 
 const FEATURES = [
   { icon: Clock, title: "Attendance that runs itself", desc: "Policy-driven shifts, grace periods and overtime." },
@@ -13,20 +14,24 @@ const FEATURES = [
 export function LoginPage() {
   const { login } = useAuth();
   const navigate = useNavigate();
-  const [email, setEmail] = useState("");
+  const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  // Only shown once the API says the same code/phone is used by more than one company.
+  const [company, setCompany] = useState("");
+  const [needCompany, setNeedCompany] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!email || !password) return;
+    if (!identifier || !password) return;
     setError(null);
     setBusy(true);
     try {
-      await login(email, password);
+      await login(identifier, password, needCompany ? company : undefined);
       navigate("/dashboard");
     } catch (err) {
+      if (err instanceof SignInError && err.code === "COMPANY_REQUIRED") setNeedCompany(true);
       setError(err instanceof Error ? err.message : "Sign in failed");
     } finally {
       setBusy(false);
@@ -89,7 +94,7 @@ export function LoginPage() {
           </div>
 
           <h1 className="text-2xl font-semibold tracking-tight text-fg">Sign in</h1>
-          <p className="mt-1.5 text-[13px] text-fg-muted">Use the email and password for your company account.</p>
+          <p className="mt-1.5 text-[13px] text-fg-muted">Sign in with your username, phone number, or email.</p>
 
           {error && (
             <p className="mt-4 rounded-lg border border-danger/25 bg-danger/[0.06] px-3 py-2 text-[13px] text-danger">
@@ -99,10 +104,10 @@ export function LoginPage() {
 
           <form onSubmit={handleSubmit} className="mt-6 space-y-3.5">
             <div>
-              <label className="label" htmlFor="li-email">Email</label>
+              <label className="label" htmlFor="li-identifier">Username, Phone, or Email</label>
               <input
-                id="li-email" type="email" className="input" value={email}
-                onChange={(e) => setEmail(e.target.value)} placeholder="you@company.com" autoComplete="username" autoFocus
+                id="li-identifier" type="text" className="input" value={identifier}
+                onChange={(e) => setIdentifier(e.target.value)} placeholder="Username, mobile number, or email" autoComplete="username" autoFocus
               />
             </div>
             <div>
@@ -112,7 +117,17 @@ export function LoginPage() {
                 onChange={(e) => setPassword(e.target.value)} placeholder="••••••••" autoComplete="current-password"
               />
             </div>
-            <button type="submit" className="btn-primary h-10 w-full" disabled={!email || !password || busy}>
+            {needCompany && (
+              <div>
+                <label className="label" htmlFor="li-company">Company code</label>
+                <input
+                  id="li-company" type="text" className="input" value={company} autoFocus
+                  onChange={(e) => setCompany(e.target.value)} placeholder="e.g. suraj-group" autoComplete="organization"
+                />
+                <p className="mt-1 text-xs text-fg-subtle">Your HR team can tell you your company's code.</p>
+              </div>
+            )}
+            <button type="submit" className="btn-primary h-10 w-full" disabled={!identifier || !password || (needCompany && !company.trim()) || busy}>
               {busy ? <Loader2 size={15} className="animate-spin" /> : <>Sign in <ArrowRight size={15} /></>}
             </button>
           </form>

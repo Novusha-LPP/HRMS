@@ -222,3 +222,34 @@ Existing KYC/daily-analysis integration tests target a running server and seeded
 5. Repair Alembic metadata registration and production configuration/storage checks. Establish isolated database tests and CI before extending payroll or ERP integration.
 
 Refactor business operations into small domain services as these behaviors are repaired. A rewrite or microservice split is unnecessary for the identified problems. Performance work should then address unbounded lists and N+1 query patterns, particularly policy resolution inside daily-analysis employee loops, onboarding item loads per case, and accrual queries per employee/type. Route-level frontend loading can reduce the initial bundle independently.
+
+## Follow-up review and resolution (later on 28 September 2026)
+
+A second pass over the tree *after* the fixes for the findings above (workflows, migrations, locking, tests) found a different
+set of problems, mostly in the ERP import, sign-in, offboarding and reporting. They are listed here with what was done; details and
+tests are in the files named. Findings 11, 16–18 above overlap with rows B, G and H below (personnel-action scheduling, migration
+metadata and missing foreign keys, fail-closed deployment defaults); the other first-pass findings were not re-audited here.
+
+| # | Finding | Resolution |
+|---|---|---|
+| A | **Offboarding did not revoke access** — a separated employee kept a valid token and could sign in | Every request re-checks the account, its token epoch and the employment state (`core/database.py:get_session`); a separated employee gets 401/403; admins can disable / enable / reset a login (`PATCH /v1/users/{id}`, `POST …/reset-password`). `tests/test_account_security.py` |
+| B | **One unappliable scheduled personnel action broke every request of a tenant** (applied lazily in `get_session`) | Per-action savepoint, `FAILED` status with a reason, cancel endpoint, conflicting schedules refused on entry. `tests/test_personnel_scheduling.py` |
+| C | **The import script over-granted**: every imported account got a company-wide scope; KYC numbers unmasked; not safe to re-run | `scripts/migrate_tenants.py` rewritten (least privilege, exact role tables, idempotent, per-record savepoints, dry-run, confirmation, partial-import guard); `scripts/fix_imported_scopes.py` repairs earlier imports; the `EMPLOYEE` role is clamped to `SELF` at runtime; KYC masked + access-logged (`kyc_access_log`). `tests/test_import_scripts.py`, `tests/test_kyc_privacy.py` |
+| D | **Weak sign-in**: default password scheme with no way to change it, no throttling, a timing oracle, bcrypt on the event loop, a sequential-scan `login_lookup()` (about 0.5 s per attempt at 100k accounts), ambiguous employee-code / mobile logins | Change-password endpoint and forced change; DB-backed throttling (`auth_throttle`); generic errors and equalised timing; bcrypt in a worker pool; indexed `login_lookup()` (about 1 ms) and a company-code fallback; sessions end on password change (`token_epoch`). Migration `0019`. `tests/test_account_security.py`, `tests/test_migration_auth.py` |
+| E | **`populate_tenant_operations.py` was destructive** — it deleted every punch and attendance day of the whole tenant for the day, then wrote invented leave and attendance | Refuses production and ERP-imported tenants, requires an explicit tenant, never deletes or overwrites, labels what it writes as demo data |
+| F | **HR dashboard 500 for scoped users; aggregates ignored scope**; `GET /v1/time/overtime/pending` 500 for scoped HR | Rewritten with one scope filter and correct as-of joins; `tests/test_dashboards.py`, `tests/test_route_smoke.py` (every GET route × four kinds of caller) |
+| G | CI red (26 lint errors, a failing test); schema drift of about 150 differences between models and migrations, including eight tables with no `tenant_id` foreign key | Lint clean; `alembic check` reports no drift and now gates CI, with rollback/re-apply of the last migrations; the missing foreign keys are added in `0019`; mypy enforced on `src` |
+| H | Hard-coded / default secrets: published `hrms_app` password accepted in production, platform admin with a default password, database published on all interfaces, stale `.env.example` | Production start-up validation, `HRMS_APP_ROLE_PASSWORD`, no default platform-admin password, DB bound to `127.0.0.1`, non-root Dockerfile, rewritten `.env.example` |
+| I | Smaller: report-defaults created twice under concurrency; "present" defined four different ways (buckets summed to more than the headcount); policy resolved per employee in daily analysis; `uuid7` import always fell back to `uuid4`; date-only strings shifted a day in the browser; attendance view toggle and employee dialog state bugs; overtime list alias bug | Advisory lock; one `presence.py` definition; `PolicyResolver` (batched); import fixed and docs corrected; `frontend/src/lib/dates.ts`; component fixes; oxlint `no-unused-expressions` enforced |
+
+Verification at the end of this pass: backend tests 20 → 91 passing on a private throw-away PostgreSQL, never the development database (the 4 skipped are the legacy tests that need a running server and seeded demo accounts; `--run-live-demo` opts in),
+`ruff` 26 → 0 errors, `mypy src` and `alembic check` clean; frontend lint (0 errors, 12 warnings — was 14), 6 unit tests and the production build pass. The ERP import was also
+rehearsed with the real export files on an isolated database (see the [ERP plan](erp-integration-plan.md#implementation-status)).
+
+**Not done — these need a decision, not a code change:**
+
+1. A maker-checker approval for personnel actions (a hire, transfer or separation is currently effective when entered by someone
+   with `people.write`).
+2. Encrypting KYC identity numbers at rest (masking and an access log are done) — ERP plan, open decision 7.
+3. Confirming the 14 accounts the import turns into `SUPER_ADMIN` (10 Suraj `Admin`, 4 Sharanga `super_admin`).
+4. The remaining `uuid4()` call sites (about 56) could use time-ordered UUIDv7 (optional; only affects index locality).

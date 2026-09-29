@@ -44,7 +44,7 @@ The HRMS platform is structured as a **Multi-Tenant Modular Monolith** with a cl
 | **Schema Migrations** | [Alembic](https://alembic.sqlalchemy.org/) | `>= 1.13.0` | Database schema migrations with revision tracking and programmatic DDL scripts. |
 | **Data Validation** | [Pydantic v2](https://docs.pydantic.dev/) & `pydantic-settings` | `>= 2.9.0` | High-speed Rust-backed data validation and environment variable parsing. |
 | **Authentication & Crypto** | [python-jose](https://github.com/mpdavis/python-jose) & [passlib](https://passlib.readthedocs.io/) | `python-jose >= 3.3.0`, `passlib[bcrypt] >= 1.7.4` | JWT token encoding/decoding and secure password hashing (bcrypt). |
-| **Identifiers** | `uuid7` & `python-ulid` | `uuid7 >= 0.1.0`, `python-ulid >= 3.0.0` | Time-sortable, k-ordered, distributed unique ID generation. |
+| **Identifiers** | `uuid` (stdlib) & `uuid7` | `uuid7 >= 0.1.0` (imported as `uuid_extensions`) | Random UUIDv4 for rows today; `core/ids.new_id()` can mint time-sortable UUIDv7 typed public IDs. (`python-ulid` was listed here but never used, and has been removed.) |
 | **Logging** | [structlog](https://www.structlog.org/) | `>= 24.4.0` | Structured JSON and contextual logging. |
 | **HTTP Client** | [httpx](https://www.python-httpx.org/) | `>= 0.27.0` | Asynchronous HTTP client for external integrations and test requests. |
 | **Package Management** | [uv](https://github.com/astral-sh/uv) | Latest | Extremely fast Rust-based Python package manager and environment resolver. |
@@ -80,7 +80,7 @@ The HRMS platform is structured as a **Multi-Tenant Modular Monolith** with a cl
 | **Primary Database** | **PostgreSQL 16** (`postgres:16-alpine`) | Relational database supporting advanced constraints, JSONB attributes, and Row-Level Security. |
 | **Multi-Tenancy Isolation** | **PostgreSQL Row-Level Security (RLS)** | Tenancy is enforced at the database layer via `tenant_id` columns and RLS policies on tables. |
 | **Database Connection Roles** | **Dual-Role Model**: | 1. **Migration / Superuser Role** (`hrms`): Used only by Alembic for schema migrations and DDL operations.<br>2. **Application Role** (`hrms_app`): Connects as `NOSUPERUSER` and `NOBYPASSRLS`. Each request sets `SET LOCAL app.current_tenant_id = '...'` to ensure data isolation. |
-| **Key Generation Strategy** | **UUIDv7 & ULID** | Time-ordered unique IDs for auditability, performance, and clean distributed indexing. |
+| **Key Generation Strategy** | **UUIDv4 (rows), UUIDv7 available** | Composite `(tenant_id, id)` keys. Moving row IDs to time-ordered UUIDv7 is a possible future optimisation for index locality; it is not done today. |
 
 ---
 

@@ -11,11 +11,22 @@ same way migrations are applied — connecting directly as the Postgres
 superuser, never through the restricted hrms_app role.
 
 Usage:
-    uv run python scripts/seed_platform_admin.py [email] [password] [name]
-    (all optional — defaults to a fixed dev account, printed on completion)
+    uv run python scripts/seed_platform_admin.py <email> [name]
+    HRMS_PLATFORM_ADMIN_PASSWORD='...' uv run python scripts/seed_platform_admin.py <email> [name]
+
+The password comes from HRMS_PLATFORM_ADMIN_PASSWORD (kept out of shell history and the process
+list) or, failing that, a random one is generated and printed ONCE. There is no default password.
+
+  * New admin: created ACTIVE.
+  * Existing admin: left exactly as it is, unless you supply a password (then only the password
+    is replaced) — it is never silently reset, and a suspended admin is never reactivated
+    without --reactivate.
 """
 
+import argparse
 import asyncio
+import os
+import secrets
 import sys
 from uuid import uuid4
 
@@ -25,42 +36,78 @@ from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from hrms.core.config import settings
 from hrms.core.security import hash_password
 
-DEFAULT_EMAIL = "platform@hrms.internal"
-DEFAULT_PASSWORD = "Passw0rd!"
-DEFAULT_NAME = "Platform Admin"
 
-engine = create_async_engine(settings.database_url)
-Session = async_sessionmaker(engine, expire_on_commit=False)
+async def main() -> int:
+    parser = argparse.ArgumentParser(description="Create or update a platform admin")
+    parser.add_argument("email")
+    parser.add_argument("name", nargs="?", default="Platform Admin")
+    parser.add_argument(
+        "--reactivate", action="store_true", help="Also reactivate a suspended admin"
+    )
+    args = parser.parse_args()
 
+    password = os.environ.get("HRMS_PLATFORM_ADMIN_PASSWORD")
+    generated = password is None
+    if generated:
+        password = secrets.token_urlsafe(16)
+    if len(password) < 12 and settings.environment == "production":
+        print("Refusing a password shorter than 12 characters in production.")
+        return 2
 
-async def main() -> None:
-    email = sys.argv[1] if len(sys.argv) > 1 else DEFAULT_EMAIL
-    password = sys.argv[2] if len(sys.argv) > 2 else DEFAULT_PASSWORD
-    name = sys.argv[3] if len(sys.argv) > 3 else DEFAULT_NAME
-
+    engine = create_async_engine(settings.database_url)
+    Session = async_sessionmaker(engine, expire_on_commit=False)
     async with Session() as session:
         existing = (
-            await session.execute(text("SELECT id FROM platform_admins WHERE lower(email) = lower(:email)"), {"email": email})
-        ).first()
-        if existing:
             await session.execute(
-                text("UPDATE platform_admins SET password_hash = :pw, name = :name, status = 'ACTIVE' WHERE lower(email) = lower(:email)"),
-                {"pw": hash_password(password), "name": name, "email": email},
+                text("SELECT id, status FROM platform_admins WHERE lower(email) = lower(:email)"),
+                {"email": args.email},
             )
-            print(f"Updated existing platform admin {email}.")
-        else:
+        ).first()
+        if existing is None:
             await session.execute(
                 text("""
                     INSERT INTO platform_admins (id, email, name, password_hash, status)
                     VALUES (:id, :email, :name, :pw, 'ACTIVE')
                 """),
-                {"id": str(uuid4()), "email": email, "name": name, "pw": hash_password(password)},
+                {
+                    "id": str(uuid4()),
+                    "email": args.email,
+                    "name": args.name,
+                    "pw": hash_password(password),
+                },
             )
-            print(f"Created platform admin {email}.")
+            print(f"Created platform admin {args.email}.")
+        else:
+            if generated and not args.reactivate:
+                print(
+                    f"{args.email} already exists — left unchanged. Supply "
+                    "HRMS_PLATFORM_ADMIN_PASSWORD to replace its password, or --reactivate to "
+                    "re-enable a suspended admin."
+                )
+                await engine.dispose()
+                return 0
+            if not generated:
+                await session.execute(
+                    text("UPDATE platform_admins SET password_hash = :pw WHERE id = :id"),
+                    {"pw": hash_password(password), "id": existing[0]},
+                )
+                print(f"Replaced the password of {args.email}.")
+            if args.reactivate and existing[1] != "ACTIVE":
+                await session.execute(
+                    text("UPDATE platform_admins SET status = 'ACTIVE' WHERE id = :id"),
+                    {"id": existing[0]},
+                )
+                print(f"Reactivated {args.email}.")
         await session.commit()
+    await engine.dispose()
 
-    print(f"\nSign in at /platform/login with:\n  email:    {email}\n  password: {password}\n")
+    if generated:
+        print(
+            f"\nSign in at /platform/login with:\n  email:    {args.email}\n"
+            f"  password: {password}\n(shown once — store it now)"
+        )
+    return 0
 
 
 if __name__ == "__main__":
-    asyncio.run(main())
+    sys.exit(asyncio.run(main()))

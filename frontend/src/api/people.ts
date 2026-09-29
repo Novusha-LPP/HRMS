@@ -5,11 +5,16 @@ export interface Employment {
   person_id: string;
   legal_entity_id: string;
   employee_number: string;
+  first_name?: string | null;
+  last_name?: string | null;
+  full_name?: string | null;
   hire_date: string;
   separation_date: string | null;
   employment_state: string;
   service_stage: string | null;
   version: number;
+  date_of_birth: string | null;
+  gender: string | null;
   // Populated from the employee's current (open) assignment — null until a
   // HIRE personnel action has actually placed them (see personnelActionsApi).
   legal_entity_name: string | null;
@@ -102,7 +107,13 @@ export const peopleApi = {
   getEmployee: (id: string) => api.get<Employment>(`/v1/employees/${id}`),
   listPersons: (limit = 200, offset = 0) => api.get<Person[]>(`/v1/persons?limit=${limit}&offset=${offset}`),
   listAllPersons: () => fetchAll((offset) => peopleApi.listPersons(PAGE, offset)),
-  createPerson: (body: { legal_first_name: string; legal_last_name: string; preferred_name?: string }) =>
+  createPerson: (body: {
+    legal_first_name: string;
+    legal_last_name: string;
+    preferred_name?: string;
+    date_of_birth?: string | null;
+    gender?: string | null;
+  }) =>
     api.post<Person>("/v1/persons", body),
   createEmployment: (body: { person_id: string; legal_entity_id: string; employee_number?: string; hire_date: string }) =>
     api.post<Employment>("/v1/employees", body),

@@ -86,6 +86,11 @@ class EmploymentResponse(BaseModel):
     employment_state: EmploymentState
     service_stage: str | None
     version: int
+    date_of_birth: date | None = None
+    gender: str | None = None
+    first_name: str | None = None
+    last_name: str | None = None
+    full_name: str | None = None
     # From the employee's current (open) assignment, if one has been placed
     # yet — null for an employment that's been created but not yet HIREd
     # into a department (see POST /v1/personnel-actions).
@@ -133,6 +138,8 @@ class PersonnelActionResponse(BaseModel):
     status: PersonnelActionStatus
     changes: dict[str, Any] | None
     version: int
+    # Set when a scheduled action could not be applied on its date (status FAILED).
+    failure_reason: str | None = None
 
 
 class PersonnelActionListItem(BaseModel):
@@ -143,3 +150,4 @@ class PersonnelActionListItem(BaseModel):
     effective_date: date
     status: PersonnelActionStatus
     submitted_at: datetime | None
+    failure_reason: str | None = None

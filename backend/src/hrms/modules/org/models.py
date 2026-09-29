@@ -106,6 +106,7 @@ class Grade(SQLModel, table=True):
     status: str = Field(default="ACTIVE", max_length=50)
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     version: int = Field(default=0)
+    archived_at: datetime | None = Field(default=None)
 
 
 class Position(SQLModel, table=True):

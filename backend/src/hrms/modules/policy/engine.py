@@ -6,6 +6,9 @@ resolve_policy(employment_id, work_date, session, tenant_id) → ResolvedPolicy
 Looks up the active EmployeePolicyAssignment for the employee on the given date,
 merges per-employee overrides onto the template, and returns a ResolvedPolicy
 dataclass ready for use by the attendance computation helpers.
+
+PolicyResolver answers the same question for many employees at once (daily
+analysis, reports) with a handful of queries instead of ~8 per employee.
 """
 
 from __future__ import annotations
@@ -17,6 +20,7 @@ from uuid import UUID
 from sqlalchemy import text
 from sqlmodel import select
 
+from hrms.core.config import settings
 from hrms.core.datetime_utils import compute_standard_minutes
 from hrms.modules.policy.models import EmployeePolicyAssignment, PolicyTemplate
 
@@ -46,57 +50,48 @@ class ResolvedPolicy:
     correction_approval_levels: int
 
 
-_DEFAULT_POLICY = ResolvedPolicy(
-    timezone="UTC",
-    expected_start_time=time(9, 0),
-    expected_end_time=time(18, 0),
-    work_days="1111100",
-    saturday_pattern="ALL",
-    break_minutes=60,
-    break_auto_deduct=False,
-    standard_minutes=480,
-    grace_late_minutes=0,
-    grace_early_departure_minutes=0,
-    half_day_threshold_pct=50,
-    ot_enabled=False,
-    ot_qualifying_minutes=30,
-    ot_rate=1.5,
-    ot_daily_cap_minutes=None,
-    punch_rounding_minutes=0,
-    punch_rounding_direction="NONE",
-    correction_requires_approval=True,
-    correction_approval_levels=1,
-)
+def default_policy() -> ResolvedPolicy:
+    """
+    The deployment's last-resort policy, used only when no template is assigned
+    to the employee, their department, their company or their tenant. The
+    values come from settings (HRMS_DEFAULT_TIMEZONE, HRMS_DEFAULT_WORK_START,
+    ...) rather than being baked into the code, so they can differ per
+    deployment; a tenant that needs different rules should define its own
+    default template instead.
+    """
+    start = time.fromisoformat(settings.default_work_start)
+    end = time.fromisoformat(settings.default_work_end)
+    break_minutes = 60
+    return ResolvedPolicy(
+        timezone=settings.default_timezone,
+        expected_start_time=start,
+        expected_end_time=end,
+        work_days="1111100",
+        saturday_pattern="ALL",
+        break_minutes=break_minutes,
+        break_auto_deduct=False,
+        standard_minutes=compute_standard_minutes(start, end, break_minutes),
+        grace_late_minutes=settings.default_grace_late_minutes,
+        grace_early_departure_minutes=settings.default_grace_early_minutes,
+        half_day_threshold_pct=50,
+        ot_enabled=False,
+        ot_qualifying_minutes=30,
+        ot_rate=1.5,
+        ot_daily_cap_minutes=None,
+        punch_rounding_minutes=0,
+        punch_rounding_direction="NONE",
+        correction_requires_approval=True,
+        correction_approval_levels=1,
+    )
 
 
-def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment) -> ResolvedPolicy:
-    """Apply per-employee overrides on top of the template."""
-    ot_enabled = (
-        assignment.ot_enabled_override
-        if assignment.ot_enabled_override is not None
-        else template.ot_enabled
-    )
-    ot_qualifying = (
-        assignment.ot_qualifying_minutes_override
-        if assignment.ot_qualifying_minutes_override is not None
-        else template.ot_qualifying_minutes
-    )
-    grace_late = (
-        assignment.grace_late_minutes_override
-        if assignment.grace_late_minutes_override is not None
-        else template.grace_late_minutes
-    )
-    grace_early = (
-        assignment.grace_early_departure_minutes_override
-        if assignment.grace_early_departure_minutes_override is not None
-        else template.grace_early_departure_minutes
-    )
-    ot_rate = (
-        assignment.ot_rate_override if assignment.ot_rate_override is not None else template.ot_rate
-    )
-    std_mins = compute_standard_minutes(
-        template.expected_start_time, template.expected_end_time, template.break_minutes
-    )
+def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment | None) -> ResolvedPolicy:
+    """Apply per-employee overrides (if any) on top of the template."""
+
+    def pick(override, base):
+        return override if override is not None else base
+
+    a = assignment
     return ResolvedPolicy(
         timezone=template.timezone,
         expected_start_time=template.expected_start_time,
@@ -105,13 +100,19 @@ def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment) -> Re
         saturday_pattern=template.saturday_pattern,
         break_minutes=template.break_minutes,
         break_auto_deduct=template.break_auto_deduct,
-        standard_minutes=std_mins,
-        grace_late_minutes=grace_late,
-        grace_early_departure_minutes=grace_early,
+        standard_minutes=compute_standard_minutes(
+            template.expected_start_time, template.expected_end_time, template.break_minutes
+        ),
+        grace_late_minutes=pick(a and a.grace_late_minutes_override, template.grace_late_minutes),
+        grace_early_departure_minutes=pick(
+            a and a.grace_early_departure_minutes_override, template.grace_early_departure_minutes
+        ),
         half_day_threshold_pct=template.half_day_threshold_pct,
-        ot_enabled=ot_enabled,
-        ot_qualifying_minutes=ot_qualifying,
-        ot_rate=ot_rate,
+        ot_enabled=pick(a and a.ot_enabled_override, template.ot_enabled),
+        ot_qualifying_minutes=pick(
+            a and a.ot_qualifying_minutes_override, template.ot_qualifying_minutes
+        ),
+        ot_rate=pick(a and a.ot_rate_override, template.ot_rate),
         ot_daily_cap_minutes=template.ot_daily_cap_minutes,
         punch_rounding_minutes=template.punch_rounding_minutes,
         punch_rounding_direction=template.punch_rounding_direction,
@@ -120,33 +121,14 @@ def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment) -> Re
     )
 
 
-async def _resolve_department_assignment(
-    session,
-    tenant_id: UUID,
-    employment_id: UUID,
-    work_date: date,
+async def _department_assignment_for_unit(
+    session, tenant_id: UUID, org_unit_id: UUID, work_date: date
 ) -> EmployeePolicyAssignment | None:
     """
-    An employee's department-level policy, if any: find their current
-    org_unit, then walk up its ancestor chain (self first) for the nearest
-    org_unit with an active policy assignment. Mirrors the recursive
-    ancestor walk core.authz._entities_for_org_units already does for
-    role scopes.
+    The nearest active department-level policy assignment for an org unit,
+    walking up its ancestor chain (the unit itself first). Mirrors the
+    recursive ancestor walk core.authz already does for role scopes.
     """
-    org_unit_row = await session.execute(
-        text("""
-            SELECT org_unit_id FROM assignments
-            WHERE tenant_id = CAST(:tid AS uuid) AND employment_id = CAST(:eid AS uuid)
-              AND effective_from <= :work_date
-              AND (effective_to IS NULL OR effective_to > :work_date)
-            ORDER BY effective_from DESC LIMIT 1
-        """),
-        {"tid": str(tenant_id), "eid": str(employment_id), "work_date": work_date},
-    )
-    org_unit_id = org_unit_row.scalar()
-    if org_unit_id is None:
-        return None
-
     match_row = await session.execute(
         text("""
             WITH RECURSIVE chain AS (
@@ -183,6 +165,48 @@ async def _resolve_department_assignment(
     return row.scalars().first()
 
 
+async def _resolve_department_assignment(
+    session,
+    tenant_id: UUID,
+    employment_id: UUID,
+    work_date: date,
+) -> EmployeePolicyAssignment | None:
+    """An employee's department-level policy, if any (via their current org unit)."""
+    org_unit_row = await session.execute(
+        text("""
+            SELECT org_unit_id FROM assignments
+            WHERE tenant_id = CAST(:tid AS uuid) AND employment_id = CAST(:eid AS uuid)
+              AND effective_from <= :work_date
+              AND (effective_to IS NULL OR effective_to > :work_date)
+            ORDER BY effective_from DESC LIMIT 1
+        """),
+        {"tid": str(tenant_id), "eid": str(employment_id), "work_date": work_date},
+    )
+    org_unit_id = org_unit_row.scalar()
+    if org_unit_id is None:
+        return None
+    return await _department_assignment_for_unit(session, tenant_id, org_unit_id, work_date)
+
+
+async def _entity_assignment(
+    session, tenant_id: UUID, legal_entity_id: UUID, work_date: date
+) -> EmployeePolicyAssignment | None:
+    row = await session.execute(
+        select(EmployeePolicyAssignment)
+        .where(EmployeePolicyAssignment.tenant_id == tenant_id)
+        .where(EmployeePolicyAssignment.legal_entity_id == legal_entity_id)
+        .where(EmployeePolicyAssignment.effective_from <= work_date)
+        .where(
+            (EmployeePolicyAssignment.effective_to == None)  # noqa: E711
+            | (EmployeePolicyAssignment.effective_to >= work_date)
+        )
+        .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
+        .order_by(EmployeePolicyAssignment.effective_from.desc())
+        .limit(1)
+    )
+    return row.scalars().first()
+
+
 async def _resolve_legal_entity_assignment(
     session,
     tenant_id: UUID,
@@ -201,26 +225,37 @@ async def _resolve_legal_entity_assignment(
             SELECT legal_entity_id FROM employments
             WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:eid AS uuid)
         """),
-        {"tid": str(tenant_id), "eid": str(employment_id), "work_date": work_date},
+        {"tid": str(tenant_id), "eid": str(employment_id)},
     )
     legal_entity_id = entity_row.scalar()
     if legal_entity_id is None:
         return None
+    return await _entity_assignment(session, tenant_id, legal_entity_id, work_date)
 
-    row = await session.execute(
-        select(EmployeePolicyAssignment)
-        .where(EmployeePolicyAssignment.tenant_id == tenant_id)
-        .where(EmployeePolicyAssignment.legal_entity_id == legal_entity_id)
-        .where(EmployeePolicyAssignment.effective_from <= work_date)
-        .where(
-            (EmployeePolicyAssignment.effective_to == None)  # noqa: E711
-            | (EmployeePolicyAssignment.effective_to >= work_date)
+
+async def _policy_for(
+    session, tenant_id: UUID, assignment: EmployeePolicyAssignment | None
+) -> ResolvedPolicy:
+    """Turn the winning assignment (or the lack of one) into a ResolvedPolicy."""
+    if assignment is None:
+        # The tenant's default template, else the deployment's fallback.
+        tpl_row = await session.execute(
+            select(PolicyTemplate)
+            .where(PolicyTemplate.tenant_id == tenant_id)
+            .where(PolicyTemplate.is_default == True)  # noqa: E712
+            .where(PolicyTemplate.archived_at == None)  # noqa: E711
+            .limit(1)
         )
-        .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
-        .order_by(EmployeePolicyAssignment.effective_from.desc())
-        .limit(1)
+        tpl = tpl_row.scalars().first()
+        return default_policy() if tpl is None else _merge(tpl, None)
+
+    tpl_row = await session.execute(
+        select(PolicyTemplate)
+        .where(PolicyTemplate.tenant_id == tenant_id)
+        .where(PolicyTemplate.id == assignment.policy_template_id)
     )
-    return row.scalars().first()
+    template = tpl_row.scalars().first()
+    return default_policy() if template is None else _merge(template, assignment)
 
 
 async def resolve_policy(
@@ -234,7 +269,7 @@ async def resolve_policy(
     Priority: employee-specific assignment, then their department's
     assignment (walking up the org hierarchy), then their legal entity's
     (company-wide) assignment, then the tenant's default template, then
-    hard-coded system defaults if none of those exist.
+    the deployment's fallback (default_policy) if none of those exist.
     """
     # Find active employee-specific assignment
     asgn_row = await session.execute(
@@ -262,51 +297,57 @@ async def resolve_policy(
             session, tenant_id, employment_id, work_date
         )
 
-    if assignment is None:
-        # Try the tenant's default template
-        tpl_row = await session.execute(
-            select(PolicyTemplate)
-            .where(PolicyTemplate.tenant_id == tenant_id)
-            .where(PolicyTemplate.is_default == True)  # noqa: E712
-            .where(PolicyTemplate.archived_at == None)  # noqa: E711
-            .limit(1)
-        )
-        tpl = tpl_row.scalars().first()
-        if tpl is None:
-            return _DEFAULT_POLICY
-        std_mins = compute_standard_minutes(
-            tpl.expected_start_time, tpl.expected_end_time, tpl.break_minutes
-        )
-        return ResolvedPolicy(
-            timezone=tpl.timezone,
-            expected_start_time=tpl.expected_start_time,
-            expected_end_time=tpl.expected_end_time,
-            work_days=tpl.work_days,
-            saturday_pattern=tpl.saturday_pattern,
-            break_minutes=tpl.break_minutes,
-            break_auto_deduct=tpl.break_auto_deduct,
-            standard_minutes=std_mins,
-            grace_late_minutes=tpl.grace_late_minutes,
-            grace_early_departure_minutes=tpl.grace_early_departure_minutes,
-            half_day_threshold_pct=tpl.half_day_threshold_pct,
-            ot_enabled=tpl.ot_enabled,
-            ot_qualifying_minutes=tpl.ot_qualifying_minutes,
-            ot_rate=tpl.ot_rate,
-            ot_daily_cap_minutes=tpl.ot_daily_cap_minutes,
-            punch_rounding_minutes=tpl.punch_rounding_minutes,
-            punch_rounding_direction=tpl.punch_rounding_direction,
-            correction_requires_approval=tpl.correction_requires_approval,
-            correction_approval_levels=tpl.correction_approval_levels,
-        )
+    return await _policy_for(session, tenant_id, assignment)
 
-    # Load template for this assignment
-    tpl_row = await session.execute(
-        select(PolicyTemplate)
-        .where(PolicyTemplate.tenant_id == tenant_id)
-        .where(PolicyTemplate.id == assignment.policy_template_id)
-    )
-    template = tpl_row.scalars().first()
-    if template is None:
-        return _DEFAULT_POLICY
 
-    return _merge(template, assignment)
+class PolicyResolver:
+    """
+    resolve_policy() for many employees on one date, without the per-employee
+    query storm. Employees with no personal assignment resolve purely from
+    their (department, company), so those answers are computed once per pair
+    and shared; the few employees who do have a personal assignment go through
+    resolve_policy() unchanged. Returns exactly what resolve_policy() would.
+    """
+
+    def __init__(self, session, tenant_id: UUID, work_date: date) -> None:
+        self._session = session
+        self._tenant_id = tenant_id
+        self._work_date = work_date
+        self._personal: set[UUID] | None = None
+        self._shared: dict[tuple[UUID | None, UUID | None], ResolvedPolicy] = {}
+
+    async def _employees_with_personal_assignment(self) -> set[UUID]:
+        if self._personal is None:
+            rows = await self._session.execute(
+                text("""
+                    SELECT DISTINCT employment_id FROM employee_policy_assignments
+                    WHERE tenant_id = CAST(:tid AS uuid) AND employment_id IS NOT NULL
+                      AND effective_from <= CAST(:d AS date)
+                      AND (effective_to IS NULL OR effective_to >= CAST(:d AS date))
+                      AND archived_at IS NULL
+                """),
+                {"tid": str(self._tenant_id), "d": self._work_date},
+            )
+            self._personal = {r[0] for r in rows}
+        return self._personal
+
+    async def resolve(
+        self, employment_id: UUID, *, org_unit_id: UUID | None, legal_entity_id: UUID | None
+    ) -> ResolvedPolicy:
+        if employment_id in await self._employees_with_personal_assignment():
+            return await resolve_policy(
+                employment_id, self._work_date, self._session, self._tenant_id
+            )
+        key = (org_unit_id, legal_entity_id)
+        if key not in self._shared:
+            assignment = None
+            if org_unit_id is not None:
+                assignment = await _department_assignment_for_unit(
+                    self._session, self._tenant_id, org_unit_id, self._work_date
+                )
+            if assignment is None and legal_entity_id is not None:
+                assignment = await _entity_assignment(
+                    self._session, self._tenant_id, legal_entity_id, self._work_date
+                )
+            self._shared[key] = await _policy_for(self._session, self._tenant_id, assignment)
+        return self._shared[key]

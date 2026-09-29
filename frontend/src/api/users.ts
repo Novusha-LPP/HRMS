@@ -19,6 +19,10 @@ export interface UserAccount {
   employee_name: string | null;
   created_at: string;
   last_login_at: string | null;
+  /** The linked employee's state. A SEPARATED employee's login is ACTIVE but cannot sign in. */
+  employment_state: string | null;
+  can_sign_in: boolean;
+  must_change_password: boolean;
 }
 
 export const usersApi = {
@@ -31,5 +35,12 @@ export const usersApi = {
     scope_type: ScopeType;
     legal_entity_ids?: string[];
     employment_id?: string;
+    must_change_password?: boolean;
   }) => api.post<UserAccount>("/v1/users", body),
+  /** INACTIVE locks the person out at once, existing sessions included. */
+  setStatus: (id: string, status: "ACTIVE" | "INACTIVE") =>
+    api.patch<UserAccount>(`/v1/users/${id}`, { status }),
+  /** Sets a temporary password; the person must replace it at their next sign-in. */
+  resetPassword: (id: string, password: string) =>
+    api.post<UserAccount>(`/v1/users/${id}/reset-password`, { password }),
 };

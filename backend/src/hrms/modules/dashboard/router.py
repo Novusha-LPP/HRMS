@@ -16,10 +16,10 @@ overridden AND authorized by their scope, and every aggregate query is
 filtered to the legal entities / employments the caller's scope covers.
 """
 
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 
 from fastapi import APIRouter, Query
-from sqlalchemy import func, text
+from sqlalchemy import text
 from sqlmodel import select
 
 from hrms.core.authn import CurrentUser
@@ -32,8 +32,9 @@ from hrms.core.authz import (
 from hrms.core.database import SessionDep
 from hrms.core.tenancy import TenantDep
 from hrms.modules.onboarding.models import CaseStatus, OnboardingCase, OnboardingItem
-from hrms.modules.people.models import Employment, PersonnelAction, PersonnelActionStatus
-from hrms.modules.time.models import AttendanceDay, AttendanceStatus, Punch, PunchType
+from hrms.modules.people.models import PersonnelAction, PersonnelActionStatus
+from hrms.modules.time.models import AttendanceDay, Punch, PunchType
+from hrms.modules.time.presence import classify, is_late, present_sql
 
 router = APIRouter(prefix="/v1/dashboard", tags=["Dashboard"])
 
@@ -80,11 +81,9 @@ async def employee_dashboard(
         .where(AttendanceDay.work_date <= today)
     )
     month_days = list(month_rows.scalars())
-    present = sum(
-        1 for d in month_days if d.status in (AttendanceStatus.PRESENT, AttendanceStatus.LATE)
-    )
-    absent = sum(1 for d in month_days if d.status == AttendanceStatus.ABSENT)
-    late = sum(1 for d in month_days if d.status == AttendanceStatus.LATE)
+    present = sum(1 for d in month_days if classify(d.status, d.first_punch_in) == "present")
+    absent = sum(1 for d in month_days if classify(d.status, d.first_punch_in) == "absent")
+    late = sum(1 for d in month_days if is_late(d.status, d.late_by_minutes))
 
     ob_row = await session.execute(
         select(OnboardingCase)
@@ -193,7 +192,7 @@ async def manager_dashboard(
             ad = att_map.get(tid_emp)
             if not ad:
                 attendance_summary["absent"] += 1
-            elif ad["status"] in ("PRESENT", "LATE"):
+            elif classify(ad["status"], ad["first_punch_in"]) == "present":
                 attendance_summary["present"] += 1
             elif ad["status"] == "ON_LEAVE":
                 attendance_summary["on_leave"] += 1
@@ -229,91 +228,289 @@ async def manager_dashboard(
 # ─── HR dashboard ─────────────────────────────────────────────────────────────
 
 
+# Today's assignment (one row per employment) and its department. The date test is
+# the same everywhere an "as of today" assignment is needed — an open-ended
+# assignment that starts in the future, or one that has ended, is not current.
+_CURRENT_DEPARTMENT = """
+    LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
+        AND a.effective_from <= CURRENT_DATE
+        AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
+    LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
+"""
+
+_UPCOMING_DAYS = 45
+
+# "Current employee" everywhere below means anyone not SEPARATED — probation, notice
+# and on-hold staff included. (Filtering on ACTIVE alone drops every new hire: a
+# hire starts in PROBATION until a CONFIRM action, so "recent joiners" would be empty.)
+
+
+def _mmdd_window(today: date, days: int = _UPCOMING_DAYS) -> list[str]:
+    """
+    'MM-DD' for each of the next `days` days, so SQL can pick out just the people
+    whose birthday/anniversary falls in the window instead of loading everyone.
+    A 29 February date is celebrated on the 28th in non-leap years (see
+    _next_occurrence), so it must be selectable whenever the 28th is.
+    """
+    window = {(today + timedelta(days=i)).strftime("%m-%d") for i in range(days + 1)}
+    if "02-28" in window:
+        window.add("02-29")
+    return sorted(window)
+
+
+def _next_occurrence(anchor: date, today: date) -> date:
+    """The next date on or after `today` that falls on anchor's month and day."""
+
+    def in_year(year: int) -> date:
+        try:
+            return anchor.replace(year=year)
+        except ValueError:  # 29 February in a non-leap year
+            return anchor.replace(year=year, day=28)
+
+    upcoming = in_year(today.year)
+    return upcoming if upcoming >= today else in_year(today.year + 1)
+
+
 @router.get("/hr", summary="HR admin dashboard", dependencies=[require_permission("dashboard.hr")])
 async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDep) -> dict:
+    """
+    Every figure here is limited to the employees the caller's dashboard.hr grants
+    cover (`emp_clause`, always against the alias `e`): an HR manager scoped to one
+    company sees that company's headcount, KYC status, tenure and departments — not
+    the group's. (The clause used to be built for the alias `employments` and reused
+    in queries that alias the table `e`, which made every entity-scoped HR manager and
+    accountant get a 500, and several aggregates skipped the clause altogether.)
+    """
     scope = scope.for_permission("dashboard.hr")
     today = date.today()
     month_start = today.replace(day=1)
-    entity_clause, entity_params = scope.employment_filter_sql("employments")
+    emp_clause, emp_params = scope.employment_filter_sql("e")
+    base = {"tid": str(tenant_id), **emp_params}
 
-    hc = (
-        (
-            await session.execute(
-                text(f"""
-            SELECT COUNT(*) AS total,
-                   COUNT(*) FILTER (WHERE employment_state = 'ACTIVE') AS active,
-                   COUNT(*) FILTER (WHERE employment_state = 'PROBATION') AS probation,
-                   COUNT(*) FILTER (WHERE employment_state = 'NOTICE') AS on_notice
-            FROM employments
+    async def rows(sql: str, **params):
+        return (await session.execute(text(sql), {**base, **params})).mappings().all()
+
+    async def one(sql: str, **params):
+        return (await session.execute(text(sql), {**base, **params})).mappings().first()
+
+    hc = await one(f"""
+        SELECT COUNT(*) AS total,
+               COUNT(*) FILTER (WHERE e.employment_state = 'ACTIVE') AS active,
+               COUNT(*) FILTER (WHERE e.employment_state = 'PROBATION') AS probation,
+               COUNT(*) FILTER (WHERE e.employment_state = 'NOTICE') AS on_notice
+        FROM employments e
+        WHERE e.tenant_id = CAST(:tid AS uuid) AND e.archived_at IS NULL
+          AND e.employment_state != 'SEPARATED'
+          {emp_clause}
+    """)
+
+    present = present_sql("ad")
+    att = await one(f"""
+        SELECT
+            COUNT(*) FILTER (WHERE {present}) AS present,
+            COUNT(*) FILTER (WHERE NOT {present} AND ad.status = 'ABSENT') AS absent,
+            COUNT(*) FILTER (WHERE NOT {present} AND ad.status = 'ON_LEAVE') AS on_leave,
+            COUNT(*) FILTER (WHERE {present}
+                             AND (ad.status = 'LATE' OR ad.late_by_minutes > 0)) AS late
+        FROM attendance_days ad
+        JOIN employments e ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
+        WHERE ad.tenant_id = CAST(:tid AS uuid) AND ad.work_date = CAST(:today AS date)
+          {emp_clause}
+    """, today=today)
+
+    new_hire_count = (await one(f"""
+        SELECT COUNT(*) AS n FROM employments e
+        WHERE e.tenant_id = CAST(:tid AS uuid) AND e.hire_date >= CAST(:month_start AS date)
+          {emp_clause}
+    """, month_start=month_start))["n"]
+
+    pending_pa_count = (await one(f"""
+        SELECT COUNT(*) AS n FROM personnel_actions pa
+        JOIN employments e ON e.tenant_id = pa.tenant_id AND e.id = pa.employment_id
+        WHERE pa.tenant_id = CAST(:tid AS uuid) AND pa.status = 'PENDING_APPROVAL'
+          {emp_clause}
+    """))["n"]
+
+    open_ob_count = (await one(f"""
+        SELECT COUNT(*) AS n FROM onboarding_cases oc
+        JOIN employments e ON e.tenant_id = oc.tenant_id AND e.id = oc.employment_id
+        WHERE oc.tenant_id = CAST(:tid AS uuid) AND oc.status = 'IN_PROGRESS'
+          {emp_clause}
+    """))["n"]
+
+    kyc = await one(f"""
+        SELECT COUNT(*) FILTER (WHERE k.status = 'VERIFIED') AS verified,
+               COUNT(*) FILTER (WHERE k.status = 'SUBMITTED') AS submitted,
+               COUNT(*) FILTER (WHERE k.status = 'ACTION_REQUIRED') AS action_required,
+               COUNT(*) FILTER (WHERE k.status = 'NOT_SUBMITTED') AS not_submitted
+        FROM employee_kyc_records k
+        JOIN employments e ON e.tenant_id = k.tenant_id AND e.id = k.employment_id
+        WHERE k.tenant_id = CAST(:tid AS uuid)
+          {emp_clause}
+    """)
+
+    # People with a birthday / work anniversary in the next 45 days.
+    window = _mmdd_window(today)
+    upcoming_birthdays = []
+    for r in await rows(f"""
+        SELECT p.legal_first_name || ' ' || p.legal_last_name AS name, e.employee_number,
+               p.date_of_birth, ou.name AS department, le.name AS company
+        FROM employments e
+        JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+        JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+        {_CURRENT_DEPARTMENT}
+        WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state != 'SEPARATED'
+          AND p.date_of_birth IS NOT NULL
+          AND to_char(p.date_of_birth, 'MM-DD') = ANY(CAST(:window AS text[]))
+          {emp_clause}
+    """, window=window):
+        next_birthday = _next_occurrence(r["date_of_birth"], today)
+        upcoming_birthdays.append({
+            "name": r["name"],
+            "employee_number": r["employee_number"],
+            "department": r["department"] or "General",
+            "company": r["company"],
+            "date": next_birthday.isoformat(),
+            "days_until": (next_birthday - today).days,
+        })
+    upcoming_birthdays = sorted(upcoming_birthdays, key=lambda x: x["days_until"])[:6]
+
+    upcoming_anniversaries = []
+    for r in await rows(f"""
+        SELECT p.legal_first_name || ' ' || p.legal_last_name AS name, e.employee_number,
+               e.hire_date, ou.name AS department, le.name AS company
+        FROM employments e
+        JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+        JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+        {_CURRENT_DEPARTMENT}
+        WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state != 'SEPARATED'
+          AND e.hire_date IS NOT NULL
+          AND to_char(e.hire_date, 'MM-DD') = ANY(CAST(:window AS text[]))
+          {emp_clause}
+    """, window=window):
+        anniversary = _next_occurrence(r["hire_date"], today)
+        years = anniversary.year - r["hire_date"].year
+        if years > 0:
+            upcoming_anniversaries.append({
+                "name": r["name"],
+                "employee_number": r["employee_number"],
+                "department": r["department"] or "General",
+                "company": r["company"],
+                "date": anniversary.isoformat(),
+                "days_until": (anniversary - today).days,
+                "years": years,
+            })
+    upcoming_anniversaries = sorted(upcoming_anniversaries, key=lambda x: x["days_until"])[:6]
+
+    department_distribution = [
+        {"department": r["department"], "count": r["count"]}
+        for r in await rows(f"""
+            SELECT COALESCE(ou.name, 'Unassigned') AS department, COUNT(e.id) AS count
+            FROM employments e
+            {_CURRENT_DEPARTMENT}
+            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state != 'SEPARATED'
+              {emp_clause}
+            GROUP BY ou.name
+            ORDER BY count DESC
+            LIMIT 6
+        """)
+    ]
+
+    entity_distribution = [
+        {"company": r["company"], "short_name": r["short_name"], "count": r["count"]}
+        for r in await rows(f"""
+            SELECT le.name AS company, le.short_name, COUNT(e.id) AS count
+            FROM legal_entities le
+            JOIN employments e ON e.tenant_id = le.tenant_id AND e.legal_entity_id = le.id
+                 AND e.employment_state != 'SEPARATED' AND e.archived_at IS NULL
+            WHERE le.tenant_id = CAST(:tid AS uuid)
+              {emp_clause}
+            GROUP BY le.id, le.name, le.short_name
+            ORDER BY count DESC
+        """)
+    ]
+
+    recent_joiners = [
+        {
+            "name": r["name"],
+            "employee_number": r["employee_number"],
+            "hire_date": r["hire_date"].isoformat() if r["hire_date"] else None,
+            "company": r["company"],
+            "department": r["department"] or "General",
+        }
+        for r in await rows(f"""
+            SELECT p.legal_first_name || ' ' || p.legal_last_name AS name, e.employee_number,
+                   e.hire_date, le.name AS company, ou.name AS department
+            FROM employments e
+            JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+            JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+            {_CURRENT_DEPARTMENT}
+            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state != 'SEPARATED'
+              AND e.archived_at IS NULL
+              {emp_clause}
+            ORDER BY e.hire_date DESC NULLS LAST
+            LIMIT 5
+        """)
+    ]
+
+    tenure = await one(f"""
+        SELECT AVG(CURRENT_DATE - e.hire_date) / 365.25 AS avg_years,
+               COUNT(*) FILTER (WHERE CURRENT_DATE - e.hire_date >= 3652.5) AS over_10_years,
+               COUNT(*) FILTER (WHERE CURRENT_DATE - e.hire_date >= 1826.25
+                                  AND CURRENT_DATE - e.hire_date < 3652.5) AS tenure_5_to_10,
+               COUNT(*) FILTER (WHERE CURRENT_DATE - e.hire_date < 1826.25) AS tenure_under_5
+        FROM employments e
+        WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state != 'SEPARATED'
+          AND e.hire_date IS NOT NULL
+          {emp_clause}
+    """)
+
+    # Locations: every one for a group-wide caller; for a scoped caller, the locations
+    # their own people are currently assigned to.
+    if scope.is_all:
+        location_count = (await one("""
+            SELECT COUNT(*) AS n FROM locations
             WHERE tenant_id = CAST(:tid AS uuid) AND archived_at IS NULL
-              AND employment_state != 'SEPARATED'
-              {entity_clause}
-        """),
-                {"tid": str(tenant_id), **entity_params},
-            )
-        )
-        .mappings()
-        .first()
+        """))["n"]
+    else:
+        location_count = (await one(f"""
+            SELECT COUNT(DISTINCT a.location_id) AS n
+            FROM employments e
+            JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
+                AND a.effective_from <= CURRENT_DATE
+                AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
+            WHERE e.tenant_id = CAST(:tid AS uuid)
+              {emp_clause}
+        """))["n"]
+
+    separated_count = (await one(f"""
+        SELECT COUNT(*) AS n FROM employments e
+        WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state = 'SEPARATED'
+          {emp_clause}
+    """))["n"]
+
+    kyc_total = sum(
+        (kyc[k] or 0) for k in ("verified", "submitted", "action_required", "not_submitted")
     )
-
-    att_join, att_params = scope.employment_filter_sql("e")
-    att = (
-        (
-            await session.execute(
-                text(f"""
-            SELECT
-                COUNT(*) FILTER (WHERE ad.status IN ('PRESENT','LATE')) AS present,
-                COUNT(*) FILTER (WHERE ad.status = 'ABSENT')           AS absent,
-                COUNT(*) FILTER (WHERE ad.status = 'ON_LEAVE')         AS on_leave
-            FROM attendance_days ad
-            JOIN employments e ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
-            WHERE ad.tenant_id = CAST(:tid AS uuid) AND ad.work_date = CAST(:today AS date)
-              {att_join}
-        """),
-                {"tid": str(tenant_id), "today": today, **att_params},
-            )
-        )
-        .mappings()
-        .first()
-    )
-
-    new_hires_q = (
-        select(func.count(Employment.id))
-        .where(Employment.tenant_id == tenant_id)
-        .where(Employment.hire_date >= month_start)
-    )
-    if not scope.is_all:
-        if scope.employment_ids is not None:
-            new_hires_q = new_hires_q.where(Employment.id.in_(scope.employment_ids))
-        else:
-            new_hires_q = new_hires_q.where(Employment.legal_entity_id.in_(scope.legal_entity_ids))
-    new_hire_count = (await session.execute(new_hires_q)).scalar() or 0
-
-    pa_join, pa_params = scope.employment_filter_sql("e")
-    pending_pa_count = (
-        await session.execute(
-            text(f"""
-            SELECT COUNT(*) FROM personnel_actions pa
-            JOIN employments e ON e.tenant_id = pa.tenant_id AND e.id = pa.employment_id
-            WHERE pa.tenant_id = CAST(:tid AS uuid) AND pa.status = 'PENDING_APPROVAL'
-              {pa_join}
-        """),
-            {"tid": str(tenant_id), **pa_params},
-        )
-    ).scalar() or 0
-
-    ob_join, ob_params = scope.employment_filter_sql("e")
-    open_ob_count = (
-        await session.execute(
-            text(f"""
-            SELECT COUNT(*) FROM onboarding_cases oc
-            JOIN employments e ON e.tenant_id = oc.tenant_id AND e.id = oc.employment_id
-            WHERE oc.tenant_id = CAST(:tid AS uuid) AND oc.status = 'IN_PROGRESS'
-              {ob_join}
-        """),
-            {"tid": str(tenant_id), **ob_params},
-        )
-    ).scalar() or 0
+    org_summary = {
+        "total_entities": len(entity_distribution),
+        "total_departments": len(department_distribution),
+        "total_locations": location_count,
+        "separated_count": separated_count,
+        "avg_tenure_years": round(float(tenure["avg_years"]), 1) if tenure["avg_years"] else 0,
+        "tenure_brackets": {
+            "over_10_years": tenure["over_10_years"],
+            "5_to_10_years": tenure["tenure_5_to_10"],
+            "under_5_years": tenure["tenure_under_5"],
+        },
+        "kyc_compliance": {
+            "verified": kyc["verified"],
+            "submitted": kyc["submitted"],
+            "action_required": kyc["action_required"],
+            "not_submitted": kyc["not_submitted"],
+            "rate_pct": round((kyc["verified"] or 0) / max(1, kyc_total) * 100, 1),
+        },
+    }
 
     return {
         "role": "HR",
@@ -322,19 +519,30 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
             "legal_entity_count": len(scope.legal_entity_ids) if not scope.is_all else None,
         },
         "headcount": {
-            "total": hc["total"] if hc else 0,
-            "active": hc["active"] if hc else 0,
-            "probation": hc["probation"] if hc else 0,
-            "on_notice": hc["on_notice"] if hc else 0,
+            "total": hc["total"],
+            "active": hc["active"],
+            "probation": hc["probation"],
+            "on_notice": hc["on_notice"],
         },
         "today": {
             "date": today.isoformat(),
-            "present": att["present"] if att else 0,
-            "absent": att["absent"] if att else 0,
-            "on_leave": att["on_leave"] if att else 0,
+            "present": att["present"],
+            "absent": att["absent"],
+            "on_leave": att["on_leave"],
+            "late": att["late"],
         },
         "month": {"month": month_start.strftime("%B %Y"), "new_hires": new_hire_count},
-        "actions": {"pending_approvals": pending_pa_count, "open_onboarding": open_ob_count},
+        "actions": {
+            "pending_approvals": pending_pa_count,
+            "open_onboarding": open_ob_count,
+            "pending_kyc": kyc["submitted"],
+        },
+        "upcoming_birthdays": upcoming_birthdays,
+        "upcoming_anniversaries": upcoming_anniversaries,
+        "department_distribution": department_distribution,
+        "entity_distribution": entity_distribution,
+        "recent_joiners": recent_joiners,
+        "org_summary": org_summary,
     }
 
 

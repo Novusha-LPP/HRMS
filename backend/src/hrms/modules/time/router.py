@@ -32,10 +32,10 @@ from hrms.core.authz import (
     resolve_acting_employment_id,
 )
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import is_working_day, now_utc, to_tz
+from hrms.core.datetime_utils import calc_lateness, is_working_day, now_utc, to_tz
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
-from hrms.modules.policy.engine import resolve_policy
+from hrms.modules.policy.engine import PolicyResolver, resolve_policy
 from hrms.modules.time.models import (
     AttendanceDay,
     AttendanceStatus,
@@ -45,6 +45,7 @@ from hrms.modules.time.models import (
     PunchSource,
     PunchType,
 )
+from hrms.modules.time.presence import classify, is_late
 from hrms.modules.time.schemas import (
     AttendanceDayResponse,
     DailyAnalysisResponse,
@@ -316,7 +317,7 @@ async def list_pending_overtime(
     to_date: date | None = Query(default=None),
 ) -> list[PendingOvertimeItem]:
     scope = scope.for_permission("corrections.approve")
-    clause, params = scope.employment_filter_sql("ad")
+    clause, params = scope.employment_filter_sql("e")
     date_clause = ""
     if from_date:
         date_clause += " AND ad.work_date >= :from_date"
@@ -437,7 +438,7 @@ async def daily_analysis(
     scope_clause, scope_params = scope.employment_filter_sql("e")
     emp_query = text(f"""
         SELECT
-            e.id, e.employee_number, e.legal_entity_id,
+            e.id, e.employee_number, e.legal_entity_id, a.org_unit_id,
             p.legal_first_name || ' ' || p.legal_last_name AS name,
             ua.email AS email,
             ou.name AS department,
@@ -468,6 +469,10 @@ async def daily_analysis(
         .all()
     )
 
+    # Everything below is fetched only for the people found above — a company-scoped
+    # caller must not pull (and discard) the whole tenant's day of attendance.
+    emp_ids = [str(e["id"]) for e in emp_rows]
+
     # 2. Query attendance_days for target_date
     ad_query = text("""
         SELECT ad.employment_id, ad.status, ad.first_punch_in, ad.last_punch_out,
@@ -476,9 +481,14 @@ async def daily_analysis(
         FROM attendance_days ad
         WHERE ad.tenant_id = CAST(:tid AS uuid)
           AND ad.work_date = CAST(:target_date AS date)
+          AND ad.employment_id = ANY(CAST(:ids AS uuid[]))
     """)
     ad_rows = (
-        (await session.execute(ad_query, {"tid": str(tenant_id), "target_date": target_date}))
+        (
+            await session.execute(
+                ad_query, {"tid": str(tenant_id), "target_date": target_date, "ids": emp_ids}
+            )
+        )
         .mappings()
         .all()
     )
@@ -493,9 +503,14 @@ async def daily_analysis(
           AND la.status = 'APPROVED'
           AND la.from_date <= CAST(:target_date AS date)
           AND la.to_date >= CAST(:target_date AS date)
+          AND la.employment_id = ANY(CAST(:ids AS uuid[]))
     """)
     leave_rows = (
-        (await session.execute(leave_query, {"tid": str(tenant_id), "target_date": target_date}))
+        (
+            await session.execute(
+                leave_query, {"tid": str(tenant_id), "target_date": target_date, "ids": emp_ids}
+            )
+        )
         .mappings()
         .all()
     )
@@ -521,6 +536,7 @@ async def daily_analysis(
         WHERE p.tenant_id = CAST(:tid AS uuid)
           AND p.punched_at >= CAST(:start_ts AS timestamptz)
           AND p.punched_at <= CAST(:end_ts AS timestamptz)
+          AND p.employment_id = ANY(CAST(:ids AS uuid[]))
         ORDER BY p.punched_at ASC
     """)
     punch_rows = (
@@ -531,6 +547,7 @@ async def daily_analysis(
                     "tid": str(tenant_id),
                     "start_ts": start_ts,
                     "end_ts": end_ts,
+                    "ids": emp_ids,
                 },
             )
         )
@@ -545,11 +562,14 @@ async def daily_analysis(
     records: list[DailyEmployeeRecord] = []
     hourly_counter: dict[str, int] = {f"{h:02d}:00": 0 for h in range(7, 20)}
 
+    policies = PolicyResolver(session, tenant_id, target_date)
     for emp in emp_rows:
         emp_id = str(emp["id"])
         ad = ad_map.get(emp_id)
         leave_type = leave_map.get(emp_id)
-        emp_policy = await resolve_policy(emp["id"], target_date, session, tenant_id)
+        emp_policy = await policies.resolve(
+            emp["id"], org_unit_id=emp["org_unit_id"], legal_entity_id=emp["legal_entity_id"]
+        )
         all_events = punches_by_emp.get(emp_id, [])
         replaced = {p["original_punch_id"] for p in all_events if p["original_punch_id"]}
         emp_punches = [
@@ -586,11 +606,21 @@ async def daily_analysis(
         late_by = ad["late_by_minutes"] if ad else 0
         early_dep = ad["early_departure_minutes"] if ad else 0
 
+        # Safety-net: if late_by is 0 and we have first_in and policy, compute lateness
+        if first_in and late_by == 0:
+            live_late = calc_lateness(
+                first_in,
+                emp_policy.expected_start_time,
+                emp_policy.grace_late_minutes,
+                emp_policy.timezone,
+            )
+            late_by = live_late.late_by_minutes
+
         if leave_type:
             status_str = "ON_LEAVE"
         elif is_holiday and not first_in:
             status_str = "HOLIDAY"
-        elif ad:
+        elif ad and ad["status"] not in ("PENDING", None):
             status_str = str(ad["status"])
         elif first_in:
             status_str = "LATE" if late_by > 0 else "PRESENT"
@@ -636,14 +666,18 @@ async def daily_analysis(
         )
         records.append(record)
 
-    # Calculate overall metrics
+    # Calculate overall metrics. Each record lands in exactly one presence bucket
+    # (see time/presence.py), so present + on_leave + absent never exceeds the headcount.
+    def bucket(r: DailyEmployeeRecord) -> str:
+        return classify(r.status, r.first_punch_in, on_leave=r.leave_type is not None)
+
     total_headcount = len(records)
-    present_records = [r for r in records if r.status in ("PRESENT", "LATE", "HALF_DAY")]
+    present_records = [r for r in records if bucket(r) == "present"]
     present_count = len(present_records)
-    late_count = len([r for r in records if r.status == "LATE" or r.late_by_minutes > 0])
-    on_time_count = len([r for r in records if r.status == "PRESENT" and r.late_by_minutes == 0])
-    absent_count = len([r for r in records if r.status == "ABSENT"])
-    on_leave_count = len([r for r in records if r.status == "ON_LEAVE"])
+    late_count = len([r for r in present_records if is_late(r.status, r.late_by_minutes)])
+    on_time_count = present_count - late_count
+    absent_count = len([r for r in records if bucket(r) == "absent"])
+    on_leave_count = len([r for r in records if bucket(r) == "on_leave"])
     half_day_count = len([r for r in records if r.status == "HALF_DAY"])
     presence_rate = (
         round((present_count / total_headcount * 100), 1) if total_headcount > 0 else 0.0
@@ -662,13 +696,14 @@ async def daily_analysis(
         if d_name not in dept_map:
             dept_map[d_name] = {"total": 0, "present": 0, "late": 0, "absent": 0, "on_leave": 0}
         dept_map[d_name]["total"] += 1
-        if r.status in ("PRESENT", "LATE", "HALF_DAY"):
+        kind = bucket(r)
+        if kind == "present":
             dept_map[d_name]["present"] += 1
-        if r.status == "LATE" or r.late_by_minutes > 0:
-            dept_map[d_name]["late"] += 1
-        elif r.status == "ABSENT":
+            if is_late(r.status, r.late_by_minutes):
+                dept_map[d_name]["late"] += 1
+        elif kind == "absent":
             dept_map[d_name]["absent"] += 1
-        elif r.status == "ON_LEAVE":
+        elif kind == "on_leave":
             dept_map[d_name]["on_leave"] += 1
 
     department_stats = [
@@ -697,12 +732,12 @@ async def daily_analysis(
         ]
     if status:
         if status.upper() == "PRESENT":
-            filtered_records = [
-                r for r in filtered_records if r.status in ("PRESENT", "LATE", "HALF_DAY")
-            ]
+            filtered_records = [r for r in filtered_records if bucket(r) == "present"]
         elif status.upper() == "LATE":
             filtered_records = [
-                r for r in filtered_records if r.status == "LATE" or r.late_by_minutes > 0
+                r
+                for r in filtered_records
+                if bucket(r) == "present" and is_late(r.status, r.late_by_minutes)
             ]
         else:
             filtered_records = [r for r in filtered_records if r.status.upper() == status.upper()]
