@@ -18,6 +18,7 @@ company-scoped HR manager can't quietly hire someone into a company they
 don't administer.
 """
 
+import logging
 from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
@@ -26,7 +27,13 @@ from sqlalchemy import text
 from sqlmodel import select
 
 from hrms.core.authn import CurrentUser
-from hrms.core.authz import ScopeDep, authorize_employment, require_permission
+from hrms.core.authz import (
+    Scope,
+    ScopeDep,
+    authorize_employment,
+    read_scope,
+    require_permission,
+)
 from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
@@ -55,6 +62,17 @@ from hrms.modules.people.schemas import (
 )
 
 router = APIRouter(tags=["People"])
+logger = logging.getLogger(__name__)
+
+
+def can_see_personal_details(scope: Scope) -> bool:
+    """
+    Date of birth and gender are personal data. Managers and accountants hold
+    people.read to see who works where, not to see this — only HR (people.write)
+    and administrators do. Everyone can always see their own.
+    """
+    return scope.has("people.write")
+
 
 _ASSIGNMENT_ACTIONS = {
     PersonnelActionType.HIRE,
@@ -76,6 +94,11 @@ _EMPLOYEE_SELECT = """
         e.id, e.person_id, e.legal_entity_id, e.employee_number, e.hire_date,
         e.separation_date, e.employment_state, e.service_stage, e.version,
         le.name AS legal_entity_name,
+        p.date_of_birth, p.gender,
+        p.legal_first_name AS first_name,
+        p.legal_last_name AS last_name,
+        COALESCE(NULLIF(p.preferred_name, ''), p.legal_first_name) || ' ' || p.legal_last_name
+            AS full_name,
         a.org_unit_id, ou.name AS department,
         a.job_id, j.title AS designation,
         a.location_id, l.name AS location,
@@ -83,6 +106,7 @@ _EMPLOYEE_SELECT = """
         mp.legal_first_name || ' ' || mp.legal_last_name AS manager_name
     FROM employments e
     JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+    JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
     LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id AND
     (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from <=
     CURRENT_DATE
@@ -147,7 +171,7 @@ async def _generate_employee_number(session, tenant_id: UUID, legal_entity_id: U
     return f"{scheme['prefix']}{scheme['separator']}{str(issued).zfill(scheme['number_digits'])}"
 
 
-def _employment_row_response(r) -> EmploymentResponse:
+def _employment_row_response(r, *, show_personal: bool = True) -> EmploymentResponse:
     return EmploymentResponse(
         id=to_typed_id("employment", r.id),
         person_id=to_typed_id("person", r.person_id),
@@ -158,6 +182,11 @@ def _employment_row_response(r) -> EmploymentResponse:
         employment_state=r.employment_state,
         service_stage=r.service_stage,
         version=r.version,
+        date_of_birth=r.date_of_birth if show_personal else None,
+        gender=r.gender if show_personal else None,
+        first_name=r.first_name,
+        last_name=r.last_name,
+        full_name=r.full_name,
         legal_entity_name=r.legal_entity_name,
         org_unit_id=to_typed_id("org_unit", r.org_unit_id) if r.org_unit_id else None,
         department=r.department,
@@ -217,12 +246,28 @@ async def create_person(
     summary="List persons visible to the caller",
 )
 async def list_persons(
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
     limit: int = Query(default=50, le=200),
     offset: int = Query(default=0, ge=0),
 ) -> list[PersonResponse]:
+    show_all_personal = can_see_personal_details(scope)
+    # Only grants that carry people.read (plus the caller's own record) widen
+    # what can be listed — a login's other, unrelated grants must not.
+    scope = read_scope(scope, "people.read")
+    own_person_id = None
+    if principal.employment_id:
+        own_person_id = (
+            await session.execute(
+                text("""
+                    SELECT person_id FROM employments
+                    WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:eid AS uuid)
+                """),
+                {"tid": str(tenant_id), "eid": str(principal.employment_id)},
+            )
+        ).scalar()
     # Persons have no legal_entity_id of their own — visibility is derived
     # from having at least one employment the caller's scope covers.
     if scope.is_all:
@@ -262,8 +307,8 @@ async def list_persons(
             legal_first_name=r.legal_first_name,
             legal_last_name=r.legal_last_name,
             preferred_name=r.preferred_name,
-            date_of_birth=r.date_of_birth,
-            gender=r.gender,
+            date_of_birth=r.date_of_birth if show_all_personal or r.id == own_person_id else None,
+            gender=r.gender if show_all_personal or r.id == own_person_id else None,
             version=r.version,
         )
         for r in persons
@@ -496,6 +541,7 @@ async def create_employment(
     summary="List employees and their current organization assignments",
 )
 async def list_employees(
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
@@ -503,6 +549,11 @@ async def list_employees(
     offset: int = Query(default=0, ge=0),
     status_filter: EmploymentState | None = Query(default=None, alias="filter[status]"),
 ) -> list[EmploymentResponse]:
+    show_all_personal = can_see_personal_details(scope)
+    # Only grants that carry people.read (plus the caller's own record) count —
+    # see read_scope. An EMPLOYEE login has no people.read, so however wide its
+    # role assignment's scope is, it lists nothing but itself.
+    scope = read_scope(scope, "people.read")
     where = ["e.tenant_id = CAST(:tid AS uuid)", "e.archived_at IS NULL"]
     params: dict = {"tid": str(tenant_id), "limit": limit, "offset": offset}
     if status_filter:
@@ -518,7 +569,12 @@ async def list_employees(
         ),
         params,
     )
-    return [_employment_row_response(r) for r in rows.mappings().all()]
+    return [
+        _employment_row_response(
+            r, show_personal=show_all_personal or r["id"] == principal.employment_id
+        )
+        for r in rows.mappings().all()
+    ]
 
 
 @router.get(
@@ -528,12 +584,14 @@ async def list_employees(
 )
 async def get_employee(
     employment_id: str,
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
 ) -> EmploymentResponse:
     emp_uuid = to_uuid(employment_id)
-    await authorize_employment(session, tenant_id, scope, emp_uuid)
+    show_personal = can_see_personal_details(scope) or emp_uuid == principal.employment_id
+    await authorize_employment(session, tenant_id, read_scope(scope, "people.read"), emp_uuid)
 
     row = (
         (
@@ -550,7 +608,7 @@ async def get_employee(
     )
     if not row:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employee not found")
-    return _employment_row_response(row)
+    return _employment_row_response(row, show_personal=show_personal)
 
 
 # ─── Personnel Actions ───────────────────────────────────────────────────────
@@ -591,6 +649,7 @@ async def create_personnel_action(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Employment not found")
 
     await _validate_assignment_references(session, tenant_id, emp, body.changes or {}, scope)
+    await _reject_conflicting_schedule(session, tenant_id, emp_uuid, body.type, body.effective_date)
     uid = uuid4()
     pa = PersonnelAction(
         tenant_id=tenant_id,
@@ -636,7 +695,7 @@ async def list_personnel_actions(
     limit: int = Query(default=50, le=200),
 ) -> list[PersonnelActionListItem]:
     emp_uuid = to_uuid(employment_id)
-    await authorize_employment(session, tenant_id, scope, emp_uuid)
+    await authorize_employment(session, tenant_id, read_scope(scope, "people.read"), emp_uuid)
 
     rows = await session.execute(
         select(PersonnelAction)
@@ -652,9 +711,97 @@ async def list_personnel_actions(
             effective_date=r.effective_date,
             status=r.status,
             submitted_at=r.submitted_at,
+            failure_reason=r.failure_reason,
         )
         for r in rows.scalars()
     ]
+
+
+@router.post(
+    "/v1/personnel-actions/{action_id}/cancel",
+    response_model=PersonnelActionResponse,
+    summary="Cancel a scheduled (or failed) personnel action",
+    dependencies=[require_permission("people.write")],
+)
+async def cancel_personnel_action(
+    action_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> PersonnelActionResponse:
+    """
+    A future-dated action (a separation, a transfer, ...) applies by itself on
+    its effective date, so there has to be a way to stop one that was entered
+    wrongly. Only SCHEDULED and FAILED actions can be cancelled — an APPLIED one
+    is history; correct it with a new action instead.
+    """
+    scope = scope.for_permission("people.write")
+    pa = (
+        (
+            await session.execute(
+                select(PersonnelAction)
+                .where(PersonnelAction.tenant_id == tenant_id)
+                .where(PersonnelAction.id == to_uuid(action_id))
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if not pa:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Personnel action not found")
+    await authorize_employment(session, tenant_id, scope, pa.employment_id)
+    await lock_resource(session, tenant_id, f"personnel:{pa.employment_id}")
+    await session.refresh(pa)  # re-read under the lock: it may have just been applied
+    if pa.status not in (PersonnelActionStatus.SCHEDULED, PersonnelActionStatus.FAILED):
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"Only scheduled or failed actions can be cancelled (this one is {pa.status})",
+        )
+    pa.status = PersonnelActionStatus.CANCELLED
+    session.add(pa)
+    await session.flush()
+    return _pa_response(pa)
+
+
+async def _reject_conflicting_schedule(
+    session, tenant_id: UUID, employment_id: UUID, new_type: PersonnelActionType, new_date: date
+) -> None:
+    """
+    Refuse an action that a still-scheduled one would make impossible to apply.
+    Nothing is validated when a future-dated action is accepted, so without this
+    a separation on the 10th plus a transfer on the 20th are both accepted and
+    the transfer can only fail when its day arrives. (The applier also copes
+    with that case — see apply_due_actions — this just stops it being entered.)
+    """
+    scheduled = (
+        await session.execute(
+            select(PersonnelAction.type, PersonnelAction.effective_date)
+            .where(PersonnelAction.tenant_id == tenant_id)
+            .where(PersonnelAction.employment_id == employment_id)
+            .where(PersonnelAction.status == PersonnelActionStatus.SCHEDULED)
+        )
+    ).all()
+    for other_type, other_date in scheduled:
+        if (
+            other_type == PersonnelActionType.SEPARATION
+            and new_type != PersonnelActionType.REHIRE
+            and new_date >= other_date
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"A separation is already scheduled for {other_date}. Cancel it first, or use "
+                "a date before it.",
+            )
+        if (
+            new_type == PersonnelActionType.SEPARATION
+            and other_type != PersonnelActionType.REHIRE
+            and other_date >= new_date
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"A {other_type} is scheduled for {other_date}, on or after this separation. "
+                "Cancel or reschedule it first.",
+            )
 
 
 # ─── Applying a personnel action to the org chart ─────────────────────────────
@@ -839,6 +986,7 @@ def _pa_response(pa: PersonnelAction) -> PersonnelActionResponse:
         status=pa.status,
         changes=pa.changes,
         version=pa.version,
+        failure_reason=pa.failure_reason,
     )
 
 
@@ -882,6 +1030,17 @@ async def _validate_assignment_references(session, tenant_id, emp, changes, scop
 
 
 async def apply_due_actions(session, tenant_id):
+    """
+    Apply every SCHEDULED personnel action whose effective date has arrived.
+
+    This runs inside the session dependency, i.e. before EVERY authenticated
+    request in the tenant, so an action that cannot be applied must never
+    surface as an error there — it would take the whole tenant's API down with
+    no way in to fix it. Each action therefore runs in its own SAVEPOINT; one
+    that raises is rolled back on its own and parked as FAILED with the reason
+    (visible in GET /v1/personnel-actions, cancellable with .../cancel), and the
+    rest still apply. The common "nothing is due" path is one indexed SELECT.
+    """
     due = (
         await session.execute(
             select(PersonnelAction.id)
@@ -907,20 +1066,43 @@ async def apply_due_actions(session, tenant_id):
         ).scalars()
     )
     for pa in pending:
-        await lock_resource(session, tenant_id, f"personnel:{pa.employment_id}")
-        emp = (
-            (
-                await session.execute(
-                    select(Employment)
-                    .where(Employment.tenant_id == tenant_id)
-                    .where(Employment.id == pa.employment_id)
+        action_id, employment_id = pa.id, pa.employment_id
+        await lock_resource(session, tenant_id, f"personnel:{employment_id}")
+        try:
+            async with session.begin_nested():
+                emp = (
+                    (
+                        await session.execute(
+                            select(Employment)
+                            .where(Employment.tenant_id == tenant_id)
+                            .where(Employment.id == employment_id)
+                        )
+                    )
+                    .scalars()
+                    .one()
                 )
+                await _apply_personnel_action(session, tenant_id, pa, emp)
+                pa.status = PersonnelActionStatus.APPLIED
+                pa.applied_at = datetime.now(UTC)
+                session.add(pa)
+                await session.flush()
+        except Exception as exc:
+            reason = (
+                str(exc.detail) if isinstance(exc, HTTPException) else type(exc).__name__
+            )[:500]
+            logger.warning(
+                "Scheduled personnel action %s for employment %s could not be applied: %s",
+                action_id,
+                employment_id,
+                reason,
             )
-            .scalars()
-            .one()
-        )
-        await _apply_personnel_action(session, tenant_id, pa, emp)
-        pa.status = PersonnelActionStatus.APPLIED
-        pa.applied_at = datetime.now(UTC)
-        session.add(pa)
+            # Plain SQL: the savepoint rollback expired the ORM object.
+            await session.execute(
+                text("""
+                    UPDATE personnel_actions
+                    SET status = 'FAILED', failure_reason = :reason
+                    WHERE tenant_id = :tid AND id = :id
+                """),
+                {"reason": reason, "tid": tenant_id, "id": action_id},
+            )
     await session.flush()

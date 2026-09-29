@@ -8,7 +8,7 @@ Authoritative system design and architecture specifications for the HRMS Platfor
 
 | Document | Description |
 |---|---|
-| [System Design Specification](system-design/README.md) | **Primary System Design Document**: Component & container architecture, multi-tenant dual planes (Platform vs Tenant), dual-role PostgreSQL RLS security, 13 domain modules breakdown, and Alembic schema evolution (0001–0016). |
+| [System Design Specification](system-design/README.md) | **Primary System Design Document**: Component & container architecture, multi-tenant dual planes (Platform vs Tenant), dual-role PostgreSQL RLS security, 13 domain modules breakdown, and Alembic schema evolution (0001–0019). |
 | [Technology Stack Reference](TECH_STACK.md) | Concrete inventory of frameworks, runtimes, ORMs, libraries, and dev tools across backend, frontend, database, and DevOps. |
 
 ---
@@ -26,5 +26,5 @@ Authoritative system design and architecture specifications for the HRMS Platfor
 | [architecture/07-application-data-integration-scale.md](architecture/07-application-data-integration-scale.md) | FastAPI modular monolith architecture, React 19 SPA, and database schema conventions |
 | [architecture/08-assumptions-risks-decisions.md](architecture/08-assumptions-risks-decisions.md) | Architectural decisions, risk mitigations, and scalability strategy |
 | [payroll-design.md](payroll-design.md) | Compensation schemas, salary component structures, and payroll export interfaces |
-| [erp-integration-plan.md](erp-integration-plan.md) | Integration contracts, attendance snapshots, and external ERP synchronization |
+| [erp-integration-plan.md](erp-integration-plan.md) | Importing the Suraj Group and Sharanga Production ERPs as tenants: field mapping, security decisions, implementation status, open decisions |
 

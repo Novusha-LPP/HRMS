@@ -3,6 +3,7 @@ import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState, useCallback } from "react";
 import type { ReactNode } from "react";
 import { api, ApiError, getAuthToken, setAuthToken, setUnauthorizedHandler } from "../api/client";
+import { SignInError } from "../lib/signInError";
 
 // The backend can grant several fine-grained roles per user (see
 // backend/src/hrms/core/authz.py — SUPER_ADMIN, HR_MANAGER, MANAGER,
@@ -28,6 +29,8 @@ export interface AuthUser {
   permissions: string[];
   isAllScope: boolean;
   legalEntities: LegalEntitySummary[];
+  /** True until the person has replaced an imported / admin-issued password. */
+  mustChangePassword: boolean;
 }
 
 interface MeResponse {
@@ -41,6 +44,7 @@ interface MeResponse {
   permissions: string[];
   is_all_scope: boolean;
   legal_entities: LegalEntitySummary[];
+  must_change_password?: boolean;
 }
 
 interface LoginResponse {
@@ -52,7 +56,10 @@ interface LoginResponse {
 interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
-  login: (email: string, password: string) => Promise<void>;
+  /** `company` (the company code) is only needed when the API answers COMPANY_REQUIRED. */
+  login: (identifier: string, password: string, company?: string) => Promise<void>;
+  /** Replaces the password and swaps in the fresh session the server returns. */
+  changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   registerCompany: (body: { company_name: string; country_code?: string; admin_email: string; admin_password: string }) => Promise<void>;
   logout: () => void;
 }
@@ -80,6 +87,7 @@ function toAuthUser(m: MeResponse): AuthUser {
     permissions: m.permissions,
     isAllScope: m.is_all_scope,
     legalEntities: m.legal_entities,
+    mustChangePassword: m.must_change_password ?? false,
   };
 }
 
@@ -104,15 +112,32 @@ export function AuthProvider({ children }: { children: ReactNode }) {
       .finally(() => setLoading(false));
   }, []);
 
-  const login = async (email: string, password: string) => {
+  const startSession = (res: LoginResponse) => {
+    resetCache();
+    localStorage.setItem(TOKEN_KEY, res.access_token);
+    setAuthToken(res.access_token);
+    setUser(toAuthUser(res.user));
+  };
+
+  const login = async (identifier: string, password: string, company?: string) => {
     try {
-      const res = await api.post<LoginResponse>("/v1/auth/login", { email, password });
-      resetCache();
-      localStorage.setItem(TOKEN_KEY, res.access_token);
-      setAuthToken(res.access_token);
-      setUser(toAuthUser(res.user));
+      const body: Record<string, string> = { identifier, password };
+      if (company?.trim()) body.tenant = company.trim();
+      startSession(await api.post<LoginResponse>("/v1/auth/login", body));
     } catch (e) {
-      throw e instanceof ApiError ? new Error(e.message || "Invalid email or password") : e;
+      throw e instanceof ApiError ? new SignInError(e.message || "Invalid credentials", e.code, e.status) : e;
+    }
+  };
+
+  const changePassword = async (currentPassword: string, newPassword: string) => {
+    try {
+      // The old token stops working the moment the password changes, so the response carries a new one.
+      startSession(await api.post<LoginResponse>("/v1/auth/change-password", {
+        current_password: currentPassword,
+        new_password: newPassword,
+      }));
+    } catch (e) {
+      throw e instanceof ApiError ? new SignInError(e.message || "Couldn't change your password", e.code, e.status) : e;
     }
   };
 
@@ -141,7 +166,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [logout]);
 
   return (
-    <AuthContext.Provider value={{ user, loading, login, registerCompany, logout }}>
+    <AuthContext.Provider value={{ user, loading, login, changePassword, registerCompany, logout }}>
       {children}
     </AuthContext.Provider>
   );

@@ -21,6 +21,7 @@ from sqlmodel import select
 from hrms.core.authz import Scope, ScopeDep, require_global_permission, require_permission
 from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
+from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
 from hrms.modules.reports.column_meta import (
     AVAILABLE_COLUMNS,
@@ -503,14 +504,25 @@ async def _fetch_def(session, tenant_id: UUID, report_id: str) -> ReportDefiniti
     return rd
 
 
-async def _ensure_defaults(session, tenant_id: UUID) -> None:
-    count_row = await session.execute(
-        select(ReportDefinition)
+async def _has_system_reports(session, tenant_id: UUID) -> bool:
+    row = await session.execute(
+        select(ReportDefinition.id)
         .where(ReportDefinition.tenant_id == tenant_id)
         .where(ReportDefinition.is_system == True)  # noqa: E712
+        .limit(1)
     )
-    if count_row.scalars().first():
-        return  # already seeded
+    return row.first() is not None
+
+
+async def _ensure_defaults(session, tenant_id: UUID) -> None:
+    if await _has_system_reports(session, tenant_id):
+        return  # already seeded — the overwhelmingly common case, no lock taken
+    # First use in this tenant. Two simultaneous first requests would each see "none" and
+    # each insert the full set, leaving every system report duplicated — so serialize, then
+    # look again: the loser of the race finds the winner's rows and returns.
+    await lock_resource(session, tenant_id, "report-defaults")
+    if await _has_system_reports(session, tenant_id):
+        return
 
     for r in DEFAULT_REPORTS:
         cols = [{"field": f, "label": f, "visible": True} for f in r["columns"]]

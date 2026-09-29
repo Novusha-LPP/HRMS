@@ -127,3 +127,12 @@ class VerifyDocumentRequest(BaseModel):
 class VerifyOverallKycRequest(BaseModel):
     status: str = Field(description="'VERIFIED', 'REJECTED', or 'ACTION_REQUIRED'")
     rejection_reason: str | None = None
+
+
+class KycAccessLogEntry(BaseModel):
+    """One time someone other than the employee opened their KYC dossier or a document."""
+
+    actor: str | None = None
+    action: str
+    unmasked: bool
+    occurred_at: datetime

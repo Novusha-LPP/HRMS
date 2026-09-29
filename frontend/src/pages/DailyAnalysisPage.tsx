@@ -34,10 +34,10 @@ const OT_TEXT_TONE: Record<string, string> = {
 };
 
 function fmtHours(minutes: number): string {
-  if (!minutes || minutes <= 0) return "0m";
+  if (!minutes || minutes <= 0) return "0h 0m";
   const h = Math.floor(minutes / 60);
   const m = minutes % 60;
-  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+  return `${h}h ${m}m`;
 }
 
 function fmtTime(isoString?: string | null): string {
@@ -688,7 +688,7 @@ export function DailyAnalysisPage() {
                           <span>{fmtTime(emp.first_punch_in)}</span>
                           {isLate && (
                             <span className="badge badge-warning text-[10px]">
-                              +{emp.late_by_minutes}m
+                              +{fmtHours(emp.late_by_minutes)}
                             </span>
                           )}
                         </div>
@@ -841,7 +841,7 @@ export function DailyAnalysisPage() {
                   </div>
                   {inspectEmployee.late_by_minutes > 0 && (
                     <span className="text-[10px] font-medium text-warning">
-                      +{inspectEmployee.late_by_minutes} mins late
+                      +{fmtHours(inspectEmployee.late_by_minutes)} late
                     </span>
                   )}
                 </div>

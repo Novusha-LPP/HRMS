@@ -1,6 +1,6 @@
 # ERP Integration Plan — Suraj Group (EXIM) & Sharanga Production (RABS)
 
-**Status: planning, not implemented.** v2, 2026-09-25. Revises a pasted
+**Status: Phases 1–4 implemented (see [Implementation status](#implementation-status)); Phase 5 not built.** v2, 2026-09-25. Revises a pasted
 draft plan against (a) the actual source files (`exim.users.json`,
 `Sharanga_Production.login.json`, `Sharanga_Production.employee_profiles.json`
 — repo root, gitignored, never committed) and (b) the current codebase. The
@@ -8,8 +8,48 @@ draft's overall shape — two tenants, dual login modes, server-to-server SSO,
 JIT provisioning — is sound and kept. This revision corrects factual claims
 that didn't hold up, adds field-level mapping tables, a compliance section,
 idempotency/rollback design, and a risk register — the things a draft
-needs before a team can actually build against it. **Two items remain open
-and block implementation** — [Open Decisions](#open-decisions).
+needs before a team can actually build against it. The [Open Decisions](#open-decisions)
+no longer block the code — the importer implements the defaults listed below — but they
+should be confirmed before a real run.
+
+## Implementation status
+
+*As of 2026-09-28.*
+
+| Phase | State |
+|---|---|
+| 1 — Schema, generalised login lookup | **Done.** Migration `0018` (ERP columns on `user_accounts`, `api_keys`, `import_batches`) and `0019` (index-backed `login_lookup()` by email / employee code / mobile, `login_lookup_in()` for a company code). |
+| 2 — Auth core | **Done.** Sign in by email, employee code or mobile number (any format); forced password change; change / reset / disable a login; sign-in throttling; a separated employee is locked out. See the RUNBOOK's *Authentication*. |
+| 3 — Import, dry-run | **Done** — `backend/scripts/migrate_tenants.py --dry-run`. Run over the real export files on an isolated database it reconciles with §2: Suraj 310 records → **189 usable** (68 RABS-group, 52 blank-company and 1 demo record excluded); Sharanga **76 logins, 74 profiles**, 2 login-only accounts. 0 conflicts, 0 errors, 0 email conflicts between the two sources. |
+| 4 — Import, real run | **Built and rehearsed, not run on a shared or live database.** On the isolated database: 189 + 76 accounts created; a second run changes nothing; all 41 active Sharanga accounts sign in with the initial password and are forced to change it, the 35 inactive ones cannot sign in. Needs the two tenants and the Suraj legal entities created first (RUNBOOK → *ERP Import*), then the decisions below confirmed. |
+| 5 — ERP SSO endpoint, key administration | **Not built.** Only the `api_keys` table exists. |
+
+What the implementation does differently from the first version of the script and from this plan's assumptions:
+
+- **Least privilege.** The first version gave every imported account a company-wide scope, so an ordinary employee could read
+  the whole company's records and KYC. Now: `EMPLOYEE` → `SELF`, `MANAGER` → `DIRECT_REPORTS`, HR and accountants → their own
+  company, only the legacy `admin` / `super_admin` roles → `SUPER_ADMIN`. `scripts/fix_imported_scopes.py` repairs data imported
+  by the first version (dry-run by default). The runtime also clamps the `EMPLOYEE` role to `SELF` whatever the database says.
+- **Managers start with no reports.** Neither export has a reporting-line field, so an imported `MANAGER` (10 Suraj, 8 Sharanga)
+  with `DIRECT_REPORTS` scope sees only themselves until *Reports to* is set on each person's assignment. Reporting lines have to be
+  entered in HRMS (or supplied as a third source) — the alternative, a company-wide scope for every manager, is what the first version did.
+- **Roles are matched exactly**, not by substring — Sharanga has an `Admin_House Keeping` role that a substring rule would have
+  made an administrator. Anything unknown is imported as a plain employee and listed in the report.
+- **Re-runs are safe.** After the import HRMS is the system of record (§1): a re-run adds what is missing and fills blanks; it
+  never changes a password, status, role, hire date or history. `--overwrite-existing` is limited to accounts nobody has
+  signed in to. Every record is in its own savepoint; nothing commits if any record failed, conflicted, or belongs to a company
+  with no legal entity, unless `--allow-partial`.
+- **Passwords.** Sharanga: `Firstname@1234` with `must_change_password` set (§6). Suraj: the existing bcrypt hashes are
+  imported after checking they are valid hashes; those users are not forced to change.
+- **KYC numbers** are masked for anyone without `kyc.write` / `kyc.verify`, and access is logged (`kyc_access_log`). Encryption at
+  rest (open decision 7) is still open.
+
+Open-decision defaults the importer currently applies, to confirm: (1) the eight legal entity names in `migrate_suraj`'s
+`name_map`; (2) the 13 plain "Suraj Forwarders" users are merged into *Suraj Forwarders Private Limited*; (3) exact role tables
+— **14 accounts become `SUPER_ADMIN`** (10 Suraj `Admin`, 4 Sharanga `super_admin`); the run lists them for review;
+(5) the 2 logins with no profile are imported as login-only accounts. Data notes from the real files: two Suraj accounts share a
+mobile number (both imported; sign-in by that number is settled by the password, or asks for the company code); the 10 Sharanga
+usernames that are not clean mobile numbers (decision 4) are imported as written and sign in by employee code — not yet reviewed by a person.
 
 ## 1. Scope & System of Record
 

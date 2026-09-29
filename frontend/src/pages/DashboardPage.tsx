@@ -1,21 +1,25 @@
+import { useState } from "react";
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
-  Users, UserCheck, Umbrella, Inbox, CheckCheck,
-  BarChart3, FilePenLine, CalendarX2, Timer, CalendarCheck,
+  Users, UserCheck, CalendarCheck, CalendarX2, Umbrella, Inbox,
+  Building2, Cake, Award, CheckCheck,
+  Copy, Check, BarChart3, FilePenLine, Timer, Sparkles, UserPlus
 } from "lucide-react";
-import { useAuth } from "../context/AuthContext";
 import { dashboardApi } from "../api/dashboard";
 import { leaveApi } from "../api/leave";
 import type { LeaveApplication, LeaveBalance } from "../api/leave";
-import { PunchClock } from "../components/attendance/PunchClock";
-import { OnboardingChecklist } from "../components/onboarding/OnboardingChecklist";
+import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatCard } from "../components/ui/StatCard";
-import { Donut, Legend, CHART } from "../components/ui/Charts";
 import { StatusBadge } from "../components/ui/StatusBadge";
+import { Donut, Legend, CHART } from "../components/ui/Charts";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
+import { PunchClock } from "../components/attendance/PunchClock";
+import { OnboardingChecklist } from "../components/onboarding/OnboardingChecklist";
+import { Avatar } from "../components/ui/Avatar";
+import { useToast } from "../components/ui/Toast";
 
 type Dict = Record<string, unknown>;
 const num = (v: unknown, fallback = 0) => (typeof v === "number" ? v : fallback);
@@ -36,9 +40,55 @@ function ApiNotice({ onRetry }: { onRetry: () => void }) {
   );
 }
 
+interface BirthdayItem {
+  name: string;
+  employee_number: string;
+  department: string;
+  company: string;
+  date: string;
+  days_until: number;
+}
+
+interface AnnivItem {
+  name: string;
+  employee_number: string;
+  department: string;
+  company: string;
+  date: string;
+  days_until: number;
+  years: number;
+}
+
+interface DeptItem {
+  department: string;
+  count: number;
+}
+
+interface EntityItem {
+  company: string;
+  short_name?: string;
+  count: number;
+}
+
+interface RecentJoinerItem {
+  name: string;
+  employee_number: string;
+  hire_date?: string;
+  company: string;
+  department: string;
+}
+
 /* ─────────────────────────── HR / Admin ─────────────────────────── */
 function HRDashboard() {
-  const { data, isPending: isLoading, isError, refetch } = useQuery({ queryKey: ["dash-hr"], queryFn: () => dashboardApi.hr() });
+  const toast = useToast();
+  const [distView, setDistView] = useState<"company" | "dept">("company");
+  const [copiedName, setCopiedName] = useState<string | null>(null);
+
+  const { data, isPending: isLoading, isError, refetch } = useQuery({
+    queryKey: ["dash-hr"],
+    queryFn: () => dashboardApi.hr(),
+  });
+
   const { data: apps } = useQuery<LeaveApplication[]>({
     queryKey: ["leave-applications"],
     queryFn: () => leaveApi.listApplications(),
@@ -48,6 +98,11 @@ function HRDashboard() {
   const today = (data?.today as Dict) ?? {};
   const month = (data?.month as Dict) ?? {};
   const actions = (data?.actions as Dict) ?? {};
+  const birthdays = (data?.upcoming_birthdays as BirthdayItem[]) ?? [];
+  const anniversaries = (data?.upcoming_anniversaries as AnnivItem[]) ?? [];
+  const departments = (data?.department_distribution as DeptItem[]) ?? [];
+  const entities = (data?.entity_distribution as EntityItem[]) ?? [];
+  const recentJoiners = (data?.recent_joiners as RecentJoinerItem[]) ?? [];
 
   const total = num(hc.total);
   const present = num(today.present);
@@ -73,18 +128,54 @@ function HRDashboard() {
   );
   const leaveTotal = leaveTypes.reduce((s, t) => s + t.value, 0) || 1;
 
+  const handleCopyWish = (bday: BirthdayItem) => {
+    const text = `Happy Birthday ${bday.name}! Wishing you a wonderful year filled with joy, health, and success from everyone at ${bday.company}! 🎂🎉`;
+    navigator.clipboard.writeText(text);
+    setCopiedName(bday.name);
+    toast.success("Greeting copied to clipboard", `Personalized birthday message for ${bday.name} is ready to paste.`);
+    setTimeout(() => setCopiedName(null), 3000);
+  };
+
   return (
     <div className="space-y-6">
       {isError && <ApiNotice onRetry={() => refetch()} />}
 
+      {/* ─── Top Row: Plain KPI StatCards ──────────────────────────────────── */}
       <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Headcount" icon={Users} loading={isLoading} value={total} delta={newHires} hint="joined this month" />
-        <StatCard label="Present today" icon={UserCheck} loading={isLoading} value={present} hint={`${presentPct}% of workforce`} />
-        <StatCard label="On leave today" icon={Umbrella} loading={isLoading} value={onLeave} hint={`${absent} unplanned absences`} />
-        <StatCard label="Pending approvals" icon={Inbox} loading={isLoading} value={pending} hint="leave & corrections" />
+        <StatCard
+          label="Headcount"
+          icon={Users}
+          loading={isLoading}
+          value={total}
+          delta={newHires}
+          hint="joined this month"
+        />
+        <StatCard
+          label="Present today"
+          icon={UserCheck}
+          loading={isLoading}
+          value={present}
+          hint={`${presentPct}% of workforce`}
+        />
+        <StatCard
+          label="On leave today"
+          icon={Umbrella}
+          loading={isLoading}
+          value={onLeave}
+          hint={`${absent} unplanned absences`}
+        />
+        <StatCard
+          label="Pending approvals"
+          icon={Inbox}
+          loading={isLoading}
+          value={pending}
+          hint="leave & corrections"
+        />
       </div>
 
+      {/* ─── Row 2: Attendance Operations Pulse & Leave Breakdown ───────────── */}
       <div className="grid gap-4 lg:grid-cols-2">
+        {/* Attendance Pulse */}
         <div className="card">
           <div className="card-header">
             <div>
@@ -99,13 +190,13 @@ function HRDashboard() {
             ) : (
               <Donut
                 segments={[
-                  { label: "Present", value: Math.max(present - late, 0), color: CHART.present },
+                  { label: "On time", value: Math.max(present - late, 0), color: CHART.present },
                   { label: "Late", value: late, color: CHART.late },
                   { label: "Absent", value: absent, color: CHART.absent },
                   { label: "On leave", value: onLeave, color: CHART.leave },
                 ]}
               >
-                <span className="text-2xl font-semibold tabular-nums text-fg">{presentPct}%</span>
+                <span className="text-2xl font-bold tabular-nums text-fg">{presentPct}%</span>
                 <span className="text-[11px] text-fg-subtle">present</span>
               </Donut>
             )}
@@ -113,44 +204,289 @@ function HRDashboard() {
               <Legend
                 items={[
                   { label: "On time", color: CHART.present, value: isLoading ? "–" : Math.max(present - late, 0) },
-                  { label: "Late", color: CHART.late, value: isLoading ? "–" : late },
-                  { label: "Absent", color: CHART.absent, value: isLoading ? "–" : absent },
-                  { label: "On leave", color: CHART.leave, value: isLoading ? "–" : onLeave },
+                  { label: "Late arrivals", color: CHART.late, value: isLoading ? "–" : late },
+                  { label: "Absent (unplanned)", color: CHART.absent, value: isLoading ? "–" : absent },
+                  { label: "On approved leave", color: CHART.leave, value: isLoading ? "–" : onLeave },
                 ]}
               />
             </div>
           </div>
         </div>
 
+        {/* Leave Overview */}
         <div className="card">
           <div className="card-header">
             <h3 className="card-title">Leave overview</h3>
             {leaveLive && <Link to="/leave" className="link text-xs">Open</Link>}
           </div>
           {!leaveLive ? (
-            <EmptyState icon={Umbrella} title="No leave requests yet" description="Requests will be summarised here once people start applying." className="py-10" />
+            <EmptyState
+              icon={Umbrella}
+              title="No leave applications yet"
+              description="Applied employee leave will be dynamically mapped here."
+              className="py-10"
+            />
           ) : (
             <div className="px-5 pb-5">
-              <div className="grid grid-cols-3 divide-x divide-line rounded-lg border border-line">
+              <div className="grid grid-cols-3 divide-x divide-line rounded-xl border border-line bg-surface-raised/40">
                 {[
-                  { label: "Pending", value: leaveStatus.pending, cls: "text-warning" },
-                  { label: "Approved", value: leaveStatus.approved, cls: "text-success" },
-                  { label: "Rejected", value: leaveStatus.rejected, cls: "text-danger" },
+                  { label: "Pending", value: leaveStatus.pending, cls: "text-amber-500" },
+                  { label: "Approved", value: leaveStatus.approved, cls: "text-emerald-500" },
+                  { label: "Rejected", value: leaveStatus.rejected, cls: "text-rose-500" },
                 ].map((s) => (
                   <div key={s.label} className="px-3 py-3 text-center">
-                    <p className={`text-xl font-semibold tabular-nums ${s.cls}`}>{s.value}</p>
+                    <p className={`text-xl font-bold tabular-nums ${s.cls}`}>{s.value}</p>
                     <p className="text-[11px] text-fg-subtle">{s.label}</p>
                   </div>
                 ))}
               </div>
-              <p className="eyebrow mb-2.5 mt-5">Days by leave type</p>
+              <p className="eyebrow mb-2.5 mt-5">Days by Leave Category</p>
               <div className="flex h-2 overflow-hidden rounded-full bg-muted">
                 {leaveTypes.map((t) => (
-                  <div key={t.label} style={{ width: `${(t.value / leaveTotal) * 100}%`, background: t.color }} className="h-full first:rounded-l-full last:rounded-r-full" />
+                  <div
+                    key={t.label}
+                    style={{ width: `${(t.value / leaveTotal) * 100}%`, background: t.color }}
+                    className="h-full first:rounded-l-full last:rounded-r-full"
+                  />
                 ))}
               </div>
-              <div className="mt-4"><Legend items={leaveTypes.map((t) => ({ label: t.label, color: t.color, value: `${t.value}d` }))} /></div>
+              <div className="mt-4">
+                <Legend items={leaveTypes.map((t) => ({ label: t.label, color: t.color, value: `${t.value}d` }))} />
+              </div>
             </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Row 3: Multi-Company & Department Workforce Hub ───────────────── */}
+      <div className="card">
+        <div className="card-header">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/10 text-brand-600 dark:text-brand-400">
+              <Building2 size={16} />
+            </div>
+            <div>
+              <h3 className="card-title">Workforce Allocation</h3>
+              <p className="card-desc">Active employees distributed across group entities & departments</p>
+            </div>
+          </div>
+          {/* Segmented Switcher */}
+          <div className="seg">
+            <button
+              onClick={() => setDistView("company")}
+              data-active={distView === "company"}
+              className="seg-item"
+            >
+              By Company ({entities.length})
+            </button>
+            <button
+              onClick={() => setDistView("dept")}
+              data-active={distView === "dept"}
+              className="seg-item"
+            >
+              By Department ({departments.length})
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5">
+          {distView === "company" ? (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {entities.map((e) => {
+                const pct = total > 0 ? Math.round((e.count / total) * 100) : 0;
+                return (
+                  <Link
+                    key={e.company}
+                    to={`/employees?company=${encodeURIComponent(e.company)}`}
+                    className="group rounded-xl border border-line bg-surface-raised p-3.5 hover:border-brand-500/40 hover:bg-muted/40 transition-all"
+                  >
+                    <div className="flex items-center justify-between text-[13px] mb-2">
+                      <span className="font-semibold text-fg truncate group-hover:text-brand-600 dark:group-hover:text-brand-400">
+                        {e.company}
+                      </span>
+                      <span className="tabular-nums font-bold text-fg ml-2">{e.count}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-brand-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                    </div>
+                    <div className="flex items-center justify-between text-[11px] text-fg-subtle mt-1.5">
+                      <span>{pct}% of workforce</span>
+                      <span className="opacity-0 group-hover:opacity-100 text-brand-600 dark:text-brand-400 font-medium">Filter →</span>
+                    </div>
+                  </Link>
+                );
+              })}
+            </div>
+          ) : (
+            <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+              {departments.map((d) => {
+                const pct = total > 0 ? Math.round((d.count / total) * 100) : 0;
+                return (
+                  <div key={d.department} className="rounded-xl border border-line bg-surface-raised p-3.5">
+                    <div className="flex items-center justify-between text-[13px] mb-2">
+                      <span className="font-semibold text-fg truncate">{d.department}</span>
+                      <span className="tabular-nums font-bold text-fg ml-2">{d.count}</span>
+                    </div>
+                    <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-indigo-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                    </div>
+                    <p className="text-[11px] text-fg-subtle mt-1.5">{pct}% of active workforce</p>
+                  </div>
+                );
+              })}
+            </div>
+          )}
+        </div>
+      </div>
+
+      {/* ─── Row 4: People & Culture Hub (Birthdays, Anniversaries, New Hires) ─ */}
+      <div className="grid gap-4 lg:grid-cols-3">
+        {/* Column 1: Birthdays (DOB) */}
+        <div className="card flex flex-col">
+          <div className="card-header">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-pink-500/10 text-pink-500">
+                <Cake size={16} />
+              </div>
+              <div>
+                <h3 className="card-title">Upcoming Birthdays</h3>
+                <p className="card-desc">Celebrating in the next 45 days</p>
+              </div>
+            </div>
+            <Link to="/employees" className="link text-xs">All</Link>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-3 p-5">
+              {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
+            </div>
+          ) : birthdays.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center p-5">
+              <EmptyState icon={Cake} title="No upcoming birthdays" description="No birthdays recorded in the next 45 days." className="py-6" />
+            </div>
+          ) : (
+            <ul className="divide-y divide-line border-t border-line flex-1">
+              {birthdays.map((b, i) => (
+                <li key={i} className="flex items-center justify-between gap-3 px-5 py-3 text-[13px] hover:bg-muted/40 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar name={b.name} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-fg">{b.name}</p>
+                      <p className="truncate text-xs text-fg-subtle">{b.department} • {b.company}</p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 flex items-center gap-2">
+                    {b.days_until === 0 ? (
+                      <span className="badge badge-success font-semibold animate-pulse">Today! 🎉</span>
+                    ) : b.days_until === 1 ? (
+                      <span className="badge badge-warning">Tomorrow</span>
+                    ) : (
+                      <span className="badge badge-neutral text-xs">
+                        {format(new Date(b.date), "d MMM")} • {b.days_until}d
+                      </span>
+                    )}
+                    <button
+                      onClick={() => handleCopyWish(b)}
+                      title="Copy birthday wish"
+                      className="p-1 rounded-md text-fg-subtle hover:text-pink-600 hover:bg-pink-500/10 transition-colors"
+                    >
+                      {copiedName === b.name ? <Check size={14} className="text-success" /> : <Copy size={13} />}
+                    </button>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Column 2: Work Anniversaries (DOJ) */}
+        <div className="card flex flex-col">
+          <div className="card-header">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-amber-500/10 text-amber-500">
+                <Sparkles size={16} />
+              </div>
+              <div>
+                <h3 className="card-title">Work Anniversaries</h3>
+                <p className="card-desc">Milestone tenures this month</p>
+              </div>
+            </div>
+            <Link to="/employees" className="link text-xs">All</Link>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-3 p-5">
+              {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
+            </div>
+          ) : anniversaries.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center p-5">
+              <EmptyState icon={Award} title="No milestones" description="No work anniversaries in the upcoming 45 days." className="py-6" />
+            </div>
+          ) : (
+            <ul className="divide-y divide-line border-t border-line flex-1">
+              {anniversaries.map((a, i) => (
+                <li key={i} className="flex items-center justify-between gap-3 px-5 py-3 text-[13px] hover:bg-muted/40 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar name={a.name} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-fg">{a.name}</p>
+                      <p className="truncate text-xs text-fg-subtle">{a.department} • {a.company}</p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span className="badge badge-accent font-semibold">
+                      {a.years} {a.years === 1 ? "year" : "years"}
+                    </span>
+                    <p className="text-[11px] text-fg-subtle mt-0.5">{format(new Date(a.date), "d MMM")}</p>
+                  </div>
+                </li>
+              ))}
+            </ul>
+          )}
+        </div>
+
+        {/* Column 3: Recent Joiners */}
+        <div className="card flex flex-col">
+          <div className="card-header">
+            <div className="flex items-center gap-2">
+              <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-purple-500/10 text-purple-600 dark:text-purple-400">
+                <UserPlus size={16} />
+              </div>
+              <div>
+                <h3 className="card-title">Welcome New Joiners</h3>
+                <p className="card-desc">Recent additions to the team</p>
+              </div>
+            </div>
+            <Link to="/employees" className="link text-xs">Directory</Link>
+          </div>
+
+          {isLoading ? (
+            <div className="space-y-3 p-5">
+              {[0, 1, 2].map((i) => <Skeleton key={i} className="h-12 w-full rounded-lg" />)}
+            </div>
+          ) : recentJoiners.length === 0 ? (
+            <div className="flex-1 flex items-center justify-center p-5">
+              <EmptyState icon={UserPlus} title="No recent joiners" description="New hires will be welcomed here." className="py-6" />
+            </div>
+          ) : (
+            <ul className="divide-y divide-line border-t border-line flex-1">
+              {recentJoiners.map((j, i) => (
+                <li key={i} className="flex items-center justify-between gap-3 px-5 py-3 text-[13px] hover:bg-muted/40 transition-colors">
+                  <div className="flex items-center gap-3 min-w-0">
+                    <Avatar name={j.name} size="sm" />
+                    <div className="min-w-0">
+                      <p className="truncate font-semibold text-fg">{j.name}</p>
+                      <p className="truncate text-xs text-fg-subtle">{j.department} • {j.company}</p>
+                    </div>
+                  </div>
+                  <div className="shrink-0 text-right">
+                    <span className="badge badge-neutral text-xs">
+                      {j.hire_date ? format(new Date(j.hire_date), "d MMM yyyy") : "Recent"}
+                    </span>
+                  </div>
+                </li>
+              ))}
+            </ul>
           )}
         </div>
       </div>
@@ -274,6 +610,7 @@ export function DashboardPage() {
 
   const actions = isHR ? (
     <>
+      <Link to="/employees" className="btn-secondary"><Users size={15} /> Employees</Link>
       <Link to="/reports" className="btn-secondary"><BarChart3 size={15} /> Reports</Link>
       <Link to="/leave?tab=approvals" className="btn-primary"><CheckCheck size={15} /> Review approvals</Link>
     </>
@@ -294,6 +631,7 @@ export function DashboardPage() {
       {isHR && <HRDashboard />}
       {user.role === "MANAGER" && user.employmentId && <ManagerDashboard employmentId={user.employmentId} />}
       {user.role === "EMPLOYEE" && user.employmentId && <EmployeeDashboard employmentId={user.employmentId} />}
+      {!isHR && !user.employmentId && <HRDashboard />}
     </>
   );
 }

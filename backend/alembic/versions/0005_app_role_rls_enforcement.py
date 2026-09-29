@@ -17,6 +17,8 @@ Revision ID: 0005
 Revises: 0004
 """
 
+import os
+
 from alembic import op
 
 revision = "0005"
@@ -25,7 +27,10 @@ branch_labels = None
 depends_on = None
 
 APP_ROLE = "hrms_app"
-APP_ROLE_PASSWORD = "hrms_app_dev_password"
+# The published development default. A production deployment sets HRMS_APP_ROLE_PASSWORD before
+# running migrations (and core/config.py refuses to start in production while the app is still
+# configured with this value). Only takes effect when the role is first created.
+APP_ROLE_PASSWORD = os.environ.get("HRMS_APP_ROLE_PASSWORD", "hrms_app_dev_password")
 
 
 def upgrade() -> None:
@@ -33,7 +38,7 @@ def upgrade() -> None:
         DO $$
         BEGIN
             IF NOT EXISTS (SELECT FROM pg_roles WHERE rolname = '{APP_ROLE}') THEN
-                CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_ROLE_PASSWORD}'
+                CREATE ROLE {APP_ROLE} LOGIN PASSWORD '{APP_ROLE_PASSWORD.replace("'", "''")}'
                     NOSUPERUSER NOCREATEDB NOCREATEROLE NOBYPASSRLS;
             END IF;
         END

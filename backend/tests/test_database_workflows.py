@@ -1,101 +1,21 @@
 """Real PostgreSQL regression tests. Only explicit *_test databases are accepted."""
 
 import asyncio
+import json
 import os
 from datetime import date, timedelta
 from uuid import uuid4
 
 import pytest
-from httpx import ASGITransport, AsyncClient
 from sqlalchemy import text
 from sqlalchemy.engine import make_url
-from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
+from sqlalchemy.ext.asyncio import create_async_engine
 from sqlalchemy.pool import NullPool
 
-from hrms.core import database
-from hrms.core.config import settings
 from hrms.core.ids import to_uuid
-from hrms.main import app
+from tests.helpers import employee, ok, tenant
 
 pytestmark = pytest.mark.database
-
-
-@pytest.fixture
-async def api(monkeypatch, tmp_path):
-    url = make_url(os.environ["HRMS_TEST_DATABASE_URL"])
-    assert url.database.endswith("_test"), "Tests must use an explicitly isolated *_test database"
-    admin_engine = create_async_engine(url, poolclass=NullPool)
-    runtime = create_async_engine(
-        url.set(username="hrms_app", password="hrms_app_dev_password"), poolclass=NullPool
-    )
-    monkeypatch.setattr(
-        database,
-        "AsyncSessionLocal",
-        async_sessionmaker(runtime, expire_on_commit=False, autoflush=False),
-    )
-    monkeypatch.setattr(settings, "storage_dir", str(tmp_path))
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        yield client, admin_engine
-    await runtime.dispose()
-    await admin_engine.dispose()
-
-
-async def ok(client, method, path, **kwargs):
-    response = await client.request(method, path, **kwargs)
-    assert response.is_success, (method, path, response.status_code, response.text)
-    return response.json() if response.status_code != 204 else None
-
-
-async def tenant(client):
-    result = await ok(
-        client,
-        "POST",
-        "/v1/auth/register-company",
-        json={
-            "company_name": "Regression " + uuid4().hex[:8],
-            "admin_email": uuid4().hex + "@example.com",
-            "admin_password": "Test-password-123",
-        },
-    )
-    client.headers["Authorization"] = "Bearer " + result["access_token"]
-    return result
-
-
-async def employee(client, legal_entity, number=None):
-    person = await ok(
-        client,
-        "POST",
-        "/v1/persons",
-        json={"legal_first_name": "Test", "legal_last_name": uuid4().hex[:6]},
-    )
-    emp = await ok(
-        client,
-        "POST",
-        "/v1/employees",
-        json={
-            "person_id": person["id"],
-            "legal_entity_id": legal_entity,
-            "employee_number": number or uuid4().hex[:8],
-            "hire_date": "2020-01-01",
-        },
-    )
-    email = uuid4().hex + "@example.com"
-    await ok(
-        client,
-        "POST",
-        "/v1/users",
-        json={
-            "email": email,
-            "password": "Test-password-123",
-            "role": "EMPLOYEE",
-            "scope_type": "SELF",
-            "employment_id": emp["id"],
-        },
-    )
-    login = await ok(
-        client, "POST", "/v1/auth/login", json={"email": email, "password": "Test-password-123"}
-    )
-    return emp, login
 
 
 async def test_end_to_end_integrity_and_workflows(api):
@@ -404,8 +324,6 @@ async def test_mixed_role_write_scope_over_http(api):
             "legal_entity_ids": [company_a],
         },
     )
-    import json
-
     async with engine.begin() as conn:
         await conn.execute(
             text("""INSERT INTO role_assignments

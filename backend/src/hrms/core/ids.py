@@ -1,7 +1,8 @@
 """
 Opaque typed IDs for the public API.
 
-Internal storage: UUIDv7 (time-ordered, random suffix).
+Internal storage: a UUID. new_id() below generates UUIDv7 (time-ordered); most
+code currently calls uuid4() directly, which is equally valid — just not time-ordered.
 Public representation: "<prefix>_<base32-encoded-uuid>" e.g. emp_01J8Z3K7Q9...
 
 Rules from the architecture:
@@ -17,10 +18,13 @@ from uuid import UUID
 from fastapi import HTTPException
 
 try:
-    from uuid7 import uuid7  # type: ignore[import-untyped]
+    # The PyPI package "uuid7" installs a module named `uuid_extensions` — `import uuid7` never
+    # worked, so the fallback below silently ran everywhere until this was corrected.
+    from uuid_extensions import uuid7
 except ImportError:
-    # Fallback to uuid4 if uuid7 is not installed yet
-    def uuid7() -> UUID:  # type: ignore[misc]
+    # A stale virtualenv may lack the package. Fall back to a random UUID rather than failing to
+    # import — IDs stay unique, just not time-ordered.
+    def uuid7() -> UUID:
         return uuid.uuid4()
 
 

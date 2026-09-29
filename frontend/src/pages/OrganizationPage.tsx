@@ -2,11 +2,13 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2 } from "lucide-react";
+import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2, KeyRound, UserRoundX, UserRoundCheck, Copy, Sparkles } from "lucide-react";
 import { orgApi } from "../api/org";
 import type { LegalEntity, OrgUnit, EmployeeIdScheme } from "../api/org";
+import { dashboardApi } from "../api/dashboard";
 import { usersApi } from "../api/users";
-import type { Role, ScopeType } from "../api/users";
+import type { Role, ScopeType, UserAccount } from "../api/users";
+import { generateTempPassword, passwordProblem } from "../lib/password";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
 import { Sheet, ConfirmDialog } from "../components/ui/Overlay";
@@ -15,12 +17,12 @@ import { useToast, errorMessage } from "../components/ui/Toast";
 import { useAuth } from "../context/AuthContext";
 import { format } from "date-fns";
 
-type Tab = "companies" | "departments" | "locations" | "jobs" | "employee-ids" | "access";
+type Tab = "overview" | "companies" | "departments" | "locations" | "jobs" | "employee-ids" | "access";
 
 export function OrganizationPage() {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
-  const tab = (params.get("tab") as Tab) || "companies";
+  const tab = (params.get("tab") as Tab) || "overview";
   const setTab = (t: Tab) => setParams({ tab: t }, { replace: true });
 
   const canCreateCompany = !!user?.isAllScope;
@@ -37,6 +39,7 @@ export function OrganizationPage() {
         value={tab}
         onChange={setTab}
         items={[
+          { value: "overview", label: "Overview" },
           { value: "companies", label: "Companies" },
           { value: "departments", label: "Departments" },
           { value: "locations", label: "Locations" },
@@ -45,6 +48,7 @@ export function OrganizationPage() {
           ...(canManageAccess ? [{ value: "access" as const, label: "Users & access" }] : []),
         ]}
       />
+      {tab === "overview" && <OrganizationOverviewTab onNavigateTab={setTab} />}
       {tab === "companies" && <CompaniesTab canCreate={canCreateCompany} />}
       {tab === "departments" && <DepartmentsTab />}
       {tab === "locations" && <LocationsTab />}
@@ -52,6 +56,236 @@ export function OrganizationPage() {
       {tab === "employee-ids" && <EmployeeIdSchemesTab canCreateGlobal={canCreateCompany} />}
       {tab === "access" && canManageAccess && <AccessTab />}
     </>
+  );
+}
+
+/* ─────────────────────────── Summary of Organization (Overview) ─────────────────────────── */
+
+function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) => void }) {
+  const { data: hrData, isPending: hrPending } = useQuery({
+    queryKey: ["dash-hr"],
+    queryFn: () => dashboardApi.hr(),
+  });
+  const { data: entities = [], isPending: entitiesPending } = useQuery({
+    queryKey: ["legal-entities"],
+    queryFn: () => orgApi.listLegalEntities(),
+  });
+  const { data: locations = [] } = useQuery({
+    queryKey: ["locations"],
+    queryFn: () => orgApi.listLocations(),
+  });
+  const { data: orgUnits = [] } = useQuery({
+    queryKey: ["org-units"],
+    queryFn: () => orgApi.listOrgUnits(),
+  });
+
+  const isLoading = hrPending || entitiesPending;
+  const orgSummary = (hrData?.org_summary as Record<string, unknown>) ?? null;
+  const entityDist = (hrData?.entity_distribution as { company: string; short_name?: string; count: number }[]) ?? [];
+  const deptDist = (hrData?.department_distribution as { department: string; count: number }[]) ?? [];
+  const hc = (hrData?.headcount as Record<string, unknown>) ?? {};
+  const total = typeof hc.total === "number" ? hc.total : 0;
+
+  const tenureBrackets = (orgSummary?.tenure_brackets as Record<string, number>) ?? {};
+  const vets = tenureBrackets.over_10_years ?? 0;
+  const established = tenureBrackets["5_to_10_years"] ?? tenureBrackets.tenure_5_to_10 ?? 0;
+  const growth = tenureBrackets.under_5_years ?? tenureBrackets.tenure_under_5 ?? 0;
+  const tenureTotal = vets + established + growth || total || 1;
+  const vetsPct = Math.round((vets / tenureTotal) * 100);
+  const establishedPct = Math.round((established / tenureTotal) * 100);
+  const growthPct = Math.max(0, 100 - vetsPct - establishedPct);
+
+  const kycCompliance = (orgSummary?.kyc_compliance as Record<string, number>) ?? {};
+  const kycRate = typeof kycCompliance.rate_pct === "number" ? kycCompliance.rate_pct : 0;
+  const avgTenure = typeof orgSummary?.avg_tenure_years === "number" ? orgSummary.avg_tenure_years : 0;
+
+  if (isLoading) {
+    return (
+      <div className="space-y-6">
+        <div className="card p-5 space-y-4">
+          <Skeleton className="h-8 w-64" />
+          <div className="grid grid-cols-2 gap-4 sm:grid-cols-5">
+            {[0, 1, 2, 3, 4].map((i) => (
+              <Skeleton key={i} className="h-20 rounded-lg" />
+            ))}
+          </div>
+          <div className="grid gap-6 lg:grid-cols-2">
+            <Skeleton className="h-48 rounded-lg" />
+            <Skeleton className="h-48 rounded-lg" />
+          </div>
+        </div>
+      </div>
+    );
+  }
+
+  return (
+    <div className="space-y-6">
+      {/* ─── Summary of Organization Card ─────────────────────────────── */}
+      <div className="card">
+        <div className="card-header">
+          <div>
+            <h3 className="card-title">Summary of organization</h3>
+            <p className="card-desc">Group entities, operating locations, and employee seniority breakdown</p>
+          </div>
+          <span className="badge badge-neutral">{total} Active staff</span>
+        </div>
+
+        <div className="p-5 space-y-6">
+          {/* Metric summary in standard divided box */}
+          <div className="grid grid-cols-2 divide-x divide-line rounded-lg border border-line sm:grid-cols-5">
+            <button
+              onClick={() => onNavigateTab("companies")}
+              className="p-3.5 text-center hover:bg-surface-raised transition text-left cursor-pointer"
+            >
+              <p className="text-2xl font-semibold tabular-nums text-fg">
+                {entities.length || (orgSummary?.total_entities as number) || 0}
+              </p>
+              <p className="text-[11px] text-fg-subtle">Legal entities &rarr;</p>
+            </button>
+            <button
+              onClick={() => onNavigateTab("locations")}
+              className="p-3.5 text-center hover:bg-surface-raised transition text-left cursor-pointer"
+            >
+              <p className="text-2xl font-semibold tabular-nums text-fg">
+                {locations.length || (orgSummary?.total_locations as number) || 0}
+              </p>
+              <p className="text-[11px] text-fg-subtle">Locations & hubs &rarr;</p>
+            </button>
+            <button
+              onClick={() => onNavigateTab("departments")}
+              className="p-3.5 text-center hover:bg-surface-raised transition text-left cursor-pointer"
+            >
+              <p className="text-2xl font-semibold tabular-nums text-fg">
+                {orgUnits.length || (orgSummary?.total_departments as number) || 0}
+              </p>
+              <p className="text-[11px] text-fg-subtle">Departments &rarr;</p>
+            </button>
+            <div className="p-3.5 text-center">
+              <p className="text-2xl font-semibold tabular-nums text-fg">{avgTenure} yrs</p>
+              <p className="text-[11px] text-fg-subtle">Average tenure</p>
+            </div>
+            <div className="p-3.5 text-center">
+              <p className="text-2xl font-semibold tabular-nums text-success">{kycRate}%</p>
+              <p className="text-[11px] text-fg-subtle">KYC compliance</p>
+            </div>
+          </div>
+
+          {/* Two-Column Deep Breakdown */}
+          <div className="grid gap-6 lg:grid-cols-2">
+            {/* Left Column: Registered Companies Overview */}
+            <div>
+              <div className="flex items-center justify-between mb-2.5">
+                <p className="eyebrow">Group entities directory ({entityDist.length || entities.length})</p>
+                <button
+                  onClick={() => onNavigateTab("companies")}
+                  className="link text-xs"
+                >
+                  Manage companies
+                </button>
+              </div>
+              <div className="divide-y divide-line rounded-lg border border-line">
+                {entityDist.length > 0 ? (
+                  entityDist.map((e) => {
+                    const pct = total > 0 ? Math.round((e.count / total) * 100) : 0;
+                    return (
+                      <div
+                        key={e.company}
+                        className="flex items-center justify-between px-3.5 py-2.5 text-[13px]"
+                      >
+                        <div className="min-w-0 pr-2">
+                          <span className="font-medium text-fg block truncate">{e.company}</span>
+                          {e.short_name && <span className="text-xs text-fg-subtle">{e.short_name}</span>}
+                        </div>
+                        <span className="shrink-0 text-right">
+                          <span className="font-semibold text-fg tabular-nums">{e.count} staff</span>
+                          <span className="text-xs text-fg-subtle ml-1.5">({pct}%)</span>
+                        </span>
+                      </div>
+                    );
+                  })
+                ) : (
+                  entities.map((e) => (
+                    <div
+                      key={e.id}
+                      className="flex items-center justify-between px-3.5 py-2.5 text-[13px]"
+                    >
+                      <div className="min-w-0">
+                        <span className="font-medium text-fg truncate block">{e.name}</span>
+                        {e.short_name && <span className="text-xs text-fg-subtle">{e.short_name}</span>}
+                      </div>
+                      <span className="badge badge-neutral text-xs">{e.country_code}</span>
+                    </div>
+                  ))
+                )}
+              </div>
+            </div>
+
+            {/* Right Column: Seniority & Department Breakdown */}
+            <div className="space-y-5">
+              <div>
+                <p className="eyebrow mb-2.5">Employee seniority & retention</p>
+                <div className="space-y-3 rounded-lg border border-line p-4">
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-fg">Veterans (10+ Years)</span>
+                      <span className="tabular-nums font-semibold text-fg">{vets} staff ({vetsPct}%)</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-amber-500" style={{ width: `${vetsPct}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-fg">Established (5 to 10 Years)</span>
+                      <span className="tabular-nums font-semibold text-fg">{established} staff ({establishedPct}%)</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-brand-500" style={{ width: `${establishedPct}%` }} />
+                    </div>
+                  </div>
+
+                  <div>
+                    <div className="flex justify-between text-xs mb-1">
+                      <span className="font-medium text-fg">Growth (&lt; 5 Years)</span>
+                      <span className="tabular-nums font-semibold text-fg">{growth} staff ({growthPct}%)</span>
+                    </div>
+                    <div className="h-2 overflow-hidden rounded-full bg-muted">
+                      <div className="h-full rounded-full bg-info" style={{ width: `${growthPct}%` }} />
+                    </div>
+                  </div>
+                </div>
+              </div>
+
+              <div>
+                <div className="flex items-center justify-between mb-2.5">
+                  <p className="eyebrow">Functional allocation</p>
+                  <button
+                    onClick={() => onNavigateTab("departments")}
+                    className="link text-xs"
+                  >
+                    All departments ({orgUnits.length})
+                  </button>
+                </div>
+                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
+                  {deptDist.map((d) => (
+                    <div key={d.department} className="rounded-lg border border-line p-2 text-center">
+                      <p className="text-base font-semibold text-fg tabular-nums">{d.count}</p>
+                      <p className="text-[11px] text-fg-subtle truncate">{d.department}</p>
+                    </div>
+                  ))}
+                  {deptDist.length === 0 && (
+                    <div className="col-span-full py-2 text-center text-xs text-fg-subtle">
+                      {orgUnits.length} departments configured
+                    </div>
+                  )}
+                </div>
+              </div>
+            </div>
+          </div>
+        </div>
+      </div>
+    </div>
   );
 }
 
@@ -675,12 +909,28 @@ const SCOPE_LABEL: Record<ScopeType, string> = {
 
 function AccessTab() {
   const { user } = useAuth();
+  const qc = useQueryClient();
+  const toast = useToast();
   const [adding, setAdding] = useState(false);
+  const [toggling, setToggling] = useState<UserAccount | null>(null);
+  const [resetting, setResetting] = useState<UserAccount | null>(null);
   const canCreate = !!user && (user.permissions.includes("iam.write") || user.permissions.includes("*"));
   const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
   const roles = useQuery({ queryKey: ["roles"], queryFn: () => usersApi.listRoles() });
   const users = useQuery({ queryKey: ["users"], queryFn: () => usersApi.listUsers() });
   const entityName = new Map((entities.data ?? []).map((e) => [e.id, e.name]));
+
+  const setStatus = useMutation({
+    mutationFn: (u: UserAccount) => usersApi.setStatus(u.id, u.status === "ACTIVE" ? "INACTIVE" : "ACTIVE"),
+    onSuccess: (u) => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success(u.status === "ACTIVE" ? "Login re-enabled" : "Login disabled", u.status === "ACTIVE"
+        ? `${u.email ?? "The account"} can sign in again.`
+        : `${u.email ?? "The account"} is signed out and can't sign in.`);
+      setToggling(null);
+    },
+    onError: (e) => toast.error("Couldn't change the login", errorMessage(e)),
+  });
 
   return (
     <div className="space-y-4">
@@ -705,7 +955,7 @@ function AccessTab() {
       ) : (
         <div className="card overflow-hidden">
           <table className="tbl">
-            <thead><tr><th>Email</th><th>Role</th><th>Access</th><th className="hidden sm:table-cell">Linked employee</th><th>Status</th></tr></thead>
+            <thead><tr><th>Email</th><th>Role</th><th>Access</th><th className="hidden sm:table-cell">Linked employee</th><th>Sign-in</th>{canCreate && <th className="w-px"><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>
               {users.data.map((u) => (
                 <tr key={u.id + u.role}>
@@ -717,7 +967,21 @@ function AccessTab() {
                       : SCOPE_LABEL[u.scope_type]}
                   </td>
                   <td className="hidden sm:table-cell">{u.employee_name ?? "—"}</td>
-                  <td><StatusChip status={u.status} /></td>
+                  <td><SignInChip u={u} /></td>
+                  {canCreate && (
+                    <td className="whitespace-nowrap text-right">
+                      {u.id !== user?.id && (
+                        <>
+                          <button className="btn-ghost btn-sm" onClick={() => setResetting(u)} title="Set a temporary password">
+                            <KeyRound size={13} /> Reset password
+                          </button>
+                          <button className="btn-ghost btn-sm" onClick={() => setToggling(u)}>
+                            {u.status === "ACTIVE" ? <><UserRoundX size={13} /> Disable</> : <><UserRoundCheck size={13} /> Enable</>}
+                          </button>
+                        </>
+                      )}
+                    </td>
+                  )}
                 </tr>
               ))}
             </tbody>
@@ -725,7 +989,78 @@ function AccessTab() {
         </div>
       )}
       <AddUserSheet open={adding} onClose={() => setAdding(false)} entities={entities.data ?? []} roles={roles.data ?? []} />
+      <ConfirmDialog
+        open={!!toggling}
+        onClose={() => setToggling(null)}
+        onConfirm={() => toggling && setStatus.mutate(toggling)}
+        loading={setStatus.isPending}
+        title={toggling?.status === "ACTIVE" ? "Disable this login?" : "Re-enable this login?"}
+        confirmLabel={toggling?.status === "ACTIVE" ? "Disable login" : "Re-enable"}
+        description={toggling?.status === "ACTIVE"
+          ? `${toggling?.email ?? "This person"} will be signed out immediately and won't be able to sign in until you re-enable it.`
+          : `${toggling?.email ?? "This person"} will be able to sign in again.`}
+      />
+      <ResetPasswordSheet target={resetting} onClose={() => setResetting(null)} />
     </div>
+  );
+}
+
+function ResetPasswordSheet({ target, onClose }: { target: UserAccount | null; onClose: () => void }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [password, setPassword] = useState("");
+  const problem = password ? passwordProblem(password) : null;
+
+  const reset = useMutation({
+    mutationFn: () => usersApi.resetPassword(target!.id, password),
+    onSuccess: (u) => {
+      qc.invalidateQueries({ queryKey: ["users"] });
+      toast.success("Password reset", `${u.email ?? "The account"} was signed out and must choose a new password at next sign-in.`);
+      setPassword("");
+      onClose();
+    },
+    onError: (e) => toast.error("Couldn't reset the password", errorMessage(e)),
+  });
+
+  const close = () => { setPassword(""); onClose(); };
+  const submit = (e: FormEvent) => { e.preventDefault(); if (password && !problem) reset.mutate(); };
+
+  return (
+    <Sheet
+      open={!!target}
+      onClose={close}
+      title="Reset password"
+      description={target ? `Set a temporary password for ${target.email ?? "this account"}.` : undefined}
+      footer={
+        <>
+          <button className="btn-secondary" onClick={close}>Cancel</button>
+          <button className="btn-primary" type="submit" form="reset-password" disabled={!password || !!problem || reset.isPending}>
+            {reset.isPending ? "Resetting…" : "Reset password"}
+          </button>
+        </>
+      }
+    >
+      <form id="reset-password" onSubmit={submit} className="space-y-4">
+        <div>
+          <label className="label" htmlFor="rp-password">Temporary password</label>
+          <div className="flex gap-2">
+            <input id="rp-password" type="text" className="input font-mono" value={password} autoComplete="off"
+              spellCheck={false} aria-invalid={!!problem} onChange={(e) => setPassword(e.target.value)} />
+            <button type="button" className="btn-secondary shrink-0" onClick={() => setPassword(generateTempPassword())}>
+              <Sparkles size={14} /> Generate
+            </button>
+            <button type="button" className="btn-secondary shrink-0" disabled={!password} aria-label="Copy password"
+              onClick={() => navigator.clipboard?.writeText(password).then(() => toast.success("Copied", "Share it with them directly."))}>
+              <Copy size={14} />
+            </button>
+          </div>
+          <p className={`mt-1 text-xs ${problem ? "text-danger" : "text-fg-subtle"}`}>{problem ?? "At least 8 characters. Share it with them directly, not by email."}</p>
+        </div>
+        <p className="rounded-lg border border-line bg-panel px-3 py-2.5 text-[13px] text-fg-muted">
+          They'll be signed out everywhere right away, and asked to choose their own password the next time they sign in.
+        </p>
+      </form>
+    </Sheet>
   );
 }
 
@@ -735,13 +1070,16 @@ function AddUserSheet({ open, onClose, entities, roles }: {
   const { user } = useAuth();
   const qc = useQueryClient();
   const toast = useToast();
-  const empty = { email: "", password: "", role: "", legalEntityIds: [] as string[] };
+  const empty = { email: "", password: "", role: "", legalEntityIds: [] as string[], mustChange: true };
   const [form, setForm] = useState(empty);
 
   // Only offer roles whose permissions are a subset of the caller's own —
   // the server enforces this too, but hiding the option is better than a 403.
+  // EMPLOYEE is self-service only: the API refuses it with a company scope, and employees get their
+  // login when they're hired, so it isn't offered here.
   const grantableRoles = roles.filter(
-    (r) => user?.permissions.includes("*") || r.permissions.every((p) => user?.permissions.includes(p))
+    (r) => r.name !== "EMPLOYEE" &&
+      (user?.permissions.includes("*") || r.permissions.every((p) => user?.permissions.includes(p)))
   );
   const roleName = form.role || grantableRoles[0]?.name || "";
   const canGrantAll = !!user?.isAllScope;
@@ -760,6 +1098,7 @@ function AddUserSheet({ open, onClose, entities, roles }: {
         role: roleName,
         scope_type: "LEGAL_ENTITY",
         legal_entity_ids: form.legalEntityIds,
+        must_change_password: form.mustChange,
       }),
     onSuccess: (u) => {
       qc.invalidateQueries({ queryKey: ["users"] });
@@ -800,7 +1139,12 @@ function AddUserSheet({ open, onClose, entities, roles }: {
         <div>
           <label className="label" htmlFor="us-password">Temporary password</label>
           <input id="us-password" type="password" className="input" placeholder="At least 8 characters" value={form.password} onChange={(e) => setForm((f) => ({ ...f, password: e.target.value }))} />
-          <p className="mt-1 text-xs text-fg-subtle">Share this with them directly — they can change it after signing in.</p>
+          <label className="mt-2 flex items-center gap-2 text-[13px] text-fg">
+            <input type="checkbox" className="checkbox" checked={form.mustChange}
+              onChange={(e) => setForm((f) => ({ ...f, mustChange: e.target.checked }))} />
+            Ask them to choose their own password when they first sign in
+          </label>
+          <p className="mt-1 text-xs text-fg-subtle">Share this with them directly, not by email.</p>
         </div>
         <div>
           <label className="label" htmlFor="us-role">Role</label>
@@ -828,4 +1172,12 @@ function AddUserSheet({ open, onClose, entities, roles }: {
 
 function StatusChip({ status }: { status: string }) {
   return <span className={`badge ${status === "ACTIVE" ? "badge-success" : "badge-neutral"}`}>{status}</span>;
+}
+
+/** What this login can actually do right now — an ACTIVE account of a separated employee can't sign in. */
+function SignInChip({ u }: { u: UserAccount }) {
+  if (u.status !== "ACTIVE") return <span className="badge badge-neutral">Disabled</span>;
+  if (!u.can_sign_in) return <span className="badge badge-warning" title="The linked employee has left the company">Left company</span>;
+  if (u.must_change_password) return <span className="badge badge-info" title="Has a temporary password">Must set password</span>;
+  return <span className="badge badge-success">Active</span>;
 }

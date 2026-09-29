@@ -38,6 +38,10 @@ class PersonnelActionStatus(enum.StrEnum):
     REJECTED = "REJECTED"
     CANCELLED = "CANCELLED"
     SCHEDULED = "SCHEDULED"
+    # A scheduled action that could no longer be applied when its date arrived
+    # (e.g. a transfer scheduled after a separation). It is parked here with a
+    # reason instead of failing requests; HR can cancel it or schedule a fix.
+    FAILED = "FAILED"
 
 
 class PersonnelActionType(enum.StrEnum):
@@ -176,6 +180,7 @@ class PersonnelAction(SQLModel, table=True):
     idempotency_key: str | None = Field(default=None, max_length=100, index=True)
     submitted_at: datetime | None = Field(default=None)
     applied_at: datetime | None = Field(default=None)
+    failure_reason: str | None = Field(default=None, max_length=500)
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)

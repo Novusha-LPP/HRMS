@@ -10,8 +10,9 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import Column
+from sqlalchemy import BigInteger, Column, ForeignKey, Index, text
 from sqlalchemy.dialects.postgresql import JSONB
+from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, SQLModel
 
 
@@ -38,9 +39,17 @@ class UserAccount(SQLModel, table=True):
     # For employees without email: code + mobile OTP login
     employee_code: str | None = Field(default=None, max_length=50)
     mobile: str | None = Field(default=None, max_length=20)
-    # bcrypt hash (passlib). Null means the account cannot log in with a
-    # password yet (e.g. provisioned but not activated).
+    # bcrypt hash (core/security.py). Null means the account cannot log in with
+    # a password yet (e.g. provisioned but not activated).
     password_hash: str | None = Field(default=None, max_length=255)
+    # Set for freshly imported accounts and after an admin reset: every endpoint
+    # except change-password is refused until the user picks their own password.
+    must_change_password: bool = Field(default=False)
+    password_changed_at: datetime | None = Field(default=None)
+    # Every token carries the epoch it was issued under (claim "ep"); a password
+    # change or reset bumps it, so all earlier tokens stop working at once (see
+    # core/database.get_session).
+    token_epoch: int = Field(default=0)
     # The employment this login IS — drives "my dashboard", "my leave", etc.
     # Separate from role_assignments, which grant visibility into OTHER
     # employees' data (a shared accountant, a group HR manager, ...).
@@ -49,6 +58,77 @@ class UserAccount(SQLModel, table=True):
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     last_login_at: datetime | None = Field(default=None)
     version: int = Field(default=0)
+    erp_system: str | None = Field(default=None, max_length=20)
+    erp_user_id: str | None = Field(default=None, max_length=100)
+
+
+class AuthThrottle(SQLModel, table=True):
+    """
+    Attempt counters for login / registration (core/throttle.py). No tenant_id
+    and no RLS: they're consulted before anyone is identified, and keys are
+    stored only as SHA-256 hashes.
+    """
+
+    __tablename__ = "auth_throttle"
+
+    scope: str = Field(primary_key=True, max_length=40)
+    key_hash: str = Field(primary_key=True, max_length=64)
+    failures: int = Field(default=0)
+    window_started_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    locked_until: datetime | None = Field(default=None)
+
+
+class ApiKey(SQLModel, table=True):
+    """Server-to-server ERP credentials (hashed at rest; not yet wired to an endpoint)."""
+
+    __tablename__ = "api_keys"
+    __table_args__ = (Index("ix_api_keys_hash", "key_hash", unique=True),)
+
+    tenant_id: UUID = Field(
+        sa_column=Column(
+            PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+        )
+    )
+    id: UUID = Field(primary_key=True)
+    name: str = Field(max_length=120)
+    key_prefix: str = Field(max_length=20)
+    key_hash: str = Field(max_length=64)
+    scopes: list[str] = Field(
+        default_factory=list,
+        sa_column=Column("scopes", JSONB, nullable=False, server_default=text("'[]'::jsonb")),
+    )
+    allowed_ips: list[str] | None = Field(default=None, sa_column=Column("allowed_ips", JSONB))
+    is_active: bool = Field(default=True)
+    expires_at: datetime | None = Field(default=None)
+    rate_limit_per_minute: int = Field(default=600)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_by: UUID | None = Field(default=None)
+    last_used_at: datetime | None = Field(default=None)
+    last_used_ip: str | None = Field(default=None, max_length=45)
+    total_requests: int = Field(
+        default=0, sa_column=Column(BigInteger, nullable=False, server_default="0")
+    )
+
+
+class ImportBatch(SQLModel, table=True):
+    """One run of an ERP import script (scripts/migrate_tenants.py): what was created/updated."""
+
+    __tablename__ = "import_batches"
+
+    tenant_id: UUID = Field(
+        sa_column=Column(
+            PG_UUID(as_uuid=True), ForeignKey("tenants.id", ondelete="CASCADE"), primary_key=True
+        )
+    )
+    id: UUID = Field(primary_key=True)
+    source_system: str = Field(max_length=50)
+    imported_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    imported_by: str = Field(default="system_migration", max_length=100)
+    total_records: int = Field(default=0)
+    created_records: int = Field(default=0)
+    updated_records: int = Field(default=0)
+    is_dry_run: bool = Field(default=False)
+    details: dict[str, Any] | None = Field(default=None, sa_column=Column("details", JSONB))
 
 
 class Role(SQLModel, table=True):

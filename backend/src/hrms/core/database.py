@@ -9,16 +9,25 @@ bug that forgets a WHERE tenant_id = ... clause still can't read another
 tenant's rows — Postgres itself refuses.
 """
 
+import logging
 from collections.abc import AsyncGenerator
 from typing import Annotated
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy.ext.asyncio import AsyncSession, async_sessionmaker, create_async_engine
 from sqlalchemy.sql import text
 
 from hrms.core.authn import CurrentUser
 from hrms.core.config import settings
+from hrms.core.errors import CodedHTTPException
 from hrms.core.tenancy import TenantDep
+
+logger = logging.getLogger(__name__)
+
+# A user who must change their password (freshly imported, or reset by an
+# admin) may only reach these until they have. Everything else is refused
+# server-side — the frontend redirect is a convenience, not the control.
+PASSWORD_CHANGE_EXEMPT_PATHS = frozenset({"/v1/auth/change-password", "/v1/auth/me"})
 
 engine = create_async_engine(
     settings.app_database_url or settings.database_url,
@@ -37,7 +46,7 @@ AsyncSessionLocal = async_sessionmaker(
 
 
 async def get_session(
-    tenant_id: TenantDep, principal: CurrentUser
+    request: Request, tenant_id: TenantDep, principal: CurrentUser
 ) -> AsyncGenerator[AsyncSession, None]:
     """
     Yield a session with the tenant context already set in PostgreSQL.
@@ -70,12 +79,19 @@ async def get_session(
         )
         if not row or row["status"] != "ACTIVE" or row["archived_at"] is not None:
             raise HTTPException(status.HTTP_403_FORBIDDEN, "This company's account is suspended")
+        # One query answers every "may this token still act?" question. The
+        # employment's state is read live, so a separation locks the person out
+        # from the moment it's applied and a rehire lets them back in, with no
+        # account flag to keep in sync.
         account = (
             (
                 await session.execute(
                     text("""
-            SELECT status, employment_id FROM user_accounts
-            WHERE tenant_id = :tid AND id = :uid
+            SELECT ua.status, ua.employment_id, ua.must_change_password,
+                   ua.token_epoch, e.employment_state
+            FROM user_accounts ua
+            LEFT JOIN employments e ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
+            WHERE ua.tenant_id = :tid AND ua.id = :uid
         """),
                     {"tid": tenant_id, "uid": principal.user_account_id},
                 )
@@ -87,12 +103,19 @@ async def get_session(
             not account
             or account["status"] != "ACTIVE"
             or account["employment_id"] != principal.employment_id
+            or account["employment_state"] == "SEPARATED"
         ):
             raise HTTPException(401, "This account is no longer active; sign in again")
+        if account["token_epoch"] != principal.token_epoch:
+            raise HTTPException(401, "Your password was changed; sign in again")
+        if account["must_change_password"] and request.url.path not in PASSWORD_CHANGE_EXEMPT_PATHS:
+            raise CodedHTTPException(
+                status.HTTP_403_FORBIDDEN,
+                "You must change your password before continuing",
+                code="PASSWORD_CHANGE_REQUIRED",
+            )
         try:
-            from hrms.modules.people.router import apply_due_actions
-
-            await apply_due_actions(session, tenant_id)
+            await _apply_scheduled_actions(session, tenant_id)
             yield session
             await session.commit()
             _finish_files(session, committed=True)
@@ -100,6 +123,23 @@ async def get_session(
             await session.rollback()
             _finish_files(session, committed=False)
             raise
+
+
+async def _apply_scheduled_actions(session: AsyncSession, tenant_id) -> None:
+    """
+    Apply personnel actions whose effective date has arrived. Runs on every
+    authenticated request, so it must never be able to take the API down:
+    apply_due_actions isolates each action in its own savepoint and parks a
+    failing one as FAILED. Worst case a scheduled change is applied a request
+    later — never a tenant-wide outage. (The common "nothing is due" path is a
+    single indexed SELECT; savepoints are only opened when there is work.)
+    """
+    from hrms.modules.people.router import apply_due_actions
+
+    try:
+        await apply_due_actions(session, tenant_id)
+    except Exception:
+        logger.exception("Applying scheduled personnel actions failed for tenant %s", tenant_id)
 
 
 SessionDep = Annotated[AsyncSession, Depends(get_session, scope="function")]

@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
+import { KeyRound } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { NoEmployeeRecord, Skeleton } from "../components/ui/Feedback";
 import { Avatar } from "../components/ui/Avatar";
@@ -47,6 +48,14 @@ export function ProfilePage() {
   return <EmployeeProfile />;
 }
 
+function ChangePasswordLink() {
+  return (
+    <Link to="/change-password" className="btn-secondary">
+      <KeyRound size={15} /> Change password
+    </Link>
+  );
+}
+
 function AccountOnlyProfile({ user }: { user: NonNullable<ReturnType<typeof useAuth>["user"]> }) {
   const rows: [string, string][] = [
     ["Email", user.email ?? "—"],
@@ -56,7 +65,7 @@ function AccountOnlyProfile({ user }: { user: NonNullable<ReturnType<typeof useA
   ];
   return (
     <div className="max-w-4xl">
-      <PageHeader title="My profile" description="The account you’re signed in with." />
+      <PageHeader title="My profile" description="The account you’re signed in with." actions={<ChangePasswordLink />} />
       <div className="card mb-6 max-w-2xl p-6">
         <div className="flex items-center gap-4">
           <Avatar name={user.name} size="xl" />
@@ -156,7 +165,7 @@ function EmployeeProfile() {
 
   return (
     <div className="max-w-4xl">
-      <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." />
+      <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." actions={<ChangePasswordLink />} />
 
       <Tabs<ProfileTab>
         className="mb-6"

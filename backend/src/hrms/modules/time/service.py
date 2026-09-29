@@ -9,6 +9,7 @@ from sqlmodel import select
 
 from hrms.core.datetime_utils import (
     apply_punch_rounding,
+    calc_lateness,
     calc_overtime,
     compute_day,
     compute_standard_minutes,
@@ -140,7 +141,20 @@ async def recompute_day(session, tenant_id, employment_id, day, policy, ad=None)
     ad.last_punch_out = max(outs) if outs else None
     ad.gross_minutes = ad.break_minutes = ad.effective_minutes = 0
     ad.late_by_minutes = ad.early_departure_minutes = 0
-    ad.status = "PENDING" if ins else "ABSENT"
+
+    # Calculate lateness immediately upon first check-in
+    if ad.first_punch_in:
+        late_res = calc_lateness(
+            ad.first_punch_in,
+            policy.expected_start_time,
+            policy.grace_late_minutes,
+            policy.timezone,
+        )
+        ad.late_by_minutes = late_res.late_by_minutes
+        ad.status = "LATE" if late_res.is_late else "PRESENT"
+    else:
+        ad.status = "ABSENT"
+
     duration, breaks, open_session = event_minutes(
         events, policy.punch_rounding_minutes, policy.punch_rounding_direction
     )
@@ -178,7 +192,7 @@ async def recompute_day(session, tenant_id, employment_id, day, policy, ad=None)
             policy.expected_start_time, policy.expected_end_time, policy.break_minutes
         )
         ad.status = (
-            "PENDING"
+            ("LATE" if result.is_late else "PRESENT")
             if open_session
             else derive_attendance_status(
                 True,

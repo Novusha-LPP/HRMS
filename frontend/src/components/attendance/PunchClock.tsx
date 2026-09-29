@@ -57,6 +57,11 @@ export function PunchClock({ employmentId }: { employmentId: string }) {
     },
     onSuccess: (_, type) => {
       qc.invalidateQueries({ queryKey: ["today", employmentId] });
+      // Everything that counts today's punch: the month grid and the dashboards.
+      qc.invalidateQueries({ queryKey: ["attendance-days"] });
+      qc.invalidateQueries({ queryKey: ["dash-emp", employmentId] });
+      qc.invalidateQueries({ queryKey: ["dash-mgr", employmentId] });
+      qc.invalidateQueries({ queryKey: ["dash-hr"] });
       toast.success(type === "IN" ? "Checked in" : "Checked out", `Recorded at ${format(new Date(), "hh:mm a")}`);
     },
     onError: (e) => toast.error("Couldn’t record your punch", errorMessage(e)),
@@ -117,9 +122,8 @@ export function PunchClock({ employmentId }: { employmentId: string }) {
               {data.punches.map((p) => (
                 <li key={p.id} className="relative text-[13px]">
                   <span
-                    className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-surface ${
-                      p.punch_type === "IN" ? "bg-success" : "bg-fg-subtle"
-                    }`}
+                    className={`absolute -left-[21px] top-1 h-2.5 w-2.5 rounded-full ring-4 ring-surface ${p.punch_type === "IN" ? "bg-success" : "bg-fg-subtle"
+                      }`}
                   />
                   <span className="font-medium text-fg">{p.punch_type === "IN" ? "Checked in" : p.punch_type === "OUT" ? "Checked out" : p.punch_type.replace("_", " ").toLowerCase()}</span>
                   <span className="ml-2 tabular-nums text-fg-subtle">{fmtTime(p.punched_at)}</span>

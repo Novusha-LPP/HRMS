@@ -33,8 +33,10 @@ const CELL: Record<string, string> = {
 };
 
 function fmtMins(m: number) {
-  const h = Math.floor(m / 60);
-  return h > 0 ? `${h}h ${m % 60}m` : `${m % 60}m`;
+  const safeMins = Math.max(0, m || 0);
+  const h = Math.floor(safeMins / 60);
+  const mins = safeMins % 60;
+  return `${h}h ${mins}m`;
 }
 
 export function AttendancePage() {
@@ -202,9 +204,8 @@ function MonthGrid({ month, byDate }: { month: Date; byDate: Map<string, Attenda
             <div
               key={day.toISOString()}
               title={rec ? `${format(day, "d MMM")} · ${rec.status.replace(/_/g, " ").toLowerCase()}` : undefined}
-              className={`flex h-14 flex-col justify-between rounded-lg border p-1.5 text-left sm:h-16 sm:p-2 ${
-                rec ? CELL[rec.status] ?? "border-line bg-surface" : weekend ? "border-transparent bg-muted/60" : "border-line bg-surface"
-              } ${future ? "opacity-40" : ""} ${isToday ? "ring-2 ring-brand-500 ring-offset-1 ring-offset-surface" : ""}`}
+              className={`flex h-14 flex-col justify-between rounded-lg border p-1.5 text-left sm:h-16 sm:p-2 ${rec ? CELL[rec.status] ?? "border-line bg-surface" : weekend ? "border-transparent bg-muted/60" : "border-line bg-surface"
+                } ${future ? "opacity-40" : ""} ${isToday ? "ring-2 ring-brand-500 ring-offset-1 ring-offset-surface" : ""}`}
             >
               <span className={`text-xs font-medium tabular-nums ${isToday ? "text-accent" : "text-fg-muted"}`}>{format(day, "d")}</span>
               {rec && (
@@ -229,9 +230,10 @@ function MonthGrid({ month, byDate }: { month: Date; byDate: Map<string, Attenda
 }
 
 function fmtOtMins(minutes: number): string {
-  const h = Math.floor(minutes / 60);
-  const m = minutes % 60;
-  return h > 0 ? (m > 0 ? `${h}h ${m}m` : `${h}h`) : `${m}m`;
+  const safeMins = Math.max(0, minutes || 0);
+  const h = Math.floor(safeMins / 60);
+  const m = safeMins % 60;
+  return `${h}h ${m}m`;
 }
 
 /**

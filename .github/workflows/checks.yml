@@ -28,14 +28,22 @@ jobs:
       - uses: actions/setup-python@v5
         with:
           python-version: "3.12"
-      - run: pip install -e '.[dev]'
+      # The versions in uv.lock, not "whatever pip resolves today".
+      - run: pip install uv==0.12.17
+      - run: uv sync --frozen --extra dev
+      - run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - run: ruff check src tests
+      - run: mypy src
       - run: alembic upgrade head
+      # Fails if a model field, table or constraint has no migration (and only then — see
+      # src/hrms/alembic_hooks.py for what is deliberately not compared).
+      - run: alembic check
       - run: pytest -q
-      - name: Verify latest migration rollback and reapply
+      - name: Verify the recent migrations roll back and reapply
         run: |
           alembic downgrade 0016
           alembic upgrade head
+          alembic check
   frontend:
     runs-on: ubuntu-latest
     defaults:

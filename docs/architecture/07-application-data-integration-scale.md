@@ -36,7 +36,7 @@
 - **Keys & Primary Indexing:** Composite primary keys `(tenant_id, id)` prevent any possibility of cross-tenant foreign key linkage. UUIDv7 and ULID strategies ensure sortable distributed primary identifiers.
 - **Extensible Attributes:** JSONB columns for flexible custom fields (e.g. `Person.custom_fields`, `PlatformAuditLog.metadata_json`).
 - **Schema Evolution:** Managed through Alembic async migrations (revisions 0001 through 0016).
-- **Session Context:** Handled via FastAPI dependency injection: `get_session()` executes `SELECT set_config('app.tenant_id', :tid, true)` and performs real-time tenant status verification on every query. Anonymous flows use `get_anonymous_session()` and `login_lookup()` `SECURITY DEFINER` function.
+- **Session Context:** Handled via FastAPI dependency injection: `get_session()` executes `SELECT set_config('app.tenant_id', :tid, true)` and performs real-time tenant status verification on every query. Anonymous flows use `get_anonymous_session()` and the `login_lookup()` `SECURITY DEFINER` function. `get_session()` also confirms on every request that the account is active, that the token's `ep` (token epoch) claim matches the account (so a password change or reset ends older sessions), that the owning employment is not `SEPARATED`, and that a forced password change has been completed.
 
 ## Payroll input contract (build this now, whatever §17 decides)
 

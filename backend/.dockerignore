@@ -1,0 +1,14 @@
+# Nothing here should reach the build context: secrets, local environments, caches, uploads, tests.
+.env
+.env.*
+!.env.example
+.venv
+venv
+__pycache__
+*.pyc
+.pytest_cache
+.ruff_cache
+.mypy_cache
+storage
+tests
+scripts

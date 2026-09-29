@@ -29,9 +29,9 @@ App: http://localhost:5173 · API/Swagger: http://localhost:8015/docs
 
 Sign in with your company account on the login page. A platform admin
 (`/platform/login`) creates tenants — seed the first one with
-`cd backend && uv run python scripts/seed_platform_admin.py`. To get the
+`cd backend && uv run python scripts/seed_platform_admin.py you@example.com` (prints a generated password once). To get the
 throwaway SFPL Group demo data back for development, run
-`uv run python scripts/seed_demo.py` (demo accounts use password `Passw0rd!`;
+`uv run python scripts/seed_demo.py` (asks for confirmation, `--yes` to skip; refuses in production; demo accounts use password `Passw0rd!`;
 the login page no longer has one-click tiles for them — type the email in).
 
 ---
@@ -154,7 +154,16 @@ uv run alembic downgrade -1
 
 # Generate a new migration after model changes
 uv run alembic revision --autogenerate -m "describe_the_change"
+
+# Does the schema the migrations build still match the models?  (CI runs this)
+uv run alembic check
 ```
+
+Migrations here are **hand-written and are the source of truth**; the models exist for the ORM.
+Autogenerate is only a starting point — review what it emits. It is deliberately additive: it never
+proposes dropping a table, column, constraint or foreign key the models don't know about, and it
+ignores indexes (named and shaped by hand). `alembic check` fails when a model field, table or
+constraint has no migration. The rules live in `backend/src/hrms/alembic_hooks.py`.
 
 Migration files are in `backend/alembic/versions/`:
 
@@ -165,6 +174,14 @@ Migration files are in `backend/alembic/versions/`:
 | `0003_policy_leave_corrections.py` | Policies, leave, corrections |
 | `0004_auth_and_scoping.py` | Password login columns on `user_accounts`, indexes for scope resolution |
 | `0005_app_role_rls_enforcement.py` | The `hrms_app` restricted role + `login_lookup()` function |
+| `0015`–`0016` | Employee ID schemes; the login that acted on a leave/correction approval |
+| `0017_integrity_and_workflows.py` | Tenant-aware composite foreign keys, uniqueness, auditable attendance/leave workflows |
+| `0018_api_keys_and_erp_integration.py` | `api_keys`, `import_batches`, ERP columns on `user_accounts`, sign-in by email / employee code / mobile |
+| `0019_account_security_and_login_lookup.py` | Forced password change + session revocation (`must_change_password`, `token_epoch`), sign-in throttling (`auth_throttle`), an **indexed** `login_lookup()` (+ `login_lookup_in()` for a company code), the missing tenant foreign keys, the append-only `kyc_access_log`, `personnel_actions.failure_reason` |
+
+`0005` creates the `hrms_app` role with the published development password. Set
+`HRMS_APP_ROLE_PASSWORD` before the *first* migration on a real database to choose another (an existing role's
+password is unchanged — use `ALTER ROLE`).
 
 ---
 
@@ -175,6 +192,42 @@ There's no more "pick a role" fake login. Every request carries a signed JWT
 backend derives tenant + identity + scope entirely from that token — nothing
 is trusted from a header or query parameter. See
 `backend/src/hrms/core/authn.py` and `core/authz.py`.
+
+### Signing in
+
+`POST /v1/auth/login` takes an **identifier** — an email address, an employee code, or a mobile number (any
+format: `9876543210`, `+91 98765 43210`, …) — and a password. (The older `email` / `username` / `phone` payload keys
+still work.) Employee codes and mobile numbers are only unique *within* a company, so:
+
+- if the identifier matches several accounts, the **password** picks the right one;
+- if the same identifier *and* password exist in more than one company, or the identifier is used by more than three
+  companies, the API answers `409 {"code": "COMPANY_REQUIRED"}` and the sign-in form asks for a **company code**
+  (the tenant's slug, sent as `tenant`). It never guesses.
+
+Sign-in is protected against guessing (see `core/throttle.py`; counters live in the `auth_throttle` table, so they
+hold across workers and restarts): 5 wrong passwords per identifier+address, 25 per identifier from anywhere, 100 per
+address, each locking that key for 15 minutes (`429` with `Retry-After`). Tune with `HRMS_LOGIN_*` (see
+`backend/.env.example`). An unknown identifier and a wrong password are indistinguishable — same `401`, same body, same
+time (a miss still spends a bcrypt check). Password checks run in a worker thread so they never stall the API.
+The platform console has the same protection under its own counters.
+
+### Passwords, sessions and offboarding
+
+- **Change your own password**: `POST /v1/auth/change-password` (Profile → *Change password*). It ends every other
+  session and returns a fresh token; tokens carry the account's `token_epoch`, which a change or reset increments.
+- **Forced change**: accounts flagged `must_change_password` — everyone the Sharanga import creates (initial password
+  `Firstname@1234`), anyone an admin resets, or anyone created with *Ask them to choose their own password* — can call only
+  `/v1/auth/me` and `/v1/auth/change-password` until they have (`403 PASSWORD_CHANGE_REQUIRED`). The web app routes them
+  to the change-password page.
+- **Admins** (`iam.write`, in scope) manage logins from **Organization → Access**: *Disable / Enable*
+  (`PATCH /v1/users/{id}`) and *Reset password* (`POST /v1/users/{id}/reset-password`, which sets a temporary password
+  and forces a change). You can't manage your own account here, can't manage an account with more permissions than you
+  hold (an HR manager can't take over a SUPER_ADMIN), and can't disable the last active administrator.
+- **A separated employee is locked out automatically** — the moment the SEPARATION applies, their existing tokens stop
+  working and they can't sign in; a REHIRE lets them back in. (No account flag to keep in sync: the employment's state
+  is checked on every request.) The Access tab shows such a login as *Left company*.
+- The `EMPLOYEE` role is self-service only: it can only be granted with `SELF` scope, and even if the database says
+  otherwise it always resolves to the caller's own record.
 
 ### First-time tenant & data setup
 
@@ -270,8 +323,10 @@ five system roles (`SUPER_ADMIN`, `HR_MANAGER`, `MANAGER`, `EMPLOYEE`,
 first legal entity, and a `SUPER_ADMIN` login — then signs that admin in
 immediately (same `LoginResponse` shape as `/v1/auth/login`). Email must be
 globally unique across every tenant (checked via the same `login_lookup()`
-SECURITY DEFINER function login uses), since login resolves tenant purely
-from email with no other hint.
+SECURITY DEFINER function login uses; a database index enforces it too).
+It is anonymous, so it is rate-limited per address (`HRMS_REGISTER_MAX_PER_HOUR`, default 5)
+and can be switched off entirely with `HRMS_ALLOW_PUBLIC_REGISTRATION=false` once tenants
+are created from the platform console.
 
 ### The Platform Console — a role above every tenant
 
@@ -570,14 +625,71 @@ handoff point for it (see its docstring), but salary/CTC/bank data doesn't
 exist anywhere in this codebase yet — it's a from-scratch subsystem, not a
 gap-fill. Scoping doc: [`docs/payroll-design.md`](docs/payroll-design.md).
 
-**ERP integration (Suraj Group / Sharanga Production) is planned, not
-implemented** — bringing two legacy systems in as tenants with dual login
-(ERP SSO + direct email/mobile/employee-code login). Blocked on the real
-legal-entity list for Suraj Group; see
-[`docs/erp-integration-plan.md`](docs/erp-integration-plan.md) for what's
-confirmed vs. still open. The source files
-(`exim.users.json`, `Sharanga_Production.*.json`) contain real employee PII
-and are gitignored — never commit them.
+---
+
+## ERP Import, Personnel Actions & KYC Privacy
+
+**ERP import (Suraj Group / Sharanga Production)** — the two legacy systems are imported as tenants by
+`backend/scripts/migrate_tenants.py`; plan and field mapping in
+[`docs/erp-integration-plan.md`](docs/erp-integration-plan.md). The source files
+(`exim.users.json`, `Sharanga_Production.*.json`) contain real employee PII and are gitignored — never commit them.
+
+Before the first run, in the Platform Console create the two tenants, and in the **Suraj** tenant create these
+legal entities, named exactly (Organization → Legal entities) — the importer places each person in the entity matching
+their company and will not invent one:
+`Suraj Forwarders & Shipping Agencies`, `Suraj Forwarders Private Limited`, `SR Container Carriers`,
+`Novusha Consulting Services India LLP`, `Sansar Tradelink`, `EXIMBIZ Enterprise`,
+`Alluvium IoT Solutions Private Limited`, `Paramount Propack Private Limited`.
+(The 13 users whose company reads plain "Suraj Forwarders" are put in the Private Limited entity — ERP plan open
+decision 2. Sharanga goes into the tenant's first legal entity.)
+
+```bash
+cd backend
+# --suraj-tenant / --rabs-tenant take a tenant slug or UUID; there are no defaults.
+uv run python scripts/migrate_tenants.py --suraj-tenant suraj --rabs-tenant sharanga --dry-run   # real code path, prints the report, rolls back
+uv run python scripts/migrate_tenants.py --suraj-tenant suraj --rabs-tenant sharanga             # asks you to type "import" before writing
+uv run python scripts/migrate_tenants.py --tenant rabs --rabs-tenant sharanga --dry-run          # one source only
+```
+
+The report shows, per source, what was created / already there / skipped, the role mix, every account that becomes
+`SUPER_ADMIN`, and legacy roles it did not recognise. Nothing is committed if any record failed, conflicted, or belongs
+to a company whose legal entity is missing (the log names the entities to create) unless you pass `--allow-partial`.
+
+What it guarantees: **least privilege** — ordinary staff get the `EMPLOYEE` role with `SELF` scope, managers
+`DIRECT_REPORTS`, HR/accountants their own company; only the legacy `admin` role becomes `SUPER_ADMIN`, and the run
+lists every one of those for review. Legacy role names are matched *exactly* against a table (never by substring —
+Sharanga has an `Admin_House Keeping` role); anything unknown is imported as a plain employee and reported. **Safe to
+re-run**: after the import HRMS is the system of record, so a re-run only adds what is missing and fills blanks; it never
+changes a password, status, role, hire date or assignment history. `--overwrite-existing` corrects profile fields only
+on accounts nobody has signed in to yet. Every record is isolated in a savepoint; if any fail or conflict the whole run
+rolls back unless you pass `--allow-partial`. An email already used by another tenant's account is imported
+*without* the address (they can still sign in by code or mobile) and reported.
+
+**After importing, set reporting lines.** Neither export says who reports to whom, so an imported `MANAGER` (10 Suraj,
+8 Sharanga) can see only themselves until each person's *Reports to* is set (Employees → the person → Transfer). That is the
+intended, least-privilege default — widen a manager's scope deliberately, not by importing everyone company-wide.
+
+If you ran the **first version** of this script, repair what it over-granted (dry-run by default):
+
+```bash
+uv run python scripts/fix_imported_scopes.py            # shows exactly what would change
+uv run python scripts/fix_imported_scopes.py --apply
+```
+
+`scripts/populate_tenant_operations.py` fabricates sample leave and attendance for **demo tenants only** — it
+refuses production, refuses a tenant holding ERP-imported employees (unless `--allow-imported-tenant`), never deletes,
+and labels every punch it writes as demo data.
+
+**Personnel actions** dated in the future are stored as `SCHEDULED` and apply by themselves on their date. Actions that
+would conflict (anything after a scheduled separation, or a separation ahead of a scheduled change) are refused when
+entered. One that can't apply when its day arrives (its data changed) is parked as `FAILED` with a reason and never
+breaks anyone's request; `POST /v1/personnel-actions/{id}/cancel` withdraws a `SCHEDULED` or `FAILED` one.
+
+**KYC privacy**: PAN, Aadhaar, bank and other identity numbers are returned **masked** (last four characters) to anyone
+without `kyc.write`/`kyc.verify`; raw document scans need the same permission; every time someone other than the
+employee opens a dossier or document it is written to the append-only `kyc_access_log`
+(`GET /v1/kyc/employees/{id}/access-log`). Numbers are still stored in plain text — encryption at rest is a separate
+decision (see the ERP plan, open decision 7).
 
 ---
 
@@ -600,18 +712,27 @@ Change `VITE_API_URL` to point at a remote API when deploying the frontend elsew
 cd frontend && npm run build
 # Outputs to frontend/dist/ — serve with any static host (S3 + CloudFront, nginx, etc.)
 
-# Run API in production (no --reload)
-uv run uvicorn hrms.main:app --host 0.0.0.0 --port 8015 --workers 4
+# Run API in production (no --reload). --proxy-headers so the sign-in throttle sees the real
+# caller behind your reverse proxy (only proxies listed in --forwarded-allow-ips are trusted).
+uv run uvicorn hrms.main:app --host 0.0.0.0 --port 8015 --workers 4 --proxy-headers
 ```
 
-Set these in production:
-- `HRMS_SECRET_KEY` — strong random secret (never the default); JWTs are signed with this
-- `HRMS_ENVIRONMENT=production`
-- `HRMS_CORS_ORIGINS` — your actual frontend domain
-- `HRMS_APP_DATABASE_URL` — the `hrms_app` role's password is `hrms_app_dev_password` by
-  default (set in migration `0005_app_role_rls_enforcement.py` for local dev convenience).
-  Rotate it in production: `ALTER ROLE hrms_app PASSWORD '<strong-random>'` and update this
-  env var to match. `HRMS_DATABASE_URL` (the superuser) is only ever used for migrations.
+`backend/Dockerfile` builds from `uv.lock` (runtime dependencies only, non-root, with a healthcheck). Full list of
+settings with comments: [`backend/.env.example`](backend/.env.example). Set these in production:
+- `HRMS_ENVIRONMENT=production` — with it set, the API **refuses to start** unless these three hold (`core/config.py`):
+  - `HRMS_SECRET_KEY` — a random secret of at least 32 characters (never the default); JWTs are signed with it.
+  - `HRMS_DEBUG=false`.
+  - `HRMS_APP_DATABASE_URL` — set, and using the restricted `hrms_app` role with a password that is **not** the
+    published development one (`hrms_app_dev_password`). Choose it before the first migration with
+    `HRMS_APP_ROLE_PASSWORD`, or rotate afterwards: `ALTER ROLE hrms_app PASSWORD '<strong-random>'` and update this
+    env var. `HRMS_DATABASE_URL` (the owner/superuser) is only used for migrations and the scripts in `backend/scripts/`.
+- Not enforced — check these yourself:
+  - `HRMS_CORS_ORIGINS` — your actual frontend domain.
+  - Never publish PostgreSQL on a public interface (docker-compose binds it to `127.0.0.1`).
+  - `HRMS_ALLOW_PUBLIC_REGISTRATION=false` once companies are created from the platform console.
+  - Platform admins: `HRMS_PLATFORM_ADMIN_PASSWORD='…' uv run python scripts/seed_platform_admin.py you@example.com`
+    (no default password; without the variable a random one is generated and shown once; an existing admin is left
+    untouched unless you supply a password).
 
 ---
 
@@ -624,14 +745,21 @@ docker compose logs -f api
 # Open a psql shell
 docker compose exec db psql -U hrms hrms
 
-# Run backend tests
-cd backend && uv run pytest
+# Run backend tests — against a THROWAWAY database, never the dev one (it holds real employee
+# data, and a test that signs in or registers a company would write to it)
+docker run -d --rm --name hrms-test-db -p 127.0.0.1:55432:5432 \
+  -e POSTGRES_USER=hrms -e POSTGRES_PASSWORD=test -e POSTGRES_DB=hrms_test postgres:16-alpine
+cd backend
+export HRMS_DATABASE_URL=postgresql+asyncpg://hrms:test@localhost:55432/hrms_test
+export HRMS_APP_DATABASE_URL=$HRMS_DATABASE_URL HRMS_TEST_DATABASE_URL=$HRMS_DATABASE_URL
+uv run alembic upgrade head && uv run pytest -q          # environment variables override backend/.env
+docker stop hrms-test-db
 
-# TypeScript type-check frontend
-cd frontend && npx tsc --noEmit
+# What CI runs (backend): lint, types, migrations + schema-drift check, tests
+cd backend && uv run ruff check src tests && uv run mypy src && uv run alembic check
 
-# Lint backend
-cd backend && uv run ruff check src/
+# Frontend: lint (errors fail the build, warnings don't), unit tests, then the production build (which type-checks first)
+cd frontend && npm run lint && npm test && npm run build
 ```
 
 ---
