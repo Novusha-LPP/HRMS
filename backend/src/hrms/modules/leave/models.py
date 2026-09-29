@@ -1,7 +1,7 @@
 from __future__ import annotations
 
 import enum
-from datetime import date, datetime
+from datetime import UTC, date, datetime
 from uuid import UUID
 
 from sqlalchemy import Column
@@ -179,3 +179,146 @@ class LeaveApprovalAction(SQLModel, table=True):
     approver_user_account_id: UUID | None = Field(default=None)
     comments: str | None = Field(default=None, max_length=1000)
     actioned_at: datetime
+
+
+class LeaveTransactionType(enum.StrEnum):
+    OPENING = "OPENING"
+    ACCRUAL = "ACCRUAL"
+    GRANT = "GRANT"
+    HOLD = "HOLD"
+    RELEASE = "RELEASE"
+    LEAVE_TAKEN = "LEAVE_TAKEN"
+    LEAVE_REVERSED = "LEAVE_REVERSED"
+    ADJUSTMENT = "ADJUSTMENT"
+    LAPSE = "LAPSE"
+    ENCASHMENT = "ENCASHMENT"
+    CARRY_FORWARD = "CARRY_FORWARD"
+
+
+class LeaveBalanceBucket(SQLModel, table=True):
+    __tablename__ = "leave_balance_buckets"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    recorded_at: datetime | None = Field(default=None)
+    recorded_by: UUID | None = Field(default=None)
+    version: int = Field(default=0)
+    archived_at: datetime | None = Field(default=None)
+
+    name: str = Field(max_length=100)
+    code: str = Field(max_length=20)
+    is_unlimited: bool = Field(default=False)
+    is_active: bool = Field(default=True)
+
+
+class LeaveTypeBucketMapping(SQLModel, table=True):
+    __tablename__ = "leave_type_bucket_mapping"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    leave_type_id: UUID = Field(index=True)
+    bucket_id: UUID = Field(index=True)
+    recorded_at: datetime | None = Field(default=None)
+    recorded_by: UUID | None = Field(default=None)
+
+
+class LeavePolicySet(SQLModel, table=True):
+    __tablename__ = "leave_policy_sets"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    recorded_at: datetime | None = Field(default=None)
+    recorded_by: UUID | None = Field(default=None)
+    version: int = Field(default=0)
+    archived_at: datetime | None = Field(default=None)
+
+    name: str = Field(max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    is_default: bool = Field(default=False)
+
+
+class LeaveBucketPolicy(SQLModel, table=True):
+    __tablename__ = "leave_bucket_policies"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    policy_set_id: UUID = Field(index=True)
+    bucket_id: UUID = Field(index=True)
+
+    accrual_type: str = Field(max_length=20)  # ANNUAL_UPFRONT, MONTHLY_PRORATE, NONE
+    days_per_year: float = Field(ge=0)
+    carry_forward_enabled: bool = Field(default=False)
+    max_carry_forward_days: float | None = Field(default=None, ge=0)
+    lapse_enabled: bool = Field(default=True)
+    encashment_enabled: bool = Field(default=False)
+    max_encashment_days: float | None = Field(default=None, ge=0)
+    probation_eligible: bool = Field(default=False)
+    min_service_months: int = Field(default=0, ge=0)
+    pro_rate_first_year: bool = Field(default=True)
+
+    recorded_at: datetime | None = Field(default=None)
+    recorded_by: UUID | None = Field(default=None)
+
+
+class LeavePolicyAssignment(SQLModel, table=True):
+    __tablename__ = "leave_policy_assignments"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    recorded_at: datetime | None = Field(default=None)
+    recorded_by: UUID | None = Field(default=None)
+    version: int = Field(default=0)
+    archived_at: datetime | None = Field(default=None)
+
+    employment_id: UUID | None = Field(default=None, index=True)
+    org_unit_id: UUID | None = Field(default=None, index=True)
+    legal_entity_id: UUID | None = Field(default=None, index=True)
+    leave_policy_set_id: UUID = Field(index=True)
+    effective_from: date
+    effective_to: date | None = Field(default=None)
+
+
+class LeaveMonthlyLedger(SQLModel, table=True):
+    __tablename__ = "leave_monthly_ledger"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    recorded_at: datetime | None = Field(default=None)
+
+    employment_id: UUID = Field(index=True)
+    bucket_id: UUID = Field(index=True)
+    calendar_year: int
+    calendar_month: int = Field(ge=1, le=12)
+    fy_year: int = Field(index=True)
+
+    opening: float = Field(default=0.0)
+    accrued: float = Field(default=0.0)
+    granted: float = Field(default=0.0)
+    held: float = Field(default=0.0)
+    adjustment: float = Field(default=0.0)
+    taken: float = Field(default=0.0)
+    lapsed: float = Field(default=0.0)
+    encashed: float = Field(default=0.0)
+    closing: float = Field(default=0.0)
+
+
+class LeaveBalanceTransaction(SQLModel, table=True):
+    __tablename__ = "leave_balance_transactions"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    employment_id: UUID = Field(index=True)
+    bucket_id: UUID = Field(index=True)
+    leave_type_id: UUID | None = Field(default=None, index=True)
+
+    transaction_type: str = Field(max_length=20)
+    quantity: float
+    previous_balance: float
+    new_balance: float
+    effective_date: date
+    reason: str | None = Field(default=None, max_length=500)
+    reference_id: UUID | None = Field(default=None)
+    reference_type: str | None = Field(default=None, max_length=30)
+    recorded_by: UUID
+    approved_by: UUID | None = Field(default=None)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

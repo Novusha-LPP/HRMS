@@ -334,3 +334,13 @@ def compute_day(
         early_departure_minutes=early_res.early_by_minutes,
         status=status,
     )
+
+
+def tenure_months(hire_date: date, as_of: date) -> int:
+    """Return the number of completed whole months between hire_date and as_of."""
+    if as_of < hire_date:
+        return 0
+    months = (as_of.year - hire_date.year) * 12 + (as_of.month - hire_date.month)
+    if as_of.day < hire_date.day:
+        months -= 1
+    return max(0, months)

@@ -1087,9 +1087,9 @@ async def apply_due_actions(session, tenant_id):
                 session.add(pa)
                 await session.flush()
         except Exception as exc:
-            reason = (
-                str(exc.detail) if isinstance(exc, HTTPException) else type(exc).__name__
-            )[:500]
+            reason = (str(exc.detail) if isinstance(exc, HTTPException) else type(exc).__name__)[
+                :500
+            ]
             logger.warning(
                 "Scheduled personnel action %s for employment %s could not be applied: %s",
                 action_id,

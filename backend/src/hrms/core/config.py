@@ -68,6 +68,7 @@ class Settings(BaseSettings):
     default_work_end: str = "18:30"
     default_grace_late_minutes: int = 15
     default_grace_early_minutes: int = 15
+    default_financial_year_start_month: int = 4
 
     @model_validator(mode="after")
     def production_configuration(self):

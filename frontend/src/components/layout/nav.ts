@@ -46,7 +46,7 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Settings",
     items: [
       { to: "/organization", label: "Organization", icon: Building2, permission: "org.write" },
-      { to: "/policy", label: "Attendance policies", icon: ShieldCheck, roles: HR_ROLES },
+      { to: "/policy", label: "Policies", icon: ShieldCheck, roles: HR_ROLES },
     ],
   },
 ];

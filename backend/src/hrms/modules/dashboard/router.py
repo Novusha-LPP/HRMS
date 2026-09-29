@@ -305,7 +305,8 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
     """)
 
     present = present_sql("ad")
-    att = await one(f"""
+    att = await one(
+        f"""
         SELECT
             COUNT(*) FILTER (WHERE {present}) AS present,
             COUNT(*) FILTER (WHERE NOT {present} AND ad.status = 'ABSENT') AS absent,
@@ -316,27 +317,38 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
         JOIN employments e ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
         WHERE ad.tenant_id = CAST(:tid AS uuid) AND ad.work_date = CAST(:today AS date)
           {emp_clause}
-    """, today=today)
+    """,
+        today=today,
+    )
 
-    new_hire_count = (await one(f"""
+    new_hire_count = (
+        await one(
+            f"""
         SELECT COUNT(*) AS n FROM employments e
         WHERE e.tenant_id = CAST(:tid AS uuid) AND e.hire_date >= CAST(:month_start AS date)
           {emp_clause}
-    """, month_start=month_start))["n"]
+    """,
+            month_start=month_start,
+        )
+    )["n"]
 
-    pending_pa_count = (await one(f"""
+    pending_pa_count = (
+        await one(f"""
         SELECT COUNT(*) AS n FROM personnel_actions pa
         JOIN employments e ON e.tenant_id = pa.tenant_id AND e.id = pa.employment_id
         WHERE pa.tenant_id = CAST(:tid AS uuid) AND pa.status = 'PENDING_APPROVAL'
           {emp_clause}
-    """))["n"]
+    """)
+    )["n"]
 
-    open_ob_count = (await one(f"""
+    open_ob_count = (
+        await one(f"""
         SELECT COUNT(*) AS n FROM onboarding_cases oc
         JOIN employments e ON e.tenant_id = oc.tenant_id AND e.id = oc.employment_id
         WHERE oc.tenant_id = CAST(:tid AS uuid) AND oc.status = 'IN_PROGRESS'
           {emp_clause}
-    """))["n"]
+    """)
+    )["n"]
 
     kyc = await one(f"""
         SELECT COUNT(*) FILTER (WHERE k.status = 'VERIFIED') AS verified,
@@ -352,7 +364,8 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
     # People with a birthday / work anniversary in the next 45 days.
     window = _mmdd_window(today)
     upcoming_birthdays = []
-    for r in await rows(f"""
+    for r in await rows(
+        f"""
         SELECT p.legal_first_name || ' ' || p.legal_last_name AS name, e.employee_number,
                p.date_of_birth, ou.name AS department, le.name AS company
         FROM employments e
@@ -363,20 +376,25 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
           AND p.date_of_birth IS NOT NULL
           AND to_char(p.date_of_birth, 'MM-DD') = ANY(CAST(:window AS text[]))
           {emp_clause}
-    """, window=window):
+    """,
+        window=window,
+    ):
         next_birthday = _next_occurrence(r["date_of_birth"], today)
-        upcoming_birthdays.append({
-            "name": r["name"],
-            "employee_number": r["employee_number"],
-            "department": r["department"] or "General",
-            "company": r["company"],
-            "date": next_birthday.isoformat(),
-            "days_until": (next_birthday - today).days,
-        })
+        upcoming_birthdays.append(
+            {
+                "name": r["name"],
+                "employee_number": r["employee_number"],
+                "department": r["department"] or "General",
+                "company": r["company"],
+                "date": next_birthday.isoformat(),
+                "days_until": (next_birthday - today).days,
+            }
+        )
     upcoming_birthdays = sorted(upcoming_birthdays, key=lambda x: x["days_until"])[:6]
 
     upcoming_anniversaries = []
-    for r in await rows(f"""
+    for r in await rows(
+        f"""
         SELECT p.legal_first_name || ' ' || p.legal_last_name AS name, e.employee_number,
                e.hire_date, ou.name AS department, le.name AS company
         FROM employments e
@@ -387,19 +405,23 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
           AND e.hire_date IS NOT NULL
           AND to_char(e.hire_date, 'MM-DD') = ANY(CAST(:window AS text[]))
           {emp_clause}
-    """, window=window):
+    """,
+        window=window,
+    ):
         anniversary = _next_occurrence(r["hire_date"], today)
         years = anniversary.year - r["hire_date"].year
         if years > 0:
-            upcoming_anniversaries.append({
-                "name": r["name"],
-                "employee_number": r["employee_number"],
-                "department": r["department"] or "General",
-                "company": r["company"],
-                "date": anniversary.isoformat(),
-                "days_until": (anniversary - today).days,
-                "years": years,
-            })
+            upcoming_anniversaries.append(
+                {
+                    "name": r["name"],
+                    "employee_number": r["employee_number"],
+                    "department": r["department"] or "General",
+                    "company": r["company"],
+                    "date": anniversary.isoformat(),
+                    "days_until": (anniversary - today).days,
+                    "years": years,
+                }
+            )
     upcoming_anniversaries = sorted(upcoming_anniversaries, key=lambda x: x["days_until"])[:6]
 
     department_distribution = [
@@ -468,12 +490,15 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
     # Locations: every one for a group-wide caller; for a scoped caller, the locations
     # their own people are currently assigned to.
     if scope.is_all:
-        location_count = (await one("""
+        location_count = (
+            await one("""
             SELECT COUNT(*) AS n FROM locations
             WHERE tenant_id = CAST(:tid AS uuid) AND archived_at IS NULL
-        """))["n"]
+        """)
+        )["n"]
     else:
-        location_count = (await one(f"""
+        location_count = (
+            await one(f"""
             SELECT COUNT(DISTINCT a.location_id) AS n
             FROM employments e
             JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
@@ -481,13 +506,16 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
                 AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
             WHERE e.tenant_id = CAST(:tid AS uuid)
               {emp_clause}
-        """))["n"]
+        """)
+        )["n"]
 
-    separated_count = (await one(f"""
+    separated_count = (
+        await one(f"""
         SELECT COUNT(*) AS n FROM employments e
         WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state = 'SEPARATED'
           {emp_clause}
-    """))["n"]
+    """)
+    )["n"]
 
     kyc_total = sum(
         (kyc[k] or 0) for k in ("verified", "submitted", "action_required", "not_submitted")

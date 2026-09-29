@@ -47,6 +47,7 @@ TENANT_FK_GAPS = (
     "policy_templates",
 )
 
+
 def _login_lookup_sql(name: str, params: str, tenant_filter: str) -> str:
     """
     One branch per identifier kind, each answerable from an index; ACTIVE accounts first;

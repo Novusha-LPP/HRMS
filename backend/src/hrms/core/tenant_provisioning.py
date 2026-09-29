@@ -15,6 +15,7 @@ from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hrms.core.authz import ROLE_DESCRIPTIONS
+from hrms.core.change_audit import record_change
 from hrms.core.security import ahash_password
 from hrms.modules.kernel.models import Role, RoleAssignment, Tenant, UserAccount
 from hrms.modules.org.models import LegalEntity
@@ -116,5 +117,25 @@ async def bootstrap_tenant(
         )
     )
     await session.flush()
+
+    # The first legal entity is created here, not through org/router.py's
+    # create_legal_entity — give it the same CREATE audit record everyone else
+    # gets (§ EntityChangeLog), attributed to the admin account this same call
+    # just created, so the trail has no blind spot for a tenant's day-zero entity.
+    await record_change(
+        session,
+        tenant_id,
+        "legal_entity",
+        legal_entity_id,
+        "CREATE",
+        changed_by=account_id,
+        before=None,
+        after={
+            "name": company_name,
+            "short_name": None,
+            "country_code": country_code,
+            "financial_year_start_month": None,
+        },
+    )
 
     return tenant_id, legal_entity_id, account_id

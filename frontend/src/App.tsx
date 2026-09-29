@@ -86,6 +86,7 @@ export default function App() {
                           <Route path="/organization" element={<OrganizationPage />} />
                           <Route path="/profile" element={<ProfilePage />} />
                           <Route path="/policy" element={<PolicyPage />} />
+                          <Route path="/leave-policies" element={<Navigate to="/policy?tab=leave" replace />} />
                           <Route path="/onboarding" element={<OnboardingPage />} />
                           <Route path="/reports" element={<ReportsPage />} />
                           <Route path="*" element={<Navigate to="/dashboard" replace />} />

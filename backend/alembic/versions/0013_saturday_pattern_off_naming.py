@@ -27,10 +27,14 @@ depends_on = None
 def upgrade() -> None:
     # Old FIRST_THIRD ("only 1st/3rd work") is closest to new
     # SECOND_FOURTH_OFF ("2nd/4th off, 1st/3rd/5th work").
-    op.execute("UPDATE policy_templates SET saturday_pattern = 'SECOND_FOURTH_OFF' WHERE saturday_pattern = 'FIRST_THIRD'")
+    op.execute(
+        "UPDATE policy_templates SET saturday_pattern = 'SECOND_FOURTH_OFF' WHERE saturday_pattern = 'FIRST_THIRD'"
+    )
     # Old SECOND_FOURTH ("only 2nd/4th work") is closest to new
     # FIRST_THIRD_OFF ("1st/3rd off, 2nd/4th/5th work").
-    op.execute("UPDATE policy_templates SET saturday_pattern = 'FIRST_THIRD_OFF' WHERE saturday_pattern = 'SECOND_FOURTH'")
+    op.execute(
+        "UPDATE policy_templates SET saturday_pattern = 'FIRST_THIRD_OFF' WHERE saturday_pattern = 'SECOND_FOURTH'"
+    )
     # Old NONE ("no Saturday ever") is now expressed by turning the
     # Saturday bit of work_days off directly, not by this field.
     op.execute("""
@@ -42,5 +46,9 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    op.execute("UPDATE policy_templates SET saturday_pattern = 'FIRST_THIRD' WHERE saturday_pattern = 'SECOND_FOURTH_OFF'")
-    op.execute("UPDATE policy_templates SET saturday_pattern = 'SECOND_FOURTH' WHERE saturday_pattern = 'FIRST_THIRD_OFF'")
+    op.execute(
+        "UPDATE policy_templates SET saturday_pattern = 'FIRST_THIRD' WHERE saturday_pattern = 'SECOND_FOURTH_OFF'"
+    )
+    op.execute(
+        "UPDATE policy_templates SET saturday_pattern = 'SECOND_FOURTH' WHERE saturday_pattern = 'FIRST_THIRD_OFF'"
+    )

@@ -164,4 +164,182 @@ export const leaveApi = {
 
   runAccrual: (period?: string) =>
     api.post<AccrualRunResult>(`/v1/leave/accrual/run${period ? `?period=${period}` : ""}`, {}),
+
+  // ─── Buckets & Mappings ──────────────────────────────────────────────────
+  listBuckets: () => api.get<LeaveBalanceBucket[]>("/v1/leave/buckets"),
+  createBucket: (body: { name: string; code: string; is_unlimited?: boolean }) =>
+    api.post<LeaveBalanceBucket>("/v1/leave/buckets", body),
+  updateBucket: (id: string, body: { name?: string; is_active?: boolean }) =>
+    api.patch<LeaveBalanceBucket>(`/v1/leave/buckets/${id}`, body),
+  deleteBucket: (id: string) => api.delete(`/v1/leave/buckets/${id}`),
+
+  listBucketMappings: () => api.get<LeaveTypeBucketMapping[]>("/v1/leave/bucket-mappings"),
+  createBucketMapping: (body: { leave_type_id: string; bucket_id: string }) =>
+    api.post<LeaveTypeBucketMapping>("/v1/leave/bucket-mappings", body),
+  deleteBucketMapping: (id: string) => api.delete(`/v1/leave/bucket-mappings/${id}`),
+
+  // ─── Policy Sets & Bucket Policies ───────────────────────────────────────
+  listPolicySets: () => api.get<LeavePolicySet[]>("/v1/leave/policy-sets"),
+  createPolicySet: (body: { name: string; description?: string; is_default?: boolean }) =>
+    api.post<LeavePolicySet>("/v1/leave/policy-sets", body),
+  updatePolicySet: (id: string, body: { name?: string; description?: string; is_default?: boolean }) =>
+    api.patch<LeavePolicySet>(`/v1/leave/policy-sets/${id}`, body),
+
+  listBucketPolicies: (setId: string) =>
+    api.get<LeaveBucketPolicy[]>(`/v1/leave/policy-sets/${setId}/bucket-policies`),
+  createBucketPolicy: (setId: string, body: {
+    bucket_id: string;
+    accrual_type: "ANNUAL_UPFRONT" | "MONTHLY_PRORATE" | "NONE";
+    days_per_year: number;
+    carry_forward_enabled?: boolean;
+    max_carry_forward_days?: number | null;
+    lapse_enabled?: boolean;
+    encashment_enabled?: boolean;
+    max_encashment_days?: number | null;
+    probation_eligible?: boolean;
+    min_service_months?: number;
+    pro_rate_first_year?: boolean;
+  }) => api.post<LeaveBucketPolicy>(`/v1/leave/policy-sets/${setId}/bucket-policies`, body),
+  updateBucketPolicy: (id: string, body: Partial<{
+    accrual_type: "ANNUAL_UPFRONT" | "MONTHLY_PRORATE" | "NONE";
+    days_per_year: number;
+    carry_forward_enabled: boolean;
+    max_carry_forward_days: number | null;
+    lapse_enabled: boolean;
+    encashment_enabled: boolean;
+    max_encashment_days: number | null;
+    probation_eligible: boolean;
+    min_service_months: number;
+    pro_rate_first_year: boolean;
+  }>) => api.patch<LeaveBucketPolicy>(`/v1/leave/bucket-policies/${id}`, body),
+  deleteBucketPolicy: (id: string) => api.delete(`/v1/leave/bucket-policies/${id}`),
+
+  // ─── Policy Assignments ──────────────────────────────────────────────────
+  listPolicyAssignments: () => api.get<LeavePolicyAssignment[]>("/v1/leave/policy-assignments"),
+  createPolicyAssignment: (body: {
+    leave_policy_set_id: string;
+    effective_from: string;
+    effective_to?: string;
+    employment_id?: string;
+    org_unit_id?: string;
+    legal_entity_id?: string;
+  }) => api.post<LeavePolicyAssignment>("/v1/leave/policy-assignments", body),
+  deletePolicyAssignment: (id: string) => api.delete(`/v1/leave/policy-assignments/${id}`),
+
+  // ─── Monthly Ledger & Transaction History ────────────────────────────────
+  getLedger: (employmentId: string, params?: { bucket_id?: string; fy_year?: number; calendar_year?: number }) => {
+    const q = new URLSearchParams({ employment_id: employmentId });
+    if (params?.bucket_id) q.set("bucket_id", params.bucket_id);
+    if (params?.fy_year) q.set("fy_year", String(params.fy_year));
+    if (params?.calendar_year) q.set("calendar_year", String(params.calendar_year));
+    return api.get<LeaveMonthlyLedger[]>(`/v1/leave/ledger?${q}`);
+  },
+
+  getTransactions: (employmentId: string, params?: { bucket_id?: string; from_date?: string; to_date?: string }) => {
+    const q = new URLSearchParams({ employment_id: employmentId });
+    if (params?.bucket_id) q.set("bucket_id", params.bucket_id);
+    if (params?.from_date) q.set("from_date", params.from_date);
+    if (params?.to_date) q.set("to_date", params.to_date);
+    return api.get<LeaveBalanceTransaction[]>(`/v1/leave/transactions?${q}`);
+  },
 };
+
+// ─── Phase 2 Config & Ledger Interfaces ─────────────────────────────────────
+
+export interface LeaveBalanceBucket {
+  id: string;
+  name: string;
+  code: string;
+  is_unlimited: boolean;
+  is_active: boolean;
+}
+
+export interface LeaveTypeBucketMapping {
+  id: string;
+  leave_type_id: string;
+  leave_type_name: string;
+  leave_type_code: string;
+  bucket_id: string;
+  bucket_name: string;
+  bucket_code: string;
+}
+
+export interface LeavePolicySet {
+  id: string;
+  name: string;
+  description: string | null;
+  is_default: boolean;
+}
+
+export interface LeaveBucketPolicy {
+  id: string;
+  policy_set_id: string;
+  bucket_id: string;
+  bucket_name: string;
+  bucket_code: string;
+  accrual_type: "ANNUAL_UPFRONT" | "MONTHLY_PRORATE" | "NONE";
+  days_per_year: number;
+  carry_forward_enabled: boolean;
+  max_carry_forward_days: number | null;
+  lapse_enabled: boolean;
+  encashment_enabled: boolean;
+  max_encashment_days: number | null;
+  probation_eligible: boolean;
+  min_service_months: number;
+  pro_rate_first_year: boolean;
+}
+
+export interface LeavePolicyAssignment {
+  id: string;
+  leave_policy_set_id: string;
+  leave_policy_set_name: string;
+  effective_from: string;
+  effective_to: string | null;
+  employment_id: string | null;
+  org_unit_id: string | null;
+  legal_entity_id: string | null;
+}
+
+export interface LeaveMonthlyLedger {
+  id: string;
+  employment_id: string;
+  bucket_id: string;
+  bucket_name: string;
+  bucket_code: string;
+  calendar_year: number;
+  calendar_month: number;
+  fy_year: number;
+  opening: number;
+  accrued: number;
+  granted: number;
+  held: number;
+  adjustment: number;
+  taken: number;
+  lapsed: number;
+  encashed: number;
+  closing: number;
+  available: number;
+}
+
+export interface LeaveBalanceTransaction {
+  id: string;
+  employment_id: string;
+  bucket_id: string;
+  bucket_name: string;
+  bucket_code: string;
+  leave_type_id: string | null;
+  leave_type_name: string | null;
+  leave_type_code: string | null;
+  transaction_type: string;
+  quantity: number;
+  previous_balance: number;
+  new_balance: number;
+  effective_date: string;
+  reason: string | null;
+  reference_id: string | null;
+  reference_type: string | null;
+  recorded_by: string;
+  approved_by: string | null;
+  recorded_at: string;
+}
+

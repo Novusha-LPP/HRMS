@@ -63,7 +63,9 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
         sa.UniqueConstraint("tenant_id", "employment_id", name="uq_tenant_kyc_employment"),
     )
-    op.create_index("ix_employee_kyc_records_emp", "employee_kyc_records", ["tenant_id", "employment_id"])
+    op.create_index(
+        "ix_employee_kyc_records_emp", "employee_kyc_records", ["tenant_id", "employment_id"]
+    )
     _enable_rls("employee_kyc_records")
 
     # ── KYC Documents ──────────────────────────────────────────────────────────
@@ -90,7 +92,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("tenant_id", "id"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
     )
-    op.create_index("ix_employee_kyc_documents_emp", "employee_kyc_documents", ["tenant_id", "employment_id"])
+    op.create_index(
+        "ix_employee_kyc_documents_emp", "employee_kyc_documents", ["tenant_id", "employment_id"]
+    )
     _enable_rls("employee_kyc_documents")
 
     # Grant permissions to APP_ROLE

@@ -2,13 +2,13 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2, KeyRound, UserRoundX, UserRoundCheck, Copy, Sparkles } from "lucide-react";
+import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2, KeyRound, UserRoundX, UserRoundCheck, History } from "lucide-react";
 import { orgApi } from "../api/org";
-import type { LegalEntity, OrgUnit, EmployeeIdScheme } from "../api/org";
+import type { LegalEntity, Location, OrgUnit, Job, EmployeeIdScheme, ChangeLogEntry } from "../api/org";
 import { dashboardApi } from "../api/dashboard";
 import { usersApi } from "../api/users";
-import type { Role, ScopeType, UserAccount } from "../api/users";
-import { generateTempPassword, passwordProblem } from "../lib/password";
+import type { Role, UserAccount } from "../api/users";
+import { ResetPasswordSheet, SCOPE_LABEL, SignInChip } from "../components/users/AccessPanel";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
 import { Sheet, ConfirmDialog } from "../components/ui/Overlay";
@@ -293,6 +293,8 @@ function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) 
 
 function CompaniesTab({ canCreate }: { canCreate: boolean }) {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<LegalEntity | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<LegalEntity | null>(null);
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
 
   return (
@@ -321,56 +323,72 @@ function CompaniesTab({ canCreate }: { canCreate: boolean }) {
             <div key={e.id} className="card p-5">
               <div className="flex items-start justify-between gap-3">
                 <span className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-500/10 text-accent"><Building2 size={18} /></span>
-                <span className="badge badge-neutral">{e.country_code}</span>
+                <div className="flex gap-1">
+                  <button className="btn-icon" onClick={() => setViewingHistory(e)} aria-label={`History for ${e.name}`}><History size={14} /></button>
+                  <button className="btn-icon" onClick={() => setEditing(e)} aria-label={`Edit ${e.name}`} disabled={!canCreate} title={canCreate ? undefined : "Only a group-level administrator can edit a company"}><Pencil size={14} /></button>
+                </div>
               </div>
               <p className="mt-3 text-[15px] font-semibold text-fg">{e.name}</p>
-              <p className="text-xs text-fg-subtle">{e.short_name ?? "—"}</p>
+              <p className="text-xs text-fg-subtle">{e.short_name ?? "—"} · {e.country_code}</p>
               <div className="mt-3"><StatusChip status={e.status} /></div>
             </div>
           ))}
         </div>
       )}
-      <AddCompanySheet open={adding} onClose={() => setAdding(false)} />
+      <CompanySheet open={adding} onClose={() => setAdding(false)} />
+      <CompanySheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} initial={editing ?? undefined} />
+      <HistoryModal
+        open={viewingHistory !== null}
+        onClose={() => setViewingHistory(null)}
+        title={viewingHistory ? `History — ${viewingHistory.name}` : "History"}
+        fetcher={viewingHistory ? () => orgApi.legalEntityHistory(viewingHistory.id) : undefined}
+      />
     </div>
   );
 }
 
-function AddCompanySheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+const MONTH_NAMES = ["January", "February", "March", "April", "May", "June", "July", "August", "September", "October", "November", "December"];
+
+function CompanySheet({ open, onClose, initial }: { open: boolean; onClose: () => void; initial?: LegalEntity }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const empty = { name: "", shortName: "", country: "IN" };
+  const isEdit = !!initial;
+  const empty = { name: initial?.name ?? "", shortName: initial?.short_name ?? "", country: initial?.country_code ?? "IN", fyStart: initial?.financial_year_start_month ?? 0 };
   const [form, setForm] = useState(empty);
 
-  const create = useMutation({
-    mutationFn: () => orgApi.createLegalEntity({ name: form.name.trim(), short_name: form.shortName.trim() || undefined, country_code: form.country }),
+  const save = useMutation({
+    mutationFn: () => {
+      const body = { name: form.name.trim(), short_name: form.shortName.trim() || undefined, country_code: form.country, financial_year_start_month: form.fyStart || undefined };
+      return isEdit ? orgApi.updateLegalEntity(initial!.id, body) : orgApi.createLegalEntity(body);
+    },
     onSuccess: (e) => {
       qc.invalidateQueries({ queryKey: ["legal-entities"] });
-      toast.success("Company added", e.name);
+      toast.success(isEdit ? "Company updated" : "Company added", e.name);
       setForm(empty);
       onClose();
     },
-    onError: (e) => toast.error("Couldn’t add company", errorMessage(e)),
+    onError: (e) => toast.error(isEdit ? "Couldn’t update company" : "Couldn’t add company", errorMessage(e)),
   });
 
   const valid = form.name.trim().length > 0;
-  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) create.mutate(); };
+  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
 
   return (
     <Sheet
       open={open}
       onClose={onClose}
-      title="Add company"
-      description="A new legal entity people can be hired into — a sister company."
+      title={isEdit ? "Edit company" : "Add company"}
+      description={isEdit ? "Renaming here updates it everywhere it's referenced — see History for the record of every change." : "A new legal entity people can be hired into — a sister company."}
       footer={
         <>
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" type="submit" form="add-company" disabled={!valid || create.isPending}>
-            {create.isPending ? "Adding…" : "Add company"}
+          <button className="btn-primary" type="submit" form="company-form" disabled={!valid || save.isPending}>
+            {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add company"}
           </button>
         </>
       }
     >
-      <form id="add-company" onSubmit={submit} className="space-y-4">
+      <form id="company-form" onSubmit={submit} className="space-y-4">
         <div>
           <label className="label" htmlFor="co-name">Company name</label>
           <input id="co-name" className="input" placeholder="e.g. Novusha Industries" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
@@ -385,7 +403,58 @@ function AddCompanySheet({ open, onClose }: { open: boolean; onClose: () => void
             <input id="co-country" className="input" maxLength={2} value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value.toUpperCase() }))} />
           </div>
         </div>
+        <div>
+          <label className="label" htmlFor="co-fy">Financial year starts <span className="font-normal text-fg-subtle">(optional — inherits the tenant default)</span></label>
+          <select id="co-fy" className="input" value={form.fyStart} onChange={(e) => setForm((f) => ({ ...f, fyStart: Number(e.target.value) }))}>
+            <option value={0}>Tenant default</option>
+            {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
+          </select>
+        </div>
       </form>
+    </Sheet>
+  );
+}
+
+/** Shared read-only view of an entity's change history — old value, new value, who, when. */
+function HistoryModal({ open, onClose, title, fetcher }: {
+  open: boolean; onClose: () => void; title: string; fetcher?: () => Promise<ChangeLogEntry[]>;
+}) {
+  const { data, isPending, isError } = useQuery({
+    queryKey: ["entity-history", title],
+    queryFn: () => fetcher!(),
+    enabled: open && !!fetcher,
+  });
+
+  return (
+    <Sheet open={open} onClose={onClose} title={title} description="Every change to this record — oldest at the bottom.">
+      {isError ? (
+        <p className="text-[13px] text-danger">Couldn’t load history.</p>
+      ) : isPending ? (
+        <div className="space-y-2">{[0, 1].map((i) => <Skeleton key={i} className="h-16 rounded-lg" />)}</div>
+      ) : !data?.length ? (
+        <p className="text-[13px] text-fg-subtle">No changes recorded yet.</p>
+      ) : (
+        <ul className="space-y-3">
+          {data.map((h) => (
+            <li key={h.id} className="rounded-lg border border-border-subtle p-3">
+              <div className="flex items-center justify-between text-xs text-fg-subtle">
+                <span className="badge badge-neutral">{h.action}</span>
+                <span>{format(new Date(h.changed_at), "d MMM yyyy, h:mm a")} · {h.changed_by_name ?? "Unknown"}</span>
+              </div>
+              <ul className="mt-2 space-y-1 text-[13px]">
+                {Object.entries(h.changes).map(([field, { old, new: next }]) => (
+                  <li key={field}>
+                    <span className="font-medium text-fg">{field.replace(/_/g, " ")}: </span>
+                    <span className="text-fg-subtle line-through">{old === null || old === undefined ? "—" : String(old)}</span>
+                    {" → "}
+                    <span className="text-fg">{next === null || next === undefined ? "—" : String(next)}</span>
+                  </li>
+                ))}
+              </ul>
+            </li>
+          ))}
+        </ul>
+      )}
     </Sheet>
   );
 }
@@ -394,6 +463,8 @@ function AddCompanySheet({ open, onClose }: { open: boolean; onClose: () => void
 
 function DepartmentsTab() {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<OrgUnit | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<OrgUnit | null>(null);
   const [companyFilter, setCompanyFilter] = useState("");
   const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
   const units = useQuery({ queryKey: ["org-units"], queryFn: () => orgApi.listOrgUnits() });
@@ -428,7 +499,7 @@ function DepartmentsTab() {
       ) : (
         <div className="card overflow-hidden">
           <table className="tbl">
-            <thead><tr><th>Department</th><th>Company</th><th className="hidden sm:table-cell">Code</th><th>Since</th></tr></thead>
+            <thead><tr><th>Department</th><th>Company</th><th className="hidden sm:table-cell">Code</th><th>Since</th><th className="w-20" /></tr></thead>
             <tbody>
               {departments.map((d) => (
                 <tr key={d.id}>
@@ -436,63 +507,81 @@ function DepartmentsTab() {
                   <td>{d.legal_entity_id ? entityName.get(d.legal_entity_id) ?? "—" : "—"}</td>
                   <td className="hidden font-mono text-xs sm:table-cell">{d.code ?? "—"}</td>
                   <td className="tabular-nums">{format(new Date(d.effective_from), "d MMM yyyy")}</td>
+                  <td>
+                    <div className="flex justify-end gap-1">
+                      <button className="btn-icon" onClick={() => setViewingHistory(d)} aria-label={`History for ${d.name}`}><History size={14} /></button>
+                      <button className="btn-icon" onClick={() => setEditing(d)} aria-label={`Edit ${d.name}`}><Pencil size={14} /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <AddDepartmentSheet open={adding} onClose={() => setAdding(false)} entities={entities.data ?? []} departments={units.data ?? []} />
+      <DepartmentSheet open={adding} onClose={() => setAdding(false)} entities={entities.data ?? []} departments={units.data ?? []} />
+      <DepartmentSheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} entities={entities.data ?? []} departments={units.data ?? []} initial={editing ?? undefined} />
+      <HistoryModal
+        open={viewingHistory !== null}
+        onClose={() => setViewingHistory(null)}
+        title={viewingHistory ? `History — ${viewingHistory.name}` : "History"}
+        fetcher={viewingHistory ? () => orgApi.orgUnitHistory(viewingHistory.id) : undefined}
+      />
     </div>
   );
 }
 
-function AddDepartmentSheet({ open, onClose, entities, departments }: {
-  open: boolean; onClose: () => void; entities: LegalEntity[]; departments: OrgUnit[];
+function DepartmentSheet({ open, onClose, entities, departments, initial }: {
+  open: boolean; onClose: () => void; entities: LegalEntity[]; departments: OrgUnit[]; initial?: OrgUnit;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const empty = { name: "", code: "", entity: entities[0]?.id ?? "", parent: "" };
+  const isEdit = !!initial;
+  const empty = { name: initial?.name ?? "", code: initial?.code ?? "", entity: initial?.legal_entity_id ?? entities[0]?.id ?? "", parent: initial?.parent_id ?? "" };
   const [form, setForm] = useState(empty);
   const entityId = form.entity || entities[0]?.id || "";
-  const parentOptions = departments.filter((d) => d.legal_entity_id === entityId);
+  const parentOptions = departments.filter((d) => d.legal_entity_id === entityId && d.id !== initial?.id);
 
-  const create = useMutation({
-    mutationFn: () => orgApi.createOrgUnit({
-      name: form.name.trim(), type: "DEPARTMENT", code: form.code.trim() || undefined,
-      legal_entity_id: entityId, parent_id: form.parent || undefined,
-      effective_from: format(new Date(), "yyyy-MM-dd"),
-    }),
+  const save = useMutation({
+    mutationFn: () =>
+      isEdit
+        ? orgApi.updateOrgUnit(initial!.id, { name: form.name.trim(), code: form.code.trim() || undefined })
+        : orgApi.createOrgUnit({
+            name: form.name.trim(), type: "DEPARTMENT", code: form.code.trim() || undefined,
+            legal_entity_id: entityId, parent_id: form.parent || undefined,
+            effective_from: format(new Date(), "yyyy-MM-dd"),
+          }),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["org-units"] });
-      toast.success("Department added", d.name);
+      toast.success(isEdit ? "Department updated" : "Department added", d.name);
       setForm(empty);
       onClose();
     },
-    onError: (e) => toast.error("Couldn’t add department", errorMessage(e)),
+    onError: (e) => toast.error(isEdit ? "Couldn’t update department" : "Couldn’t add department", errorMessage(e)),
   });
 
   const valid = form.name.trim().length > 0 && !!entityId;
-  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) create.mutate(); };
+  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
 
   return (
     <Sheet
       open={open}
       onClose={onClose}
-      title="Add department"
+      title={isEdit ? "Edit department" : "Add department"}
+      description={isEdit ? "Moving to a different company or parent isn't supported here — create a new department and reassign employees instead." : undefined}
       footer={
         <>
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
-          <button className="btn-primary" type="submit" form="add-dept" disabled={!valid || create.isPending}>
-            {create.isPending ? "Adding…" : "Add department"}
+          <button className="btn-primary" type="submit" form="dept-form" disabled={!valid || save.isPending}>
+            {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add department"}
           </button>
         </>
       }
     >
-      <form id="add-dept" onSubmit={submit} className="space-y-4">
+      <form id="dept-form" onSubmit={submit} className="space-y-4">
         <div>
           <label className="label" htmlFor="dp-company">Company</label>
-          <select id="dp-company" className="input" value={entityId} onChange={(e) => setForm((f) => ({ ...f, entity: e.target.value, parent: "" }))}>
+          <select id="dp-company" className="input" value={entityId} disabled={isEdit} onChange={(e) => setForm((f) => ({ ...f, entity: e.target.value, parent: "" }))}>
             {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
         </div>
@@ -504,7 +593,7 @@ function AddDepartmentSheet({ open, onClose, entities, departments }: {
           <label className="label" htmlFor="dp-code">Code <span className="font-normal text-fg-subtle">(optional)</span></label>
           <input id="dp-code" className="input font-mono" placeholder="e.g. HQ-FIN" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
         </div>
-        {parentOptions.length > 0 && (
+        {!isEdit && parentOptions.length > 0 && (
           <div>
             <label className="label" htmlFor="dp-parent">Parent department <span className="font-normal text-fg-subtle">(optional)</span></label>
             <select id="dp-parent" className="input" value={form.parent} onChange={(e) => setForm((f) => ({ ...f, parent: e.target.value }))}>
@@ -522,6 +611,8 @@ function AddDepartmentSheet({ open, onClose, entities, departments }: {
 
 function LocationsTab() {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Location | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<Location | null>(null);
   const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
   const locations = useQuery({ queryKey: ["locations"], queryFn: () => orgApi.listLocations() });
   const entityName = new Map((entities.data ?? []).map((e) => [e.id, e.name]));
@@ -544,7 +635,13 @@ function LocationsTab() {
         <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
           {locations.data.map((l) => (
             <div key={l.id} className="card p-5">
-              <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/10 text-accent"><MapPin size={18} /></span>
+              <div className="flex items-start justify-between gap-3">
+                <span className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/10 text-accent"><MapPin size={18} /></span>
+                <div className="flex gap-1">
+                  <button className="btn-icon" onClick={() => setViewingHistory(l)} aria-label={`History for ${l.name}`}><History size={14} /></button>
+                  <button className="btn-icon" onClick={() => setEditing(l)} aria-label={`Edit ${l.name}`}><Pencil size={14} /></button>
+                </div>
+              </div>
               <p className="mt-3 text-[15px] font-semibold text-fg">{l.name}</p>
               <p className="text-xs text-fg-subtle">{[l.city, l.legal_entity_id ? entityName.get(l.legal_entity_id) : "All companies"].filter(Boolean).join(" · ")}</p>
               <div className="mt-3 flex gap-1.5">
@@ -555,45 +652,55 @@ function LocationsTab() {
           ))}
         </div>
       )}
-      <AddLocationSheet open={adding} onClose={() => setAdding(false)} entities={entities.data ?? []} />
+      <LocationSheet open={adding} onClose={() => setAdding(false)} entities={entities.data ?? []} />
+      <LocationSheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} entities={entities.data ?? []} initial={editing ?? undefined} />
+      <HistoryModal
+        open={viewingHistory !== null}
+        onClose={() => setViewingHistory(null)}
+        title={viewingHistory ? `History — ${viewingHistory.name}` : "History"}
+        fetcher={viewingHistory ? () => orgApi.locationHistory(viewingHistory.id) : undefined}
+      />
     </div>
   );
 }
 
-function AddLocationSheet({ open, onClose, entities }: { open: boolean; onClose: () => void; entities: LegalEntity[] }) {
+function LocationSheet({ open, onClose, entities, initial }: {
+  open: boolean; onClose: () => void; entities: LegalEntity[]; initial?: Location;
+}) {
   const qc = useQueryClient();
   const toast = useToast();
-  const empty = { name: "", type: "OFFICE", entity: "", city: "" };
+  const isEdit = !!initial;
+  const empty = { name: initial?.name ?? "", type: initial?.type ?? "OFFICE", entity: initial?.legal_entity_id ?? "", city: initial?.city ?? "" };
   const [form, setForm] = useState(empty);
 
-  const create = useMutation({
-    mutationFn: () => orgApi.createLocation({
-      name: form.name.trim(), type: form.type, city: form.city.trim() || undefined,
-      legal_entity_id: form.entity || undefined,
-    }),
+  const save = useMutation({
+    mutationFn: () =>
+      isEdit
+        ? orgApi.updateLocation(initial!.id, { name: form.name.trim(), type: form.type, city: form.city.trim() || undefined })
+        : orgApi.createLocation({ name: form.name.trim(), type: form.type, city: form.city.trim() || undefined, legal_entity_id: form.entity || undefined }),
     onSuccess: (l) => {
       qc.invalidateQueries({ queryKey: ["locations"] });
-      toast.success("Location added", l.name);
+      toast.success(isEdit ? "Location updated" : "Location added", l.name);
       setForm(empty);
       onClose();
     },
-    onError: (e) => toast.error("Couldn’t add location", errorMessage(e)),
+    onError: (e) => toast.error(isEdit ? "Couldn’t update location" : "Couldn’t add location", errorMessage(e)),
   });
 
   const valid = form.name.trim().length > 0;
-  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) create.mutate(); };
+  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
 
   return (
     <Sheet
-      open={open} onClose={onClose} title="Add location"
+      open={open} onClose={onClose} title={isEdit ? "Edit location" : "Add location"}
       footer={<>
         <button className="btn-secondary" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" type="submit" form="add-loc" disabled={!valid || create.isPending}>
-          {create.isPending ? "Adding…" : "Add location"}
+        <button className="btn-primary" type="submit" form="loc-form" disabled={!valid || save.isPending}>
+          {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add location"}
         </button>
       </>}
     >
-      <form id="add-loc" onSubmit={submit} className="space-y-4">
+      <form id="loc-form" onSubmit={submit} className="space-y-4">
         <div>
           <label className="label" htmlFor="lo-name">Location name</label>
           <input id="lo-name" className="input" placeholder="e.g. Head Office" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
@@ -610,13 +717,15 @@ function AddLocationSheet({ open, onClose, entities }: { open: boolean; onClose:
             <input id="lo-city" className="input" value={form.city} onChange={(e) => setForm((f) => ({ ...f, city: e.target.value }))} />
           </div>
         </div>
-        <div>
-          <label className="label" htmlFor="lo-entity">Company <span className="font-normal text-fg-subtle">(optional — leave blank to share across all)</span></label>
-          <select id="lo-entity" className="input" value={form.entity} onChange={(e) => setForm((f) => ({ ...f, entity: e.target.value }))}>
-            <option value="">All companies</option>
-            {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-          </select>
-        </div>
+        {!isEdit && (
+          <div>
+            <label className="label" htmlFor="lo-entity">Company <span className="font-normal text-fg-subtle">(optional — leave blank to share across all)</span></label>
+            <select id="lo-entity" className="input" value={form.entity} onChange={(e) => setForm((f) => ({ ...f, entity: e.target.value }))}>
+              <option value="">All companies</option>
+              {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          </div>
+        )}
       </form>
     </Sheet>
   );
@@ -626,6 +735,8 @@ function AddLocationSheet({ open, onClose, entities }: { open: boolean; onClose:
 
 function JobsTab() {
   const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Job | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<Job | null>(null);
   const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => orgApi.listJobs() });
 
   return (
@@ -645,55 +756,72 @@ function JobsTab() {
       ) : (
         <div className="card overflow-hidden">
           <table className="tbl">
-            <thead><tr><th>Title</th><th className="hidden sm:table-cell">Function</th><th>Code</th></tr></thead>
+            <thead><tr><th>Title</th><th className="hidden sm:table-cell">Function</th><th>Code</th><th className="w-20" /></tr></thead>
             <tbody>
               {jobs.data.map((j) => (
                 <tr key={j.id}>
                   <td className="font-medium text-fg">{j.title}</td>
                   <td className="hidden sm:table-cell">{j.function ?? "—"}</td>
                   <td className="font-mono text-xs">{j.code ?? "—"}</td>
+                  <td>
+                    <div className="flex justify-end gap-1">
+                      <button className="btn-icon" onClick={() => setViewingHistory(j)} aria-label={`History for ${j.title}`}><History size={14} /></button>
+                      <button className="btn-icon" onClick={() => setEditing(j)} aria-label={`Edit ${j.title}`}><Pencil size={14} /></button>
+                    </div>
+                  </td>
                 </tr>
               ))}
             </tbody>
           </table>
         </div>
       )}
-      <AddJobSheet open={adding} onClose={() => setAdding(false)} />
+      <JobSheet open={adding} onClose={() => setAdding(false)} />
+      <JobSheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} initial={editing ?? undefined} />
+      <HistoryModal
+        open={viewingHistory !== null}
+        onClose={() => setViewingHistory(null)}
+        title={viewingHistory ? `History — ${viewingHistory.title}` : "History"}
+        fetcher={viewingHistory ? () => orgApi.jobHistory(viewingHistory.id) : undefined}
+      />
     </div>
   );
 }
 
-function AddJobSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+function JobSheet({ open, onClose, initial }: { open: boolean; onClose: () => void; initial?: Job }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const empty = { title: "", code: "", function: "" };
+  const isEdit = !!initial;
+  const empty = { title: initial?.title ?? "", code: initial?.code ?? "", function: initial?.function ?? "" };
   const [form, setForm] = useState(empty);
 
-  const create = useMutation({
-    mutationFn: () => orgApi.createJob({ title: form.title.trim(), code: form.code.trim() || undefined, function: form.function.trim() || undefined }),
+  const save = useMutation({
+    mutationFn: () => {
+      const body = { title: form.title.trim(), code: form.code.trim() || undefined, function: form.function.trim() || undefined };
+      return isEdit ? orgApi.updateJob(initial!.id, body) : orgApi.createJob(body);
+    },
     onSuccess: (j) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
-      toast.success("Job title added", j.title);
+      toast.success(isEdit ? "Job title updated" : "Job title added", j.title);
       setForm(empty);
       onClose();
     },
-    onError: (e) => toast.error("Couldn’t add job title", errorMessage(e)),
+    onError: (e) => toast.error(isEdit ? "Couldn’t update job title" : "Couldn’t add job title", errorMessage(e)),
   });
 
   const valid = form.title.trim().length > 0;
-  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) create.mutate(); };
+  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
 
   return (
     <Sheet
-      open={open} onClose={onClose} title="Add job title"
+      open={open} onClose={onClose} title={isEdit ? "Edit job title" : "Add job title"}
       footer={<>
         <button className="btn-secondary" onClick={onClose}>Cancel</button>
-        <button className="btn-primary" type="submit" form="add-job" disabled={!valid || create.isPending}>
-          {create.isPending ? "Adding…" : "Add job title"}
+        <button className="btn-primary" type="submit" form="job-form" disabled={!valid || save.isPending}>
+          {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add job title"}
         </button>
       </>}
     >
-      <form id="add-job" onSubmit={submit} className="space-y-4">
+      <form id="job-form" onSubmit={submit} className="space-y-4">
         <div>
           <label className="label" htmlFor="jb-title">Title</label>
           <input id="jb-title" className="input" placeholder="e.g. Software Engineer" value={form.title} onChange={(e) => setForm((f) => ({ ...f, title: e.target.value }))} />
@@ -899,14 +1027,6 @@ function EmployeeIdSchemeSheet({ open, onClose, initial, availableEntities, canC
 
 /* ─────────────────────────── Users & access ─────────────────────────── */
 
-const SCOPE_LABEL: Record<ScopeType, string> = {
-  ALL: "All companies",
-  LEGAL_ENTITY: "Specific companies",
-  SELF: "Self only",
-  DIRECT_REPORTS: "Direct reports",
-  ALL_REPORTS: "Full reporting chain",
-};
-
 function AccessTab() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -1002,65 +1122,6 @@ function AccessTab() {
       />
       <ResetPasswordSheet target={resetting} onClose={() => setResetting(null)} />
     </div>
-  );
-}
-
-function ResetPasswordSheet({ target, onClose }: { target: UserAccount | null; onClose: () => void }) {
-  const qc = useQueryClient();
-  const toast = useToast();
-  const [password, setPassword] = useState("");
-  const problem = password ? passwordProblem(password) : null;
-
-  const reset = useMutation({
-    mutationFn: () => usersApi.resetPassword(target!.id, password),
-    onSuccess: (u) => {
-      qc.invalidateQueries({ queryKey: ["users"] });
-      toast.success("Password reset", `${u.email ?? "The account"} was signed out and must choose a new password at next sign-in.`);
-      setPassword("");
-      onClose();
-    },
-    onError: (e) => toast.error("Couldn't reset the password", errorMessage(e)),
-  });
-
-  const close = () => { setPassword(""); onClose(); };
-  const submit = (e: FormEvent) => { e.preventDefault(); if (password && !problem) reset.mutate(); };
-
-  return (
-    <Sheet
-      open={!!target}
-      onClose={close}
-      title="Reset password"
-      description={target ? `Set a temporary password for ${target.email ?? "this account"}.` : undefined}
-      footer={
-        <>
-          <button className="btn-secondary" onClick={close}>Cancel</button>
-          <button className="btn-primary" type="submit" form="reset-password" disabled={!password || !!problem || reset.isPending}>
-            {reset.isPending ? "Resetting…" : "Reset password"}
-          </button>
-        </>
-      }
-    >
-      <form id="reset-password" onSubmit={submit} className="space-y-4">
-        <div>
-          <label className="label" htmlFor="rp-password">Temporary password</label>
-          <div className="flex gap-2">
-            <input id="rp-password" type="text" className="input font-mono" value={password} autoComplete="off"
-              spellCheck={false} aria-invalid={!!problem} onChange={(e) => setPassword(e.target.value)} />
-            <button type="button" className="btn-secondary shrink-0" onClick={() => setPassword(generateTempPassword())}>
-              <Sparkles size={14} /> Generate
-            </button>
-            <button type="button" className="btn-secondary shrink-0" disabled={!password} aria-label="Copy password"
-              onClick={() => navigator.clipboard?.writeText(password).then(() => toast.success("Copied", "Share it with them directly."))}>
-              <Copy size={14} />
-            </button>
-          </div>
-          <p className={`mt-1 text-xs ${problem ? "text-danger" : "text-fg-subtle"}`}>{problem ?? "At least 8 characters. Share it with them directly, not by email."}</p>
-        </div>
-        <p className="rounded-lg border border-line bg-panel px-3 py-2.5 text-[13px] text-fg-muted">
-          They'll be signed out everywhere right away, and asked to choose their own password the next time they sign in.
-        </p>
-      </form>
-    </Sheet>
   );
 }
 
@@ -1172,12 +1233,4 @@ function AddUserSheet({ open, onClose, entities, roles }: {
 
 function StatusChip({ status }: { status: string }) {
   return <span className={`badge ${status === "ACTIVE" ? "badge-success" : "badge-neutral"}`}>{status}</span>;
-}
-
-/** What this login can actually do right now — an ACTIVE account of a separated employee can't sign in. */
-function SignInChip({ u }: { u: UserAccount }) {
-  if (u.status !== "ACTIVE") return <span className="badge badge-neutral">Disabled</span>;
-  if (!u.can_sign_in) return <span className="badge badge-warning" title="The linked employee has left the company">Left company</span>;
-  if (u.must_change_password) return <span className="badge badge-info" title="Has a temporary password">Must set password</span>;
-  return <span className="badge badge-success">Active</span>;
 }

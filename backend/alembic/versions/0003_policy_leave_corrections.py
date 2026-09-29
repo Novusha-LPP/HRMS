@@ -18,10 +18,7 @@ depends_on = None
 def _enable_rls(table: str) -> None:
     op.execute(f"ALTER TABLE {table} ENABLE ROW LEVEL SECURITY")
     op.execute(f"ALTER TABLE {table} FORCE ROW LEVEL SECURITY")
-    op.execute(
-        f"CREATE POLICY tenant_isolation ON {table} "
-        f"USING (tenant_id = current_tenant_id())"
-    )
+    op.execute(f"CREATE POLICY tenant_isolation ON {table} USING (tenant_id = current_tenant_id())")
 
 
 def upgrade() -> None:
@@ -51,8 +48,12 @@ def upgrade() -> None:
         sa.Column("ot_rate", sa.Float, nullable=False, server_default="1.5"),
         sa.Column("ot_daily_cap_minutes", sa.Integer, nullable=True),
         sa.Column("punch_rounding_minutes", sa.Integer, nullable=False, server_default="0"),
-        sa.Column("punch_rounding_direction", sa.String(10), nullable=False, server_default="'NONE'"),
-        sa.Column("correction_requires_approval", sa.Boolean, nullable=False, server_default="true"),
+        sa.Column(
+            "punch_rounding_direction", sa.String(10), nullable=False, server_default="'NONE'"
+        ),
+        sa.Column(
+            "correction_requires_approval", sa.Boolean, nullable=False, server_default="true"
+        ),
         sa.Column("correction_approval_levels", sa.Integer, nullable=False, server_default="1"),
         sa.PrimaryKeyConstraint("tenant_id", "id"),
     )
@@ -129,7 +130,9 @@ def upgrade() -> None:
         sa.Column("pending_days", sa.Float, nullable=False, server_default="0"),
         sa.PrimaryKeyConstraint("tenant_id", "id"),
     )
-    op.create_index("ix_lb_emp_type_year", "leave_balances", ["employment_id", "leave_type_id", "year"])
+    op.create_index(
+        "ix_lb_emp_type_year", "leave_balances", ["employment_id", "leave_type_id", "year"]
+    )
     _enable_rls("leave_balances")
 
     # ── Leave applications ────────────────────────────────────────────────────

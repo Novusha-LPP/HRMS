@@ -209,3 +209,30 @@ class RoleAssignment(SQLModel, table=True):
     scope_value: str | None = Field(default=None, max_length=500)
     granted_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     expires_at: datetime | None = Field(default=None)
+
+
+class EntityChangeLog(SQLModel, table=True):
+    """
+    Field-level change history for tenant reference data (legal entities, org
+    units, locations, jobs, ...) — append-only, same treatment as
+    kyc_access_log and leave_balance_transactions (hrms_app is granted SELECT
+    and INSERT only; see migration 0021).
+
+    One row per CREATE/UPDATE/ARCHIVE, holding only the fields that actually
+    changed, shaped {"field": {"old": ..., "new": ...}} — not a full snapshot
+    of the row — so "what was this before" is always answerable without
+    replaying every change that ever touched it. Written exclusively through
+    core.change_audit.record_change(), which is what keeps entity_type a
+    known, closed vocabulary instead of free text that drifts per call site.
+    """
+
+    __tablename__ = "entity_change_log"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    entity_type: str = Field(max_length=50, index=True)
+    entity_id: UUID = Field(index=True)
+    action: str = Field(max_length=20)  # CREATE | UPDATE | ARCHIVE
+    changes: dict[str, Any] = Field(sa_column=Column("changes", JSONB, nullable=False))
+    changed_by: UUID = Field()
+    changed_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

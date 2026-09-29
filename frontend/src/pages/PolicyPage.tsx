@@ -1,15 +1,32 @@
 import { useState } from "react";
 import type { FormEvent, ReactNode } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Plus, Pencil, Trash2, ShieldCheck, Clock, Coffee, Timer, Zap, FilePenLine, MoreHorizontal, Building2 } from "lucide-react";
+import {
+  Plus,
+  Pencil,
+  Trash2,
+  ShieldCheck,
+  Clock,
+  Coffee,
+  Timer,
+  Zap,
+  FilePenLine,
+  MoreHorizontal,
+  Building2,
+  Info,
+} from "lucide-react";
 import type { PolicyTemplate, EmployeePolicyAssignment } from "../api/policy";
 import { policyApi } from "../api/policy";
 import { orgApi } from "../api/org";
 import { PageHeader } from "../components/ui/PageHeader";
+import { Tabs } from "../components/ui/Tabs";
 import { Sheet, ConfirmDialog } from "../components/ui/Overlay";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
 import { usePopover } from "../components/ui/Popover";
 import { useToast, errorMessage } from "../components/ui/Toast";
+import { LeavePoliciesView } from "./LeavePoliciesPage";
+import { PolicyExplainerModal } from "../components/policy/PolicyExplainerModal";
 
 const DAYS = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"];
 const SATURDAY_INDEX = 5;
@@ -65,9 +82,30 @@ const DEFAULTS: Partial<PolicyTemplate> = {
 export function PolicyPage() {
   const qc = useQueryClient();
   const toast = useToast();
+  const [params, setParams] = useSearchParams();
+  const [explainerOpen, setExplainerOpen] = useState(false);
+
+  const rawTab = params.get("tab");
+  const isLeave =
+    rawTab === "leave" ||
+    ["policy-sets", "buckets", "types", "holidays", "operations"].includes(rawTab ?? "");
+  const activeTab: "attendance" | "leave" = isLeave ? "leave" : "attendance";
+
+  const setActiveTab = (tab: "attendance" | "leave") => {
+    const next = new URLSearchParams(params);
+    if (tab === "attendance") {
+      next.delete("tab");
+      next.delete("section");
+    } else {
+      next.set("tab", "leave");
+    }
+    setParams(next, { replace: true });
+  };
+
   const [editing, setEditing] = useState<PolicyTemplate | "new" | null>(null);
   const [deleting, setDeleting] = useState<PolicyTemplate | null>(null);
   const [assigning, setAssigning] = useState<PolicyTemplate | null>(null);
+  const [createSetOpen, setCreateSetOpen] = useState(false);
   // Bumped on every "New policy" click so the sheet's key changes and React
   // remounts it — otherwise every open reused the same "new" key, so toggle
   // state (auto-deduct, overtime, etc.) leaked from whatever the previous
@@ -104,56 +142,105 @@ export function PolicyPage() {
   return (
     <>
       <PageHeader
-        title="Attendance policies"
-        description="Working hours, grace periods, overtime and correction rules you can assign to employees."
-        actions={<button className="btn-primary" onClick={openNewPolicy}><Plus size={15} /> New policy</button>}
+        title="Policies"
+        description="Configure attendance shifts, working hours, leave balance buckets, policy sets and holiday rules."
+        actions={
+          <div className="flex items-center gap-2">
+            <button
+              type="button"
+              className="btn-secondary btn-sm flex items-center gap-1.5"
+              onClick={() => setExplainerOpen(true)}
+            >
+              <Info size={14} className="text-accent" />
+              <span>How policies work</span>
+            </button>
+            {activeTab === "attendance" ? (
+              <button className="btn-primary btn-sm" onClick={openNewPolicy}>
+                <Plus size={15} /> New policy
+              </button>
+            ) : (
+              <button className="btn-primary btn-sm" onClick={() => setCreateSetOpen(true)}>
+                <Plus size={15} /> New policy set
+              </button>
+            )}
+          </div>
+        }
       />
 
-      {isError ? (
-        <Notice title="Couldn’t load policies" action={<button className="btn-secondary btn-sm" onClick={() => refetch()}>Retry</button>}>
-          The policy API isn’t responding.
-        </Notice>
-      ) : isLoading ? (
-        <div className="grid gap-4 lg:grid-cols-2">{[0, 1].map((i) => <Skeleton key={i} className="h-60 rounded-xl" />)}</div>
-      ) : !templates?.length ? (
-        <div className="card">
-          <EmptyState
-            icon={ShieldCheck}
-            title="No policies yet"
-            description="Create a policy to define working hours and attendance rules, then assign it to employees."
-            action={<button className="btn-primary" onClick={openNewPolicy}><Plus size={15} /> New policy</button>}
+      <Tabs
+        className="mb-6"
+        value={activeTab}
+        onChange={(t) => setActiveTab(t as "attendance" | "leave")}
+        items={[
+          { value: "attendance", label: "Attendance policies", count: templates?.length },
+          { value: "leave", label: "Leave policies" },
+        ]}
+      />
+
+      {activeTab === "attendance" && (
+        <div className="space-y-6">
+          {isError ? (
+            <Notice title="Couldn’t load policies" action={<button className="btn-secondary btn-sm" onClick={() => refetch()}>Retry</button>}>
+              The policy API isn’t responding.
+            </Notice>
+          ) : isLoading ? (
+            <div className="grid gap-4 lg:grid-cols-2">{[0, 1].map((i) => <Skeleton key={i} className="h-60 rounded-xl" />)}</div>
+          ) : !templates?.length ? (
+            <div className="card p-10">
+              <EmptyState
+                icon={ShieldCheck}
+                title="No attendance policies yet"
+                description="Create a policy to define working hours and attendance rules, then assign it to employees."
+                action={<button className="btn-primary btn-sm" onClick={openNewPolicy}><Plus size={14} /> New policy</button>}
+              />
+            </div>
+          ) : (
+            <div className="grid gap-4 lg:grid-cols-2">
+              {templates.map((t) => (
+                <PolicyCard key={t.id} tpl={t} onEdit={() => setEditing(t)} onDelete={() => setDeleting(t)} onAssign={() => setAssigning(t)} />
+              ))}
+            </div>
+          )}
+
+          <PolicyAssignSheet
+            tpl={assigning}
+            open={assigning !== null}
+            onClose={() => setAssigning(null)}
           />
-        </div>
-      ) : (
-        <div className="grid gap-4 lg:grid-cols-2">
-          {templates.map((t) => (
-            <PolicyCard key={t.id} tpl={t} onEdit={() => setEditing(t)} onDelete={() => setDeleting(t)} onAssign={() => setAssigning(t)} />
-          ))}
+
+          <PolicySheet
+            key={editing === "new" ? `new-${newPolicyNonce}` : editing?.id ?? "closed"}
+            open={editing !== null}
+            initial={editing && editing !== "new" ? editing : undefined}
+            saving={saveMut.isPending}
+            onSave={(v) => saveMut.mutate(v)}
+            onClose={() => setEditing(null)}
+          />
+          <ConfirmDialog
+            open={!!deleting}
+            onClose={() => setDeleting(null)}
+            onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
+            loading={deleteMut.isPending}
+            title={`Delete “${deleting?.name}”?`}
+            description="Employees assigned to this policy will need a new one. This can’t be undone."
+            confirmLabel="Delete policy"
+          />
         </div>
       )}
 
-      <PolicyAssignSheet
-        tpl={assigning}
-        open={assigning !== null}
-        onClose={() => setAssigning(null)}
-      />
+      {activeTab === "leave" && (
+        <LeavePoliciesView
+          standaloneHeader={false}
+          createSetOpen={createSetOpen}
+          onOpenCreateSet={() => setCreateSetOpen(true)}
+          onCloseCreateSet={() => setCreateSetOpen(false)}
+        />
+      )}
 
-      <PolicySheet
-        key={editing === "new" ? `new-${newPolicyNonce}` : editing?.id ?? "closed"}
-        open={editing !== null}
-        initial={editing && editing !== "new" ? editing : undefined}
-        saving={saveMut.isPending}
-        onSave={(v) => saveMut.mutate(v)}
-        onClose={() => setEditing(null)}
-      />
-      <ConfirmDialog
-        open={!!deleting}
-        onClose={() => setDeleting(null)}
-        onConfirm={() => deleting && deleteMut.mutate(deleting.id)}
-        loading={deleteMut.isPending}
-        title={`Delete “${deleting?.name}”?`}
-        description="Employees assigned to this policy will need a new one. This can’t be undone."
-        confirmLabel="Delete policy"
+      <PolicyExplainerModal
+        open={explainerOpen}
+        onClose={() => setExplainerOpen(false)}
+        initialTab={activeTab === "attendance" ? "attendance" : "leave"}
       />
     </>
   );

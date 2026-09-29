@@ -18,7 +18,7 @@ depends_on = None
 def upgrade() -> None:
     # ── Extensions ────────────────────────────────────────────────────────────
     op.execute('CREATE EXTENSION IF NOT EXISTS "uuid-ossp"')
-    op.execute('CREATE EXTENSION IF NOT EXISTS btree_gist')
+    op.execute("CREATE EXTENSION IF NOT EXISTS btree_gist")
 
     # ── Tenants (public schema, no RLS — it is the isolation boundary) ────────
     op.create_table(
@@ -162,20 +162,29 @@ def upgrade() -> None:
 
     # ── Jobs, Grades, Positions, Cost Centres ─────────────────────────────────
     for table, extra_cols in [
-        ("jobs", [
-            sa.Column("title", sa.String(255), nullable=False),
-            sa.Column("code", sa.String(50)),
-            sa.Column("function", sa.String(100)),
-        ]),
-        ("grades", [
-            sa.Column("code", sa.String(50), nullable=False),
-            sa.Column("name", sa.String(100), nullable=False),
-            sa.Column("sequence", sa.Integer, nullable=False, server_default="0"),
-        ]),
-        ("cost_centres", [
-            sa.Column("code", sa.String(50), nullable=False),
-            sa.Column("name", sa.String(255), nullable=False),
-        ]),
+        (
+            "jobs",
+            [
+                sa.Column("title", sa.String(255), nullable=False),
+                sa.Column("code", sa.String(50)),
+                sa.Column("function", sa.String(100)),
+            ],
+        ),
+        (
+            "grades",
+            [
+                sa.Column("code", sa.String(50), nullable=False),
+                sa.Column("name", sa.String(100), nullable=False),
+                sa.Column("sequence", sa.Integer, nullable=False, server_default="0"),
+            ],
+        ),
+        (
+            "cost_centres",
+            [
+                sa.Column("code", sa.String(50), nullable=False),
+                sa.Column("name", sa.String(255), nullable=False),
+            ],
+        ),
     ]:
         op.create_table(
             table,
@@ -326,8 +335,13 @@ def upgrade() -> None:
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
     )
     op.create_index("ix_pa_employment", "personnel_actions", ["tenant_id", "employment_id"])
-    op.create_index("ix_pa_idempotency", "personnel_actions", ["tenant_id", "idempotency_key"],
-                    unique=True, postgresql_where=sa.text("idempotency_key IS NOT NULL"))
+    op.create_index(
+        "ix_pa_idempotency",
+        "personnel_actions",
+        ["tenant_id", "idempotency_key"],
+        unique=True,
+        postgresql_where=sa.text("idempotency_key IS NOT NULL"),
+    )
     _enable_rls("personnel_actions")
 
 
@@ -344,10 +358,22 @@ def _enable_rls(table: str) -> None:
 
 def downgrade() -> None:
     tables = [
-        "personnel_actions", "assignment_managers", "assignments",
-        "employments", "persons", "positions", "cost_centres", "grades",
-        "jobs", "org_units", "locations", "legal_entities",
-        "role_assignments", "roles", "user_accounts", "tenants",
+        "personnel_actions",
+        "assignment_managers",
+        "assignments",
+        "employments",
+        "persons",
+        "positions",
+        "cost_centres",
+        "grades",
+        "jobs",
+        "org_units",
+        "locations",
+        "legal_entities",
+        "role_assignments",
+        "roles",
+        "user_accounts",
+        "tenants",
     ]
     for t in tables:
         op.execute(f"DROP TABLE IF EXISTS {t} CASCADE")

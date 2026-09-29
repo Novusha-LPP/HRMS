@@ -27,4 +27,5 @@ Authoritative system design and architecture specifications for the HRMS Platfor
 | [architecture/08-assumptions-risks-decisions.md](architecture/08-assumptions-risks-decisions.md) | Architectural decisions, risk mitigations, and scalability strategy |
 | [payroll-design.md](payroll-design.md) | Compensation schemas, salary component structures, and payroll export interfaces |
 | [erp-integration-plan.md](erp-integration-plan.md) | Importing the Suraj Group and Sharanga Production ERPs as tenants: field mapping, security decisions, implementation status, open decisions |
+| [leave-management-design.md](leave-management-design.md) | Leave balance buckets, immutable transaction journal, monthly ledger and policy-driven entitlement rules — design, not yet implemented |
 

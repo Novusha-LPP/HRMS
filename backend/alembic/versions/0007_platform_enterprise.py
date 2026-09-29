@@ -31,12 +31,16 @@ APP_ROLE = "hrms_app"
 
 
 def upgrade() -> None:
-    op.add_column("platform_admins", sa.Column("role", sa.String(50), nullable=False, server_default="ADMIN"))
+    op.add_column(
+        "platform_admins", sa.Column("role", sa.String(50), nullable=False, server_default="ADMIN")
+    )
 
     op.create_table(
         "platform_audit_log",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("actor_admin_id", UUID(as_uuid=True), sa.ForeignKey("platform_admins.id"), nullable=True),
+        sa.Column(
+            "actor_admin_id", UUID(as_uuid=True), sa.ForeignKey("platform_admins.id"), nullable=True
+        ),
         sa.Column("actor_name", sa.String(255), nullable=False),
         sa.Column("action", sa.String(100), nullable=False),
         sa.Column("target_type", sa.String(50), nullable=False),
@@ -50,7 +54,9 @@ def upgrade() -> None:
     op.create_table(
         "platform_password_reset_tokens",
         sa.Column("id", UUID(as_uuid=True), primary_key=True),
-        sa.Column("admin_id", UUID(as_uuid=True), sa.ForeignKey("platform_admins.id"), nullable=False),
+        sa.Column(
+            "admin_id", UUID(as_uuid=True), sa.ForeignKey("platform_admins.id"), nullable=False
+        ),
         sa.Column("token_hash", sa.String(64), nullable=False, unique=True),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=False),
         sa.Column("used_at", sa.DateTime(timezone=True), nullable=True),

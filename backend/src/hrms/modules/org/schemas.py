@@ -1,4 +1,5 @@
-from datetime import date
+from datetime import date, datetime
+from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -7,6 +8,17 @@ class LegalEntityCreate(BaseModel):
     name: str = Field(max_length=255)
     short_name: str | None = Field(default=None, max_length=50)
     country_code: str = Field(default="IN", max_length=2)
+    # None = inherit the tenant/deployment default (HRMS_DEFAULT_FINANCIAL_YEAR_START_MONTH).
+    financial_year_start_month: int | None = Field(default=None, ge=1, le=12)
+
+
+class LegalEntityUpdate(BaseModel):
+    """All fields optional — only what's sent gets changed (and audited)."""
+
+    name: str | None = Field(default=None, max_length=255)
+    short_name: str | None = Field(default=None, max_length=50)
+    country_code: str | None = Field(default=None, max_length=2)
+    financial_year_start_month: int | None = Field(default=None, ge=1, le=12)
 
 
 class LegalEntityResponse(BaseModel):
@@ -18,6 +30,7 @@ class LegalEntityResponse(BaseModel):
     country_code: str
     status: str
     version: int
+    financial_year_start_month: int | None = None
 
 
 class LocationCreate(BaseModel):
@@ -30,6 +43,17 @@ class LocationCreate(BaseModel):
     country_code: str = Field(default="IN")
     timezone: str = Field(default="Asia/Kolkata")
     legal_entity_id: str | None = Field(default=None)
+
+
+class LocationUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=255)
+    type: str | None = Field(default=None, max_length=50)
+    address_line1: str | None = Field(default=None)
+    city: str | None = Field(default=None)
+    state_code: str | None = Field(default=None)
+    pincode: str | None = Field(default=None)
+    country_code: str | None = Field(default=None)
+    timezone: str | None = Field(default=None)
 
 
 class LocationResponse(BaseModel):
@@ -55,6 +79,18 @@ class OrgUnitCreate(BaseModel):
     legal_entity_id: str | None = Field(default=None)
     location_id: str | None = Field(default=None)
     effective_from: date
+
+
+class OrgUnitUpdate(BaseModel):
+    """
+    Renaming/recoding only — moving a unit to a different parent, company or
+    location is a structural change, not covered here (create a new unit and
+    migrate assignments, or ask for that as its own endpoint if it's needed).
+    """
+
+    name: str | None = Field(default=None, max_length=255)
+    code: str | None = Field(default=None)
+    type: str | None = Field(default=None, max_length=50)
 
 
 class OrgUnitResponse(BaseModel):
@@ -110,6 +146,12 @@ class JobCreate(BaseModel):
     function: str | None = Field(default=None)
 
 
+class JobUpdate(BaseModel):
+    title: str | None = Field(default=None, max_length=255)
+    code: str | None = Field(default=None)
+    function: str | None = Field(default=None)
+
+
 class JobResponse(BaseModel):
     model_config = ConfigDict(from_attributes=True)
 
@@ -119,3 +161,14 @@ class JobResponse(BaseModel):
     function: str | None
     status: str
     version: int
+
+
+class ChangeLogEntry(BaseModel):
+    """One row of an entity's history — GET .../{id}/history."""
+
+    id: str
+    action: str
+    changes: dict[str, dict[str, Any]]  # {"field": {"old": ..., "new": ...}}
+    changed_by: str | None  # typed user_account id
+    changed_by_name: str | None  # resolved live at read time — never stored
+    changed_at: datetime

@@ -44,7 +44,12 @@ def upgrade() -> None:
     # ── 2. api_keys table ───────────────────────────────────────────────────
     op.create_table(
         "api_keys",
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "tenant_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("id", UUID(as_uuid=True), nullable=False),
         sa.Column("name", sa.String(length=120), nullable=False),
         sa.Column("key_prefix", sa.String(length=20), nullable=False),
@@ -54,7 +59,9 @@ def upgrade() -> None:
         sa.Column("is_active", sa.Boolean(), server_default="true", nullable=False),
         sa.Column("expires_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("rate_limit_per_minute", sa.Integer(), server_default="600", nullable=False),
-        sa.Column("created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
+        sa.Column(
+            "created_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
         sa.Column("created_by", UUID(as_uuid=True), nullable=True),
         sa.Column("last_used_at", sa.DateTime(timezone=True), nullable=True),
         sa.Column("last_used_ip", sa.String(length=45), nullable=True),
@@ -66,11 +73,20 @@ def upgrade() -> None:
     # ── 3. import_batches table ──────────────────────────────────────────────
     op.create_table(
         "import_batches",
-        sa.Column("tenant_id", UUID(as_uuid=True), sa.ForeignKey("tenants.id", ondelete="CASCADE"), nullable=False),
+        sa.Column(
+            "tenant_id",
+            UUID(as_uuid=True),
+            sa.ForeignKey("tenants.id", ondelete="CASCADE"),
+            nullable=False,
+        ),
         sa.Column("id", UUID(as_uuid=True), nullable=False),
         sa.Column("source_system", sa.String(length=50), nullable=False),
-        sa.Column("imported_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False),
-        sa.Column("imported_by", sa.String(length=100), server_default="system_migration", nullable=False),
+        sa.Column(
+            "imported_at", sa.DateTime(timezone=True), server_default=sa.func.now(), nullable=False
+        ),
+        sa.Column(
+            "imported_by", sa.String(length=100), server_default="system_migration", nullable=False
+        ),
         sa.Column("total_records", sa.Integer(), server_default="0", nullable=False),
         sa.Column("created_records", sa.Integer(), server_default="0", nullable=False),
         sa.Column("updated_records", sa.Integer(), server_default="0", nullable=False),
