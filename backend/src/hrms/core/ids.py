@@ -52,12 +52,21 @@ _PREFIX_MAP: dict[str, str] = {
     "leave_balance": "lb",
     "leave_application": "la",
     "leave_approval": "lappr",
+    "leave_bucket": "lmb",
+    "leave_mapping": "lmap",
+    "leave_policy_set": "lps",
+    "leave_bucket_policy": "lbp",
+    "leave_policy_assignment": "lpa",
+    "leave_ledger": "ll",
+    "leave_transaction": "ltx",
     # Corrections
     "attendance_correction": "cor",
     "correction_approval": "cappr",
     # KYC
     "kyc_record": "kyc",
     "kyc_document": "kdoc",
+    # Change audit
+    "entity_change": "chg",
 }
 
 

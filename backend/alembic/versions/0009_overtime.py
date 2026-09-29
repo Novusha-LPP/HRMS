@@ -25,10 +25,17 @@ depends_on = None
 
 
 def upgrade() -> None:
-    op.add_column("attendance_days", sa.Column("ot_minutes", sa.Integer, nullable=False, server_default="0"))
-    op.add_column("attendance_days", sa.Column("ot_status", sa.String(20), nullable=False, server_default="NONE"))
+    op.add_column(
+        "attendance_days", sa.Column("ot_minutes", sa.Integer, nullable=False, server_default="0")
+    )
+    op.add_column(
+        "attendance_days",
+        sa.Column("ot_status", sa.String(20), nullable=False, server_default="NONE"),
+    )
     op.add_column("attendance_days", sa.Column("ot_reviewed_by", UUID(as_uuid=True), nullable=True))
-    op.add_column("attendance_days", sa.Column("ot_reviewed_at", sa.DateTime(timezone=True), nullable=True))
+    op.add_column(
+        "attendance_days", sa.Column("ot_reviewed_at", sa.DateTime(timezone=True), nullable=True)
+    )
     op.add_column("attendance_days", sa.Column("ot_review_notes", sa.String(500), nullable=True))
 
 

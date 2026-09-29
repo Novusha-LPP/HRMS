@@ -7,7 +7,7 @@ import { formatDateOnly } from "../lib/dates";
 import {
   Download, Plus, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Users,
   Mail, MapPin, Briefcase, Building2, CalendarDays, Hash, UserRound, SearchX, ArrowLeftRight,
-  ShieldCheck, Landmark, Cake,
+  Landmark, Cake,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
@@ -22,6 +22,7 @@ import { Sheet } from "../components/ui/Overlay";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { KycSection } from "../components/kyc/KycSection";
+import { AccessSection } from "../components/users/AccessPanel";
 
 interface Row {
   id: string;
@@ -119,6 +120,10 @@ export function EmployeePage() {
   const [picked, setPicked] = useState<Row | null>(null);
   const linkedId = params.get("id") ?? "";
   const canPlace = !!user && (user.permissions.includes("people.write") || user.permissions.includes("*"));
+  // Same bar Organization → Users & access uses: iam.read to see a login, iam.write to change it
+  // (AccessSection checks the write bar itself — this just decides whether the tab shows at all).
+  const canViewAccess = !!user && (user.permissions.includes("iam.read") || user.permissions.includes("*"));
+  const canManageAccess = !!user && (user.permissions.includes("iam.write") || user.permissions.includes("*"));
   const [adding, setAdding] = useState(() => params.get("new") === "1" && canPlace);
   const closeAdding = () => {
     setAdding(false);
@@ -434,6 +439,8 @@ export function EmployeePage() {
         key={detail?.id ?? "none"}
         row={detail}
         canPlace={canPlace}
+        canViewAccess={canViewAccess}
+        canManageAccess={canManageAccess}
         onClose={() => setDetail(null)}
         onTransfer={() => { if (detail) { setTransferring(detail); setDetail(null); } }}
       />
@@ -443,10 +450,11 @@ export function EmployeePage() {
   );
 }
 
-type EmployeeSheetTab = "overview" | "kyc";
+type EmployeeSheetTab = "overview" | "kyc" | "access";
 
-function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
-  row: Row | null; canPlace: boolean; onClose: () => void; onTransfer: () => void;
+function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose, onTransfer }: {
+  row: Row | null; canPlace: boolean; canViewAccess: boolean; canManageAccess: boolean;
+  onClose: () => void; onTransfer: () => void;
 }) {
   const [activeTab, setActiveTab] = useState<EmployeeSheetTab>("overview");
 
@@ -475,15 +483,11 @@ function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
       className="max-w-4xl"
       footer={row ? (
         <div className="flex items-center justify-between w-full">
-          {activeTab === "overview" ? (
-            <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab("kyc")}>
-              <ShieldCheck size={13} /> View KYC & Documents
-            </button>
-          ) : (
+          {activeTab !== "overview" ? (
             <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab("overview")}>
               Back to Overview
             </button>
-          )}
+          ) : <span />}
           {canPlace && activeTab === "overview" && (
             <button className="btn-primary btn-sm" onClick={onTransfer}>
               <ArrowLeftRight size={14} /> {isPlaced ? "Transfer" : "Place in a department"}
@@ -513,10 +517,11 @@ function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
             items={[
               { value: "overview", label: "Employment overview" },
               { value: "kyc", label: "KYC & Documents" },
+              ...(canViewAccess ? [{ value: "access" as const, label: "Access" }] : []),
             ]}
           />
 
-          {activeTab === "overview" ? (
+          {activeTab === "overview" && (
             <>
               {!isPlaced && row.legalEntityId !== undefined && (
                 <Notice title="Not yet placed in a department" tone="warning">
@@ -536,11 +541,19 @@ function EmployeeSheet({ row, canPlace, onClose, onTransfer }: {
                 </dl>
               </div>
             </>
-          ) : (
+          )}
+          {activeTab === "kyc" && (
             <KycSection
               employmentId={row.id}
               employeeName={row.name}
               isHR={true}
+            />
+          )}
+          {activeTab === "access" && canViewAccess && (
+            <AccessSection
+              employmentId={row.id}
+              employeeName={row.name}
+              canManage={canManageAccess}
             />
           )}
         </div>

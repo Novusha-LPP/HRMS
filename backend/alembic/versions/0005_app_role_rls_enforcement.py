@@ -53,8 +53,7 @@ def upgrade() -> None:
         f"GRANT SELECT, INSERT, UPDATE, DELETE ON TABLES TO {APP_ROLE}"
     )
     op.execute(
-        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public "
-        f"GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}"
+        f"ALTER DEFAULT PRIVILEGES IN SCHEMA public GRANT USAGE, SELECT ON SEQUENCES TO {APP_ROLE}"
     )
     # tenants has no RLS policy (root of the isolation boundary, see
     # kernel/models.py) — that's fine, it holds no per-tenant secrets.

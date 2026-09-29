@@ -160,9 +160,7 @@ async def forgot_password(
     production deployment needs a real mailer here instead.
     """
     # Anonymous, and each real request writes a token row — cap it per address.
-    await throttle.rate_limit(
-        "platform-forgot:ip", throttle.client_ip(request), max_per_hour=10
-    )
+    await throttle.rate_limit("platform-forgot:ip", throttle.client_ip(request), max_per_hour=10)
     generic = ForgotPasswordResponse(
         message="If that email has an account, a reset link has been generated."
     )

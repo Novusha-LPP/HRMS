@@ -172,3 +172,194 @@ class LeaveApplicationResponse(BaseModel):
     cancel_reason: str | None
     cancel_requested_at: datetime | None
     approval_history: list[LeaveApprovalActionResponse] = []
+
+
+# ─── Balance Buckets ──────────────────────────────────────────────────────────
+
+
+class LeaveBalanceBucketCreate(BaseModel):
+    name: str = Field(max_length=100)
+    code: str = Field(max_length=20)
+    is_unlimited: bool = False
+
+
+class LeaveBalanceBucketUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    is_active: bool | None = None
+
+
+class LeaveBalanceBucketResponse(BaseModel):
+    id: str
+    name: str
+    code: str
+    is_unlimited: bool
+    is_active: bool
+
+
+# ─── Type-to-Bucket Mapping ───────────────────────────────────────────────────
+
+
+class LeaveTypeBucketMappingCreate(BaseModel):
+    leave_type_id: str
+    bucket_id: str
+
+
+class LeaveTypeBucketMappingResponse(BaseModel):
+    id: str
+    leave_type_id: str
+    leave_type_name: str
+    leave_type_code: str
+    bucket_id: str
+    bucket_name: str
+    bucket_code: str
+
+
+# ─── Leave Policy Sets ────────────────────────────────────────────────────────
+
+
+class LeavePolicySetCreate(BaseModel):
+    name: str = Field(max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    is_default: bool = False
+
+
+class LeavePolicySetUpdate(BaseModel):
+    name: str | None = Field(default=None, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    is_default: bool | None = None
+
+
+class LeavePolicySetResponse(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    is_default: bool
+
+
+# ─── Leave Bucket Policies ────────────────────────────────────────────────────
+
+
+class LeaveBucketPolicyCreate(BaseModel):
+    bucket_id: str
+    accrual_type: Literal["ANNUAL_UPFRONT", "MONTHLY_PRORATE", "NONE"]
+    days_per_year: float = Field(ge=0)
+    carry_forward_enabled: bool = False
+    max_carry_forward_days: float | None = Field(default=None, ge=0)
+    lapse_enabled: bool = True
+    encashment_enabled: bool = False
+    max_encashment_days: float | None = Field(default=None, ge=0)
+    probation_eligible: bool = False
+    min_service_months: int = Field(default=0, ge=0)
+    pro_rate_first_year: bool = True
+
+
+class LeaveBucketPolicyUpdate(BaseModel):
+    accrual_type: Literal["ANNUAL_UPFRONT", "MONTHLY_PRORATE", "NONE"] | None = None
+    days_per_year: float | None = Field(default=None, ge=0)
+    carry_forward_enabled: bool | None = None
+    max_carry_forward_days: float | None = Field(default=None, ge=0)
+    lapse_enabled: bool | None = None
+    encashment_enabled: bool | None = None
+    max_encashment_days: float | None = Field(default=None, ge=0)
+    probation_eligible: bool | None = None
+    min_service_months: int | None = Field(default=None, ge=0)
+    pro_rate_first_year: bool | None = None
+
+
+class LeaveBucketPolicyResponse(BaseModel):
+    id: str
+    policy_set_id: str
+    bucket_id: str
+    bucket_name: str
+    bucket_code: str
+    accrual_type: str
+    days_per_year: float
+    carry_forward_enabled: bool
+    max_carry_forward_days: float | None
+    lapse_enabled: bool
+    encashment_enabled: bool
+    max_encashment_days: float | None
+    probation_eligible: bool
+    min_service_months: int
+    pro_rate_first_year: bool
+
+
+# ─── Leave Policy Assignments ─────────────────────────────────────────────────
+
+
+class LeavePolicyAssignmentCreate(BaseModel):
+    leave_policy_set_id: str
+    effective_from: date
+    effective_to: date | None = None
+    employment_id: str | None = None
+    org_unit_id: str | None = None
+    legal_entity_id: str | None = None
+
+    @model_validator(mode="after")
+    def validate_targets(self):
+        targets = [self.employment_id, self.org_unit_id, self.legal_entity_id]
+        non_nulls = sum(1 for t in targets if t is not None)
+        if non_nulls != 1:
+            raise ValueError(
+                "Exactly one of employment_id, org_unit_id, or legal_entity_id must be provided"
+            )
+        if self.effective_to and self.effective_to < self.effective_from:
+            raise ValueError("effective_to must not precede effective_from")
+        return self
+
+
+class LeavePolicyAssignmentResponse(BaseModel):
+    id: str
+    leave_policy_set_id: str
+    leave_policy_set_name: str
+    effective_from: date
+    effective_to: date | None
+    employment_id: str | None
+    org_unit_id: str | None
+    legal_entity_id: str | None
+
+
+# ─── Ledger & Transactions Responses ──────────────────────────────────────────
+
+
+class LeaveMonthlyLedgerResponse(BaseModel):
+    id: str
+    employment_id: str
+    bucket_id: str
+    bucket_name: str
+    bucket_code: str
+    calendar_year: int
+    calendar_month: int
+    fy_year: int
+    opening: float
+    accrued: float
+    granted: float
+    held: float
+    adjustment: float
+    taken: float
+    lapsed: float
+    encashed: float
+    closing: float
+    available: float
+
+
+class LeaveBalanceTransactionResponse(BaseModel):
+    id: str
+    employment_id: str
+    bucket_id: str
+    bucket_name: str
+    bucket_code: str
+    leave_type_id: str | None
+    leave_type_name: str | None
+    leave_type_code: str | None
+    transaction_type: str
+    quantity: float
+    previous_balance: float
+    new_balance: float
+    effective_date: date
+    reason: str | None
+    reference_id: str | None
+    reference_type: str | None
+    recorded_by: str
+    approved_by: str | None
+    recorded_at: datetime

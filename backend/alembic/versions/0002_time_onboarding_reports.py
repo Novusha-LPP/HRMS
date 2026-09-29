@@ -58,8 +58,9 @@ def upgrade() -> None:
         sa.PrimaryKeyConstraint("tenant_id", "id"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
     )
-    op.create_index("ix_punches_employment_time", "punches",
-                    ["tenant_id", "employment_id", "punched_at"])
+    op.create_index(
+        "ix_punches_employment_time", "punches", ["tenant_id", "employment_id", "punched_at"]
+    )
     _enable_rls("punches")
 
     # ── Attendance days ───────────────────────────────────────────────────────
@@ -82,12 +83,14 @@ def upgrade() -> None:
         sa.Column("recorded_at", sa.DateTime(timezone=True), server_default=sa.text("NOW()")),
         sa.Column("version", sa.Integer, nullable=False, server_default="0"),
         sa.PrimaryKeyConstraint("tenant_id", "id"),
-        sa.UniqueConstraint("tenant_id", "employment_id", "work_date",
-                            name="uq_attendance_day"),
+        sa.UniqueConstraint("tenant_id", "employment_id", "work_date", name="uq_attendance_day"),
         sa.ForeignKeyConstraint(["tenant_id"], ["tenants.id"]),
     )
-    op.create_index("ix_attendance_employment_date", "attendance_days",
-                    ["tenant_id", "employment_id", "work_date"])
+    op.create_index(
+        "ix_attendance_employment_date",
+        "attendance_days",
+        ["tenant_id", "employment_id", "work_date"],
+    )
     _enable_rls("attendance_days")
 
     # ── Onboarding templates ──────────────────────────────────────────────────
@@ -202,8 +205,13 @@ def _enable_rls(table: str) -> None:
 
 def downgrade() -> None:
     for t in [
-        "report_definitions", "onboarding_items", "onboarding_cases",
-        "onboarding_template_items", "onboarding_templates",
-        "attendance_days", "punches", "shifts",
+        "report_definitions",
+        "onboarding_items",
+        "onboarding_cases",
+        "onboarding_template_items",
+        "onboarding_templates",
+        "attendance_days",
+        "punches",
+        "shifts",
     ]:
         op.execute(f"DROP TABLE IF EXISTS {t} CASCADE")

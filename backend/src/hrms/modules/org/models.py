@@ -25,6 +25,7 @@ class LegalEntity(SQLModel, table=True):
     # TAN, PAN, CIN etc. stored as JSONB in a companion registrations table
     country_code: str = Field(max_length=2, default="IN")
     status: str = Field(default="ACTIVE", max_length=50)
+    financial_year_start_month: int | None = Field(default=None, ge=1, le=12)
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)

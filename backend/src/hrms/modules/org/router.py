@@ -16,24 +16,32 @@ from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import text
 from sqlmodel import select
 
+from hrms.core.authn import CurrentUser
 from hrms.core.authz import ScopeDep, require_permission
+from hrms.core.change_audit import record_change
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import now_utc
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
+from hrms.modules.kernel.models import EntityChangeLog
 from hrms.modules.org.models import EmployeeIdScheme, Job, LegalEntity, Location, OrgUnit
 from hrms.modules.org.schemas import (
+    ChangeLogEntry,
     EmployeeIdSchemeCreate,
     EmployeeIdSchemeResponse,
     EmployeeIdSchemeUpdate,
     JobCreate,
     JobResponse,
+    JobUpdate,
     LegalEntityCreate,
     LegalEntityResponse,
+    LegalEntityUpdate,
     LocationCreate,
     LocationResponse,
+    LocationUpdate,
     OrgUnitCreate,
     OrgUnitResponse,
+    OrgUnitUpdate,
 )
 
 router = APIRouter(prefix="/v1/org", tags=["Organisation"])
@@ -44,6 +52,56 @@ def _entity_scope_ids(scope) -> list[UUID] | None:
     if scope.is_all:
         return None
     return list(scope.legal_entity_ids)
+
+
+async def _resolve_changer_names(session, tenant_id: UUID, ids: set[UUID]) -> dict[UUID, str]:
+    """
+    Who made each change, resolved live at read time (never stored) — the
+    person's name if the account is tied to an employment, else the login
+    email, else the employee code. Same principle as manager_name in
+    people/router.py: the id is what's stored, the display value is a join.
+    """
+    if not ids:
+        return {}
+    rows = await session.execute(
+        text("""
+            SELECT ua.id,
+                   COALESCE(p.legal_first_name || ' ' || p.legal_last_name, ua.email,
+                            ua.employee_code)
+            FROM user_accounts ua
+            LEFT JOIN employments e ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
+            LEFT JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+            WHERE ua.tenant_id = CAST(:tid AS uuid) AND ua.id = ANY(CAST(:ids AS uuid[]))
+        """),
+        {"tid": str(tenant_id), "ids": [str(i) for i in ids]},
+    )
+    return {r[0]: r[1] for r in rows}
+
+
+async def _history_response(session, tenant_id: UUID, entries: list) -> list[ChangeLogEntry]:
+    names = await _resolve_changer_names(session, tenant_id, {e.changed_by for e in entries})
+    return [
+        ChangeLogEntry(
+            id=to_typed_id("entity_change", e.id),
+            action=e.action,
+            changes=e.changes,
+            changed_by=to_typed_id("user", e.changed_by),
+            changed_by_name=names.get(e.changed_by),
+            changed_at=e.changed_at,
+        )
+        for e in entries
+    ]
+
+
+async def _entity_history(session, tenant_id: UUID, entity_type: str, entity_id: UUID):
+    rows = await session.execute(
+        select(EntityChangeLog)
+        .where(EntityChangeLog.tenant_id == tenant_id)
+        .where(EntityChangeLog.entity_type == entity_type)
+        .where(EntityChangeLog.entity_id == entity_id)
+        .order_by(EntityChangeLog.changed_at.desc())
+    )
+    return await _history_response(session, tenant_id, list(rows.scalars()))
 
 
 # ─── Legal Entities ──────────────────────────────────────────────────────────
@@ -58,6 +116,7 @@ def _entity_scope_ids(scope) -> list[UUID] | None:
 )
 async def create_legal_entity(
     body: LegalEntityCreate,
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
@@ -75,17 +134,113 @@ async def create_legal_entity(
         name=body.name,
         short_name=body.short_name,
         country_code=body.country_code,
+        financial_year_start_month=body.financial_year_start_month,
     )
     session.add(entity)
     await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "legal_entity",
+        uid,
+        "CREATE",
+        changed_by=principal.user_account_id,
+        before=None,
+        after=_le_fields(entity),
+    )
+    return _le_response(entity)
+
+
+def _le_fields(entity: LegalEntity) -> dict:
+    return {
+        "name": entity.name,
+        "short_name": entity.short_name,
+        "country_code": entity.country_code,
+        "financial_year_start_month": entity.financial_year_start_month,
+    }
+
+
+def _le_response(entity: LegalEntity) -> LegalEntityResponse:
     return LegalEntityResponse(
-        id=to_typed_id("legal_entity", uid),
+        id=to_typed_id("legal_entity", entity.id),
         name=entity.name,
         short_name=entity.short_name,
         country_code=entity.country_code,
         status=entity.status,
         version=entity.version,
+        financial_year_start_month=entity.financial_year_start_month,
     )
+
+
+async def _get_legal_entity(session, tenant_id: UUID, entity_id: str) -> LegalEntity:
+    uid = to_uuid(entity_id)
+    row = await session.execute(
+        select(LegalEntity)
+        .where(LegalEntity.tenant_id == tenant_id)
+        .where(LegalEntity.id == uid)
+        .where(LegalEntity.archived_at.is_(None))  # type: ignore[attr-defined]
+    )
+    entity = row.scalars().first()
+    if not entity:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Legal entity not found")
+    return entity
+
+
+@router.patch(
+    "/legal-entities/{entity_id}",
+    response_model=LegalEntityResponse,
+    summary="Rename or reconfigure a legal entity",
+    dependencies=[require_permission("org.write")],
+)
+async def update_legal_entity(
+    entity_id: str,
+    body: LegalEntityUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> LegalEntityResponse:
+    scope = scope.for_permission("org.write")
+    if not scope.is_all:
+        raise HTTPException(
+            status.HTTP_403_FORBIDDEN,
+            "Only a group-level administrator can edit a company",
+        )
+    entity = await _get_legal_entity(session, tenant_id, entity_id)
+    fields = body.model_dump(exclude_unset=True)
+    before = {k: getattr(entity, k) for k in fields}
+    for k, v in fields.items():
+        setattr(entity, k, v)
+    session.add(entity)
+    await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "legal_entity",
+        entity.id,
+        "UPDATE",
+        changed_by=principal.user_account_id,
+        before=before,
+        after=fields,
+    )
+    return _le_response(entity)
+
+
+@router.get(
+    "/legal-entities/{entity_id}/history",
+    response_model=list[ChangeLogEntry],
+    summary="Change history for a legal entity",
+)
+async def legal_entity_history(
+    entity_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> list[ChangeLogEntry]:
+    entity = await _get_legal_entity(session, tenant_id, entity_id)
+    if not scope.covers_entity(entity.id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this company")
+    return await _entity_history(session, tenant_id, "legal_entity", entity.id)
 
 
 @router.get(
@@ -109,17 +264,7 @@ async def list_legal_entities(
             return []
         q = q.where(LegalEntity.id.in_(ids))
     rows = await session.execute(q)
-    return [
-        LegalEntityResponse(
-            id=to_typed_id("legal_entity", r.id),
-            name=r.name,
-            short_name=r.short_name,
-            country_code=r.country_code,
-            status=r.status,
-            version=r.version,
-        )
-        for r in rows.scalars()
-    ]
+    return [_le_response(r) for r in rows.scalars()]
 
 
 # ─── Locations ───────────────────────────────────────────────────────────────
@@ -134,6 +279,7 @@ async def list_legal_entities(
 )
 async def create_location(
     body: LocationCreate,
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
@@ -161,8 +307,35 @@ async def create_location(
     )
     session.add(loc)
     await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "location",
+        uid,
+        "CREATE",
+        changed_by=principal.user_account_id,
+        before=None,
+        after=_loc_fields(loc),
+    )
+    return _loc_response(loc)
+
+
+def _loc_fields(loc: Location) -> dict:
+    return {
+        "name": loc.name,
+        "type": loc.type,
+        "address_line1": loc.address_line1,
+        "city": loc.city,
+        "state_code": loc.state_code,
+        "pincode": loc.pincode,
+        "country_code": loc.country_code,
+        "timezone": loc.timezone,
+    }
+
+
+def _loc_response(loc: Location) -> LocationResponse:
     return LocationResponse(
-        id=to_typed_id("location", uid),
+        id=to_typed_id("location", loc.id),
         name=loc.name,
         type=loc.type,
         city=loc.city,
@@ -171,8 +344,78 @@ async def create_location(
         timezone=loc.timezone,
         status=loc.status,
         version=loc.version,
-        legal_entity_id=to_typed_id("legal_entity", le_uuid) if le_uuid else None,
+        legal_entity_id=to_typed_id("legal_entity", loc.legal_entity_id)
+        if loc.legal_entity_id
+        else None,
     )
+
+
+async def _get_location(session, tenant_id: UUID, location_id: str) -> Location:
+    uid = to_uuid(location_id)
+    row = await session.execute(
+        select(Location)
+        .where(Location.tenant_id == tenant_id)
+        .where(Location.id == uid)
+        .where(Location.archived_at.is_(None))  # type: ignore[attr-defined]
+    )
+    loc = row.scalars().first()
+    if not loc:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Location not found")
+    return loc
+
+
+@router.patch(
+    "/locations/{location_id}",
+    response_model=LocationResponse,
+    summary="Update a location",
+    dependencies=[require_permission("org.write")],
+)
+async def update_location(
+    location_id: str,
+    body: LocationUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> LocationResponse:
+    scope = scope.for_permission("org.write")
+    loc = await _get_location(session, tenant_id, location_id)
+    if loc.legal_entity_id and not scope.covers_entity(loc.legal_entity_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this legal entity")
+    fields = body.model_dump(exclude_unset=True)
+    before = {k: getattr(loc, k) for k in fields}
+    for k, v in fields.items():
+        setattr(loc, k, v)
+    session.add(loc)
+    await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "location",
+        loc.id,
+        "UPDATE",
+        changed_by=principal.user_account_id,
+        before=before,
+        after=fields,
+    )
+    return _loc_response(loc)
+
+
+@router.get(
+    "/locations/{location_id}/history",
+    response_model=list[ChangeLogEntry],
+    summary="Change history for a location",
+)
+async def location_history(
+    location_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> list[ChangeLogEntry]:
+    loc = await _get_location(session, tenant_id, location_id)
+    if loc.legal_entity_id and not scope.covers_entity(loc.legal_entity_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this legal entity")
+    return await _entity_history(session, tenant_id, "location", loc.id)
 
 
 @router.get(
@@ -211,23 +454,7 @@ async def list_locations(
             else None
         )
     scalars = rows.scalars() if rows is not None else []
-    return [
-        LocationResponse(
-            id=to_typed_id("location", r.id),
-            name=r.name,
-            type=r.type,
-            city=r.city,
-            state_code=r.state_code,
-            country_code=r.country_code,
-            timezone=r.timezone,
-            status=r.status,
-            version=r.version,
-            legal_entity_id=to_typed_id("legal_entity", r.legal_entity_id)
-            if r.legal_entity_id
-            else None,
-        )
-        for r in scalars
-    ]
+    return [_loc_response(r) for r in scalars]
 
 
 # ─── Org Units ────────────────────────────────────────────────────────────────
@@ -242,6 +469,7 @@ async def list_locations(
 )
 async def create_org_unit(
     body: OrgUnitCreate,
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
@@ -273,18 +501,102 @@ async def create_org_unit(
     )
     session.add(unit)
     await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "org_unit",
+        uid,
+        "CREATE",
+        changed_by=principal.user_account_id,
+        before=None,
+        after={"name": unit.name, "code": unit.code, "type": unit.type},
+    )
+    return _ou_response(unit)
+
+
+def _ou_response(unit: OrgUnit) -> OrgUnitResponse:
     return OrgUnitResponse(
-        id=to_typed_id("org_unit", uid),
+        id=to_typed_id("org_unit", unit.id),
         name=unit.name,
         code=unit.code,
         type=unit.type,
-        parent_id=to_typed_id("org_unit", parent_uuid) if parent_uuid else None,
-        legal_entity_id=to_typed_id("legal_entity", le_uuid) if le_uuid else None,
+        parent_id=to_typed_id("org_unit", unit.parent_id) if unit.parent_id else None,
+        legal_entity_id=to_typed_id("legal_entity", unit.legal_entity_id)
+        if unit.legal_entity_id
+        else None,
         status=unit.status,
         effective_from=unit.effective_from,
         effective_to=unit.effective_to,
         version=unit.version,
     )
+
+
+async def _get_org_unit(session, tenant_id: UUID, unit_id: str) -> OrgUnit:
+    uid = to_uuid(unit_id)
+    row = await session.execute(
+        select(OrgUnit)
+        .where(OrgUnit.tenant_id == tenant_id)
+        .where(OrgUnit.id == uid)
+        .where(OrgUnit.archived_at.is_(None))  # type: ignore[attr-defined]
+    )
+    unit = row.scalars().first()
+    if not unit:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Org unit not found")
+    return unit
+
+
+@router.patch(
+    "/org-units/{unit_id}",
+    response_model=OrgUnitResponse,
+    summary="Rename or recode an org unit",
+    dependencies=[require_permission("org.write")],
+)
+async def update_org_unit(
+    unit_id: str,
+    body: OrgUnitUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> OrgUnitResponse:
+    scope = scope.for_permission("org.write")
+    unit = await _get_org_unit(session, tenant_id, unit_id)
+    if unit.legal_entity_id and not scope.covers_entity(unit.legal_entity_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this legal entity")
+    fields = body.model_dump(exclude_unset=True)
+    before = {k: getattr(unit, k) for k in fields}
+    for k, v in fields.items():
+        setattr(unit, k, v)
+    session.add(unit)
+    await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "org_unit",
+        unit.id,
+        "UPDATE",
+        changed_by=principal.user_account_id,
+        before=before,
+        after=fields,
+    )
+    return _ou_response(unit)
+
+
+@router.get(
+    "/org-units/{unit_id}/history",
+    response_model=list[ChangeLogEntry],
+    summary="Change history for an org unit",
+)
+async def org_unit_history(
+    unit_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> list[ChangeLogEntry]:
+    unit = await _get_org_unit(session, tenant_id, unit_id)
+    if unit.legal_entity_id and not scope.covers_entity(unit.legal_entity_id):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this legal entity")
+    return await _entity_history(session, tenant_id, "org_unit", unit.id)
 
 
 @router.get(
@@ -322,23 +634,7 @@ async def list_org_units(
             if unit_ids
             else []
         )
-    return [
-        OrgUnitResponse(
-            id=to_typed_id("org_unit", r.id),
-            name=r.name,
-            code=r.code,
-            type=r.type,
-            parent_id=to_typed_id("org_unit", r.parent_id) if r.parent_id else None,
-            legal_entity_id=to_typed_id("legal_entity", r.legal_entity_id)
-            if r.legal_entity_id
-            else None,
-            status=r.status,
-            effective_from=r.effective_from,
-            effective_to=r.effective_to,
-            version=r.version,
-        )
-        for r in scalars
-    ]
+    return [_ou_response(r) for r in scalars]
 
 
 # ─── Jobs (tenant-wide catalog — no per-company scoping) ──────────────────────
@@ -353,6 +649,7 @@ async def list_org_units(
 )
 async def create_job(
     body: JobCreate,
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> JobResponse:
@@ -366,14 +663,42 @@ async def create_job(
     )
     session.add(job)
     await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "job",
+        uid,
+        "CREATE",
+        changed_by=principal.user_account_id,
+        before=None,
+        after={"title": job.title, "code": job.code, "function": job.function},
+    )
+    return _job_response(job)
+
+
+def _job_response(job: Job) -> JobResponse:
     return JobResponse(
-        id=to_typed_id("job", uid),
+        id=to_typed_id("job", job.id),
         title=job.title,
         code=job.code,
         function=job.function,
         status=job.status,
         version=job.version,
     )
+
+
+async def _get_job(session, tenant_id: UUID, job_id: str) -> Job:
+    uid = to_uuid(job_id)
+    row = await session.execute(
+        select(Job)
+        .where(Job.tenant_id == tenant_id)
+        .where(Job.id == uid)
+        .where(Job.archived_at.is_(None))  # type: ignore[attr-defined]
+    )
+    job = row.scalars().first()
+    if not job:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Job not found")
+    return job
 
 
 @router.get("/jobs", response_model=list[JobResponse], summary="List jobs")
@@ -384,17 +709,54 @@ async def list_jobs(
     rows = await session.execute(
         select(Job).where(Job.tenant_id == tenant_id).where(Job.archived_at.is_(None))  # type: ignore[attr-defined]
     )
-    return [
-        JobResponse(
-            id=to_typed_id("job", r.id),
-            title=r.title,
-            code=r.code,
-            function=r.function,
-            status=r.status,
-            version=r.version,
-        )
-        for r in rows.scalars()
-    ]
+    return [_job_response(r) for r in rows.scalars()]
+
+
+@router.patch(
+    "/jobs/{job_id}",
+    response_model=JobResponse,
+    summary="Update a job title",
+    dependencies=[require_permission("org.write")],
+)
+async def update_job(
+    job_id: str,
+    body: JobUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> JobResponse:
+    job = await _get_job(session, tenant_id, job_id)
+    fields = body.model_dump(exclude_unset=True)
+    before = {k: getattr(job, k) for k in fields}
+    for k, v in fields.items():
+        setattr(job, k, v)
+    session.add(job)
+    await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "job",
+        job.id,
+        "UPDATE",
+        changed_by=principal.user_account_id,
+        before=before,
+        after=fields,
+    )
+    return _job_response(job)
+
+
+@router.get(
+    "/jobs/{job_id}/history",
+    response_model=list[ChangeLogEntry],
+    summary="Change history for a job",
+)
+async def job_history(
+    job_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> list[ChangeLogEntry]:
+    job = await _get_job(session, tenant_id, job_id)
+    return await _entity_history(session, tenant_id, "job", job.id)
 
 
 # ─── Employee ID schemes ──────────────────────────────────────────────────────

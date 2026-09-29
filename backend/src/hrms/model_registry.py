@@ -79,12 +79,43 @@ RELATIONS = {
     "onboarding_cases": {"employment_id": "employments", "template_id": "onboarding_templates"},
     "onboarding_items": {"case_id": "onboarding_cases"},
     "onboarding_template_items": {"template_id": "onboarding_templates"},
+    "leave_type_bucket_mapping": {
+        "leave_type_id": "leave_types",
+        "bucket_id": "leave_balance_buckets",
+    },
+    "leave_bucket_policies": {
+        "policy_set_id": "leave_policy_sets",
+        "bucket_id": "leave_balance_buckets",
+    },
+    "leave_policy_assignments": {
+        "employment_id": "employments",
+        "org_unit_id": "org_units",
+        "legal_entity_id": "legal_entities",
+        "leave_policy_set_id": "leave_policy_sets",
+    },
+    "leave_monthly_ledger": {
+        "employment_id": "employments",
+        "bucket_id": "leave_balance_buckets",
+    },
+    "leave_balance_transactions": {
+        "employment_id": "employments",
+        "bucket_id": "leave_balance_buckets",
+        "leave_type_id": "leave_types",
+    },
+    "entity_change_log": {"changed_by": "user_accounts"},
 }
 # Bookkeeping timestamps are `NOT NULL` in the Python models (they always carry a
 # default_factory) but nullable-with-a-server-default in the database. The
 # database is the truth here, so say so.
 # (Tables whose migrations declare them NOT NULL are listed in _STRICT_TABLES.)
-_STRICT_TABLES = {"api_keys", "import_batches", "auth_throttle", "kyc_access_log"}
+_STRICT_TABLES = {
+    "api_keys",
+    "import_batches",
+    "auth_throttle",
+    "kyc_access_log",
+    "leave_balance_transactions",
+    "entity_change_log",
+}
 _NULLABLE_TIMESTAMPS = {
     "created_at",
     "recorded_at",
@@ -147,6 +178,18 @@ for unique_table, unique_columns, unique_name in (
     ("employee_kyc_records", ("tenant_id", "employment_id"), "uq_tenant_kyc_employment"),
     ("platform_admins", ("email",), "platform_admins_email_key"),
     ("tenants", ("slug",), "tenants_slug_key"),
+    ("leave_balance_buckets", ("tenant_id", "code"), "uq_leave_balance_bucket_code"),
+    ("leave_type_bucket_mapping", ("tenant_id", "leave_type_id"), "uq_leave_type_bucket_mapping"),
+    (
+        "leave_bucket_policies",
+        ("tenant_id", "policy_set_id", "bucket_id"),
+        "uq_leave_bucket_policy",
+    ),
+    (
+        "leave_monthly_ledger",
+        ("tenant_id", "employment_id", "bucket_id", "calendar_year", "calendar_month"),
+        "uq_leave_monthly_ledger_period",
+    ),
 ):
     metadata.tables[unique_table].append_constraint(
         UniqueConstraint(*unique_columns, name=unique_name)

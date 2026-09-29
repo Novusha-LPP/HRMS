@@ -49,9 +49,16 @@ def upgrade() -> None:
 
     # Comp-off: which leave type an employee's comp-off credits land in, and
     # accrual: which leave types get a monthly automatic top-up.
-    op.add_column("leave_types", sa.Column("is_comp_off", sa.Boolean, nullable=False, server_default="false"))
-    op.add_column("leave_types", sa.Column("encashable", sa.Boolean, nullable=False, server_default="false"))
-    op.add_column("leave_types", sa.Column("accrual_enabled", sa.Boolean, nullable=False, server_default="false"))
+    op.add_column(
+        "leave_types", sa.Column("is_comp_off", sa.Boolean, nullable=False, server_default="false")
+    )
+    op.add_column(
+        "leave_types", sa.Column("encashable", sa.Boolean, nullable=False, server_default="false")
+    )
+    op.add_column(
+        "leave_types",
+        sa.Column("accrual_enabled", sa.Boolean, nullable=False, server_default="false"),
+    )
 
     # Idempotency for accrual: which "YYYY-MM" period this balance last got
     # its automatic credit for, so re-running the same month is a no-op.
@@ -71,7 +78,12 @@ def upgrade() -> None:
     )
     # One grant per employee per worked day — the idempotency guard against
     # double-crediting the same day of work.
-    op.create_index("ix_comp_off_unique", "comp_off_grants", ["tenant_id", "employment_id", "work_date"], unique=True)
+    op.create_index(
+        "ix_comp_off_unique",
+        "comp_off_grants",
+        ["tenant_id", "employment_id", "work_date"],
+        unique=True,
+    )
     op.execute("ALTER TABLE comp_off_grants ENABLE ROW LEVEL SECURITY")
     op.execute("ALTER TABLE comp_off_grants FORCE ROW LEVEL SECURITY")
     op.execute("""

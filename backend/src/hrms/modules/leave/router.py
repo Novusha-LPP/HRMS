@@ -28,12 +28,12 @@ own and is checked against their scope if they name someone else; approver
 identity is always the caller (from the verified token), never a parameter.
 """
 
-from datetime import timedelta
+from datetime import date, timedelta
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import text
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.approvals import require_reviewer
 from hrms.core.authn import CurrentUser
@@ -59,8 +59,15 @@ from hrms.modules.leave.models import (
     LeaveApprovalAction,
     LeaveApprovalActionType,
     LeaveBalance,
+    LeaveBalanceBucket,
+    LeaveBalanceTransaction,
+    LeaveBucketPolicy,
     LeaveEncashment,
+    LeaveMonthlyLedger,
+    LeavePolicyAssignment,
+    LeavePolicySet,
     LeaveType,
+    LeaveTypeBucketMapping,
 )
 from hrms.modules.leave.schemas import (
     AccrualRunResponse,
@@ -70,10 +77,25 @@ from hrms.modules.leave.schemas import (
     LeaveApplyRequest,
     LeaveApprovalActionRequest,
     LeaveApprovalActionResponse,
+    LeaveBalanceBucketCreate,
+    LeaveBalanceBucketResponse,
+    LeaveBalanceBucketUpdate,
     LeaveBalanceResponse,
+    LeaveBalanceTransactionResponse,
+    LeaveBucketPolicyCreate,
+    LeaveBucketPolicyResponse,
+    LeaveBucketPolicyUpdate,
     LeaveCancelRequest,
     LeaveEncashmentRequest,
     LeaveEncashmentResponse,
+    LeaveMonthlyLedgerResponse,
+    LeavePolicyAssignmentCreate,
+    LeavePolicyAssignmentResponse,
+    LeavePolicySetCreate,
+    LeavePolicySetResponse,
+    LeavePolicySetUpdate,
+    LeaveTypeBucketMappingCreate,
+    LeaveTypeBucketMappingResponse,
     LeaveTypeCreate,
     LeaveTypeResponse,
     LeaveTypeUpdate,
@@ -88,8 +110,8 @@ router = APIRouter(prefix="/v1/leave", tags=["Leave Management"])
 
 @router.get("/types", response_model=list[LeaveTypeResponse])
 async def list_leave_types(
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> list[LeaveTypeResponse]:
     rows = await session.execute(
         select(LeaveType)
@@ -108,8 +130,8 @@ async def list_leave_types(
 )
 async def create_leave_type(
     body: LeaveTypeCreate,
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> LeaveTypeResponse:
     uid = uuid4()
     lt = LeaveType(tenant_id=tenant_id, id=uid, recorded_at=now_utc(), **body.model_dump())
@@ -126,8 +148,8 @@ async def create_leave_type(
 async def update_leave_type(
     leave_type_id: str,
     body: LeaveTypeUpdate,
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> LeaveTypeResponse:
     lt = await _get_lt(session, tenant_id, leave_type_id)
     for k, v in body.model_dump(exclude_unset=True).items():
@@ -157,7 +179,7 @@ async def list_balances(
         year = now_utc().year
     rows = await session.execute(
         select(LeaveBalance, LeaveType)
-        .join(LeaveType, LeaveType.id == LeaveBalance.leave_type_id)
+        .join(LeaveType, col(LeaveType.id) == LeaveBalance.leave_type_id)
         .where(LeaveBalance.tenant_id == tenant_id)
         .where(LeaveBalance.employment_id == emp_uuid)
         .where(LeaveBalance.year == year)
@@ -476,7 +498,7 @@ async def list_applications(
     scope = read_scope(scope, "leave.read", "leave.approve")
     q = (
         select(LeaveApplication, LeaveType)
-        .join(LeaveType, LeaveType.id == LeaveApplication.leave_type_id)
+        .join(LeaveType, col(LeaveType.id) == LeaveApplication.leave_type_id)
         .where(LeaveApplication.tenant_id == tenant_id)
         .where(LeaveApplication.archived_at == None)  # noqa: E711
     )
@@ -486,10 +508,10 @@ async def list_applications(
         q = q.where(LeaveApplication.employment_id == emp_uuid)
     elif not scope.is_all:
         allowed_ids = await visible_employment_ids(session, tenant_id, scope)
-        q = q.where(LeaveApplication.employment_id.in_(allowed_ids))
+        q = q.where(col(LeaveApplication.employment_id).in_(allowed_ids))
     if status:
         q = q.where(LeaveApplication.status == status)
-    rows = await session.execute(q.order_by(LeaveApplication.applied_at.desc()))
+    rows = await session.execute(q.order_by(col(LeaveApplication.applied_at).desc()))
     results = []
     for app, lt in rows:
         history = await _get_history(session, tenant_id, app.id)
@@ -891,7 +913,7 @@ async def _get_app_lt(session, tenant_id, app_id: str):
     uid = to_uuid(app_id)
     row = await session.execute(
         select(LeaveApplication, LeaveType)
-        .join(LeaveType, LeaveType.id == LeaveApplication.leave_type_id)
+        .join(LeaveType, col(LeaveType.id) == LeaveApplication.leave_type_id)
         .where(LeaveApplication.tenant_id == tenant_id)
         .where(LeaveApplication.id == uid)
         .with_for_update(of=LeaveApplication)
@@ -908,7 +930,7 @@ async def _get_history(session, tenant_id, app_id) -> list[LeaveApprovalActionRe
         select(LeaveApprovalAction)
         .where(LeaveApprovalAction.tenant_id == tenant_id)
         .where(LeaveApprovalAction.application_id == app_id)
-        .order_by(LeaveApprovalAction.actioned_at)
+        .order_by(col(LeaveApprovalAction.actioned_at))
     )
     return [
         LeaveApprovalActionResponse(
@@ -1054,7 +1076,7 @@ async def _check_overlap(session, tenant_id, app):
             .where(LeaveApplication.id != app.id)
             .where(LeaveApplication.from_date <= app.to_date)
             .where(LeaveApplication.to_date >= app.from_date)
-            .where(LeaveApplication.status.notin_(["DRAFT", "REJECTED", "CANCELLED"]))
+            .where(col(LeaveApplication.status).notin_(["DRAFT", "REJECTED", "CANCELLED"]))
         )
     ).scalars()
     for other in rows:
@@ -1107,3 +1129,759 @@ async def _check_reviewer(session, tenant_id, principal, scope, app, cancel=Fals
         {a.approver_employment_id for a in history},
         "leave.write",
     )
+
+
+# ─── Balance Buckets CRUD ─────────────────────────────────────────────────────
+
+
+@router.get(
+    "/buckets",
+    response_model=list[LeaveBalanceBucketResponse],
+    dependencies=[require_permission("leave.read")],
+)
+async def list_buckets(
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> list[LeaveBalanceBucketResponse]:
+    rows = await session.execute(
+        select(LeaveBalanceBucket)
+        .where(LeaveBalanceBucket.tenant_id == tenant_id)
+        .where(LeaveBalanceBucket.archived_at == None)  # noqa: E711
+        .order_by(LeaveBalanceBucket.name)
+    )
+    return [
+        LeaveBalanceBucketResponse(
+            id=to_typed_id("leave_bucket", b.id),
+            name=b.name,
+            code=b.code,
+            is_unlimited=b.is_unlimited,
+            is_active=b.is_active,
+        )
+        for b in rows.scalars()
+    ]
+
+
+@router.post(
+    "/buckets",
+    response_model=LeaveBalanceBucketResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
+async def create_bucket(
+    body: LeaveBalanceBucketCreate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    principal: CurrentUser,
+) -> LeaveBalanceBucketResponse:
+    existing = await session.execute(
+        select(LeaveBalanceBucket)
+        .where(LeaveBalanceBucket.tenant_id == tenant_id)
+        .where(LeaveBalanceBucket.code == body.code.strip())
+        .where(LeaveBalanceBucket.archived_at == None)  # noqa: E711
+    )
+    if existing.scalars().first():
+        raise HTTPException(400, f"Bucket code '{body.code}' already exists")
+
+    bucket = LeaveBalanceBucket(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        recorded_at=now_utc(),
+        recorded_by=principal.id if hasattr(principal, "id") else None,
+        name=body.name.strip(),
+        code=body.code.strip(),
+        is_unlimited=body.is_unlimited,
+        is_active=True,
+    )
+    session.add(bucket)
+    await session.flush()
+    return LeaveBalanceBucketResponse(
+        id=to_typed_id("leave_bucket", bucket.id),
+        name=bucket.name,
+        code=bucket.code,
+        is_unlimited=bucket.is_unlimited,
+        is_active=bucket.is_active,
+    )
+
+
+@router.patch(
+    "/buckets/{bucket_id}",
+    response_model=LeaveBalanceBucketResponse,
+    dependencies=[require_permission("leave.write")],
+)
+async def update_bucket(
+    bucket_id: str,
+    body: LeaveBalanceBucketUpdate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> LeaveBalanceBucketResponse:
+    uid = to_uuid(bucket_id)
+    bucket = await session.get(LeaveBalanceBucket, (tenant_id, uid))
+    if not bucket or bucket.archived_at:
+        raise HTTPException(404, "Leave bucket not found")
+    if body.name is not None:
+        bucket.name = body.name.strip()
+    if body.is_active is not None:
+        bucket.is_active = body.is_active
+    session.add(bucket)
+    await session.flush()
+    return LeaveBalanceBucketResponse(
+        id=to_typed_id("leave_bucket", bucket.id),
+        name=bucket.name,
+        code=bucket.code,
+        is_unlimited=bucket.is_unlimited,
+        is_active=bucket.is_active,
+    )
+
+
+@router.delete(
+    "/buckets/{bucket_id}",
+    status_code=204,
+    dependencies=[require_permission("leave.write")],
+)
+async def delete_bucket(
+    bucket_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> None:
+    uid = to_uuid(bucket_id)
+    bucket = await session.get(LeaveBalanceBucket, (tenant_id, uid))
+    if not bucket or bucket.archived_at:
+        raise HTTPException(404, "Leave bucket not found")
+    bucket.archived_at = now_utc()
+    session.add(bucket)
+    await session.flush()
+
+
+# ─── Bucket Mappings CRUD ─────────────────────────────────────────────────────
+
+
+@router.get(
+    "/bucket-mappings",
+    response_model=list[LeaveTypeBucketMappingResponse],
+    dependencies=[require_permission("leave.read")],
+)
+async def list_bucket_mappings(
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> list[LeaveTypeBucketMappingResponse]:
+    rows = await session.execute(
+        select(LeaveTypeBucketMapping, LeaveType, LeaveBalanceBucket)
+        .join(LeaveType, col(LeaveType.id) == LeaveTypeBucketMapping.leave_type_id)
+        .join(LeaveBalanceBucket, col(LeaveBalanceBucket.id) == LeaveTypeBucketMapping.bucket_id)
+        .where(LeaveTypeBucketMapping.tenant_id == tenant_id)
+    )
+    return [
+        LeaveTypeBucketMappingResponse(
+            id=to_typed_id("leave_mapping", m.id),
+            leave_type_id=to_typed_id("leave_type", lt.id),
+            leave_type_name=lt.name,
+            leave_type_code=lt.code,
+            bucket_id=to_typed_id("leave_bucket", b.id),
+            bucket_name=b.name,
+            bucket_code=b.code,
+        )
+        for m, lt, b in rows
+    ]
+
+
+@router.post(
+    "/bucket-mappings",
+    response_model=LeaveTypeBucketMappingResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
+async def create_or_update_bucket_mapping(
+    body: LeaveTypeBucketMappingCreate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    principal: CurrentUser,
+) -> LeaveTypeBucketMappingResponse:
+    lt_id = to_uuid(body.leave_type_id)
+    bucket_id = to_uuid(body.bucket_id)
+
+    lt = await session.get(LeaveType, (tenant_id, lt_id))
+    if not lt or lt.archived_at:
+        raise HTTPException(404, "Leave type not found")
+    bucket = await session.get(LeaveBalanceBucket, (tenant_id, bucket_id))
+    if not bucket or bucket.archived_at:
+        raise HTTPException(404, "Leave bucket not found")
+
+    existing = (
+        (
+            await session.execute(
+                select(LeaveTypeBucketMapping)
+                .where(LeaveTypeBucketMapping.tenant_id == tenant_id)
+                .where(LeaveTypeBucketMapping.leave_type_id == lt_id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+
+    if existing:
+        existing.bucket_id = bucket_id
+        session.add(existing)
+        m = existing
+    else:
+        m = LeaveTypeBucketMapping(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            leave_type_id=lt_id,
+            bucket_id=bucket_id,
+            recorded_at=now_utc(),
+            recorded_by=principal.id if hasattr(principal, "id") else None,
+        )
+        session.add(m)
+    await session.flush()
+
+    return LeaveTypeBucketMappingResponse(
+        id=to_typed_id("leave_mapping", m.id),
+        leave_type_id=to_typed_id("leave_type", lt.id),
+        leave_type_name=lt.name,
+        leave_type_code=lt.code,
+        bucket_id=to_typed_id("leave_bucket", bucket.id),
+        bucket_name=bucket.name,
+        bucket_code=bucket.code,
+    )
+
+
+@router.delete(
+    "/bucket-mappings/{mapping_id}",
+    status_code=204,
+    dependencies=[require_permission("leave.write")],
+)
+async def delete_bucket_mapping(
+    mapping_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> None:
+    uid = to_uuid(mapping_id)
+    m = await session.get(LeaveTypeBucketMapping, (tenant_id, uid))
+    if not m:
+        raise HTTPException(404, "Leave type bucket mapping not found")
+    await session.delete(m)
+    await session.flush()
+
+
+# ─── Leave Policy Sets CRUD ───────────────────────────────────────────────────
+
+
+@router.get(
+    "/policy-sets",
+    response_model=list[LeavePolicySetResponse],
+    dependencies=[require_permission("leave.write")],
+)
+async def list_policy_sets(
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> list[LeavePolicySetResponse]:
+    rows = await session.execute(
+        select(LeavePolicySet)
+        .where(LeavePolicySet.tenant_id == tenant_id)
+        .where(LeavePolicySet.archived_at == None)  # noqa: E711
+        .order_by(LeavePolicySet.name)
+    )
+    return [
+        LeavePolicySetResponse(
+            id=to_typed_id("leave_policy_set", ps.id),
+            name=ps.name,
+            description=ps.description,
+            is_default=ps.is_default,
+        )
+        for ps in rows.scalars()
+    ]
+
+
+@router.post(
+    "/policy-sets",
+    response_model=LeavePolicySetResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
+async def create_policy_set(
+    body: LeavePolicySetCreate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    principal: CurrentUser,
+) -> LeavePolicySetResponse:
+    if body.is_default:
+        existing_defaults = await session.execute(
+            select(LeavePolicySet)
+            .where(LeavePolicySet.tenant_id == tenant_id)
+            .where(LeavePolicySet.is_default == True)  # noqa: E712
+        )
+        for d in existing_defaults.scalars():
+            d.is_default = False
+            session.add(d)
+
+    pset = LeavePolicySet(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        recorded_at=now_utc(),
+        recorded_by=principal.id if hasattr(principal, "id") else None,
+        name=body.name.strip(),
+        description=body.description.strip() if body.description else None,
+        is_default=body.is_default,
+    )
+    session.add(pset)
+    await session.flush()
+    return LeavePolicySetResponse(
+        id=to_typed_id("leave_policy_set", pset.id),
+        name=pset.name,
+        description=pset.description,
+        is_default=pset.is_default,
+    )
+
+
+@router.patch(
+    "/policy-sets/{policy_set_id}",
+    response_model=LeavePolicySetResponse,
+    dependencies=[require_permission("leave.write")],
+)
+async def update_policy_set(
+    policy_set_id: str,
+    body: LeavePolicySetUpdate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> LeavePolicySetResponse:
+    uid = to_uuid(policy_set_id)
+    pset = await session.get(LeavePolicySet, (tenant_id, uid))
+    if not pset or pset.archived_at:
+        raise HTTPException(404, "Leave policy set not found")
+    if body.name is not None:
+        pset.name = body.name.strip()
+    if body.description is not None:
+        pset.description = body.description.strip()
+    if body.is_default is not None:
+        if body.is_default:
+            existing_defaults = await session.execute(
+                select(LeavePolicySet)
+                .where(LeavePolicySet.tenant_id == tenant_id)
+                .where(LeavePolicySet.is_default == True)  # noqa: E712
+            )
+            for d in existing_defaults.scalars():
+                d.is_default = False
+                session.add(d)
+        pset.is_default = body.is_default
+    session.add(pset)
+    await session.flush()
+    return LeavePolicySetResponse(
+        id=to_typed_id("leave_policy_set", pset.id),
+        name=pset.name,
+        description=pset.description,
+        is_default=pset.is_default,
+    )
+
+
+# ─── Leave Bucket Policies CRUD ───────────────────────────────────────────────
+
+
+@router.get(
+    "/policy-sets/{set_id}/bucket-policies",
+    response_model=list[LeaveBucketPolicyResponse],
+    dependencies=[require_permission("leave.write")],
+)
+async def list_bucket_policies_for_set(
+    set_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> list[LeaveBucketPolicyResponse]:
+    pset_id = to_uuid(set_id)
+    rows = await session.execute(
+        select(LeaveBucketPolicy, LeaveBalanceBucket)
+        .join(LeaveBalanceBucket, col(LeaveBalanceBucket.id) == LeaveBucketPolicy.bucket_id)
+        .where(LeaveBucketPolicy.tenant_id == tenant_id)
+        .where(LeaveBucketPolicy.policy_set_id == pset_id)
+    )
+    return [
+        LeaveBucketPolicyResponse(
+            id=to_typed_id("leave_bucket_policy", bp.id),
+            policy_set_id=to_typed_id("leave_policy_set", bp.policy_set_id),
+            bucket_id=to_typed_id("leave_bucket", b.id),
+            bucket_name=b.name,
+            bucket_code=b.code,
+            accrual_type=bp.accrual_type,
+            days_per_year=bp.days_per_year,
+            carry_forward_enabled=bp.carry_forward_enabled,
+            max_carry_forward_days=bp.max_carry_forward_days,
+            lapse_enabled=bp.lapse_enabled,
+            encashment_enabled=bp.encashment_enabled,
+            max_encashment_days=bp.max_encashment_days,
+            probation_eligible=bp.probation_eligible,
+            min_service_months=bp.min_service_months,
+            pro_rate_first_year=bp.pro_rate_first_year,
+        )
+        for bp, b in rows
+    ]
+
+
+@router.post(
+    "/policy-sets/{set_id}/bucket-policies",
+    response_model=LeaveBucketPolicyResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
+async def create_bucket_policy(
+    set_id: str,
+    body: LeaveBucketPolicyCreate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    principal: CurrentUser,
+) -> LeaveBucketPolicyResponse:
+    pset_id = to_uuid(set_id)
+    b_id = to_uuid(body.bucket_id)
+
+    pset = await session.get(LeavePolicySet, (tenant_id, pset_id))
+    if not pset or pset.archived_at:
+        raise HTTPException(404, "Leave policy set not found")
+    bucket = await session.get(LeaveBalanceBucket, (tenant_id, b_id))
+    if not bucket or bucket.archived_at:
+        raise HTTPException(404, "Leave bucket not found")
+
+    existing = (
+        (
+            await session.execute(
+                select(LeaveBucketPolicy)
+                .where(LeaveBucketPolicy.tenant_id == tenant_id)
+                .where(LeaveBucketPolicy.policy_set_id == pset_id)
+                .where(LeaveBucketPolicy.bucket_id == b_id)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if existing:
+        raise HTTPException(400, "A policy for this bucket already exists in this policy set")
+
+    bp = LeaveBucketPolicy(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        policy_set_id=pset_id,
+        bucket_id=b_id,
+        accrual_type=body.accrual_type,
+        days_per_year=body.days_per_year,
+        carry_forward_enabled=body.carry_forward_enabled,
+        max_carry_forward_days=body.max_carry_forward_days,
+        lapse_enabled=body.lapse_enabled,
+        encashment_enabled=body.encashment_enabled,
+        max_encashment_days=body.max_encashment_days,
+        probation_eligible=body.probation_eligible,
+        min_service_months=body.min_service_months,
+        pro_rate_first_year=body.pro_rate_first_year,
+        recorded_at=now_utc(),
+        recorded_by=principal.id if hasattr(principal, "id") else None,
+    )
+    session.add(bp)
+    await session.flush()
+    return LeaveBucketPolicyResponse(
+        id=to_typed_id("leave_bucket_policy", bp.id),
+        policy_set_id=to_typed_id("leave_policy_set", bp.policy_set_id),
+        bucket_id=to_typed_id("leave_bucket", bucket.id),
+        bucket_name=bucket.name,
+        bucket_code=bucket.code,
+        accrual_type=bp.accrual_type,
+        days_per_year=bp.days_per_year,
+        carry_forward_enabled=bp.carry_forward_enabled,
+        max_carry_forward_days=bp.max_carry_forward_days,
+        lapse_enabled=bp.lapse_enabled,
+        encashment_enabled=bp.encashment_enabled,
+        max_encashment_days=bp.max_encashment_days,
+        probation_eligible=bp.probation_eligible,
+        min_service_months=bp.min_service_months,
+        pro_rate_first_year=bp.pro_rate_first_year,
+    )
+
+
+@router.patch(
+    "/bucket-policies/{policy_id}",
+    response_model=LeaveBucketPolicyResponse,
+    dependencies=[require_permission("leave.write")],
+)
+async def update_bucket_policy(
+    policy_id: str,
+    body: LeaveBucketPolicyUpdate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> LeaveBucketPolicyResponse:
+    uid = to_uuid(policy_id)
+    bp = await session.get(LeaveBucketPolicy, (tenant_id, uid))
+    if not bp:
+        raise HTTPException(404, "Leave bucket policy not found")
+    bucket = await session.get(LeaveBalanceBucket, (tenant_id, bp.bucket_id))
+    assert bucket is not None
+
+    for k, v in body.model_dump(exclude_unset=True).items():
+        setattr(bp, k, v)
+    session.add(bp)
+    await session.flush()
+
+    return LeaveBucketPolicyResponse(
+        id=to_typed_id("leave_bucket_policy", bp.id),
+        policy_set_id=to_typed_id("leave_policy_set", bp.policy_set_id),
+        bucket_id=to_typed_id("leave_bucket", bucket.id),
+        bucket_name=bucket.name,
+        bucket_code=bucket.code,
+        accrual_type=bp.accrual_type,
+        days_per_year=bp.days_per_year,
+        carry_forward_enabled=bp.carry_forward_enabled,
+        max_carry_forward_days=bp.max_carry_forward_days,
+        lapse_enabled=bp.lapse_enabled,
+        encashment_enabled=bp.encashment_enabled,
+        max_encashment_days=bp.max_encashment_days,
+        probation_eligible=bp.probation_eligible,
+        min_service_months=bp.min_service_months,
+        pro_rate_first_year=bp.pro_rate_first_year,
+    )
+
+
+@router.delete(
+    "/bucket-policies/{policy_id}",
+    status_code=204,
+    dependencies=[require_permission("leave.write")],
+)
+async def delete_bucket_policy(
+    policy_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> None:
+    uid = to_uuid(policy_id)
+    bp = await session.get(LeaveBucketPolicy, (tenant_id, uid))
+    if not bp:
+        raise HTTPException(404, "Leave bucket policy not found")
+    await session.delete(bp)
+    await session.flush()
+
+
+# ─── Leave Policy Assignments CRUD ────────────────────────────────────────────
+
+
+@router.get(
+    "/policy-assignments",
+    response_model=list[LeavePolicyAssignmentResponse],
+    dependencies=[require_permission("leave.write")],
+)
+async def list_policy_assignments(
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> list[LeavePolicyAssignmentResponse]:
+    rows = await session.execute(
+        select(LeavePolicyAssignment, LeavePolicySet)
+        .join(LeavePolicySet, col(LeavePolicySet.id) == LeavePolicyAssignment.leave_policy_set_id)
+        .where(LeavePolicyAssignment.tenant_id == tenant_id)
+        .where(LeavePolicyAssignment.archived_at == None)  # noqa: E711
+        .order_by(col(LeavePolicyAssignment.effective_from).desc())
+    )
+    return [
+        LeavePolicyAssignmentResponse(
+            id=to_typed_id("leave_policy_assignment", a.id),
+            leave_policy_set_id=to_typed_id("leave_policy_set", ps.id),
+            leave_policy_set_name=ps.name,
+            effective_from=a.effective_from,
+            effective_to=a.effective_to,
+            employment_id=to_typed_id("employment", a.employment_id) if a.employment_id else None,
+            org_unit_id=to_typed_id("org_unit", a.org_unit_id) if a.org_unit_id else None,
+            legal_entity_id=(
+                to_typed_id("legal_entity", a.legal_entity_id) if a.legal_entity_id else None
+            ),
+        )
+        for a, ps in rows
+    ]
+
+
+@router.post(
+    "/policy-assignments",
+    response_model=LeavePolicyAssignmentResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
+async def create_policy_assignment(
+    body: LeavePolicyAssignmentCreate,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    principal: CurrentUser,
+) -> LeavePolicyAssignmentResponse:
+    pset_id = to_uuid(body.leave_policy_set_id)
+    pset = await session.get(LeavePolicySet, (tenant_id, pset_id))
+    if not pset or pset.archived_at:
+        raise HTTPException(404, "Leave policy set not found")
+
+    emp_id = to_uuid(body.employment_id) if body.employment_id else None
+    ou_id = to_uuid(body.org_unit_id) if body.org_unit_id else None
+    le_id = to_uuid(body.legal_entity_id) if body.legal_entity_id else None
+
+    assignment = LeavePolicyAssignment(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        recorded_at=now_utc(),
+        recorded_by=principal.id if hasattr(principal, "id") else None,
+        leave_policy_set_id=pset_id,
+        effective_from=body.effective_from,
+        effective_to=body.effective_to,
+        employment_id=emp_id,
+        org_unit_id=ou_id,
+        legal_entity_id=le_id,
+    )
+    session.add(assignment)
+    await session.flush()
+
+    return LeavePolicyAssignmentResponse(
+        id=to_typed_id("leave_policy_assignment", assignment.id),
+        leave_policy_set_id=to_typed_id("leave_policy_set", pset.id),
+        leave_policy_set_name=pset.name,
+        effective_from=assignment.effective_from,
+        effective_to=assignment.effective_to,
+        employment_id=to_typed_id("employment", emp_id) if emp_id else None,
+        org_unit_id=to_typed_id("org_unit", ou_id) if ou_id else None,
+        legal_entity_id=to_typed_id("legal_entity", le_id) if le_id else None,
+    )
+
+
+@router.delete(
+    "/policy-assignments/{assignment_id}",
+    status_code=204,
+    dependencies=[require_permission("leave.write")],
+)
+async def delete_policy_assignment(
+    assignment_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> None:
+    uid = to_uuid(assignment_id)
+    a = await session.get(LeavePolicyAssignment, (tenant_id, uid))
+    if not a or a.archived_at:
+        raise HTTPException(404, "Leave policy assignment not found")
+    a.archived_at = now_utc()
+    session.add(a)
+    await session.flush()
+
+
+# ─── Monthly Ledger & Audit Transactions ─────────────────────────────────────
+
+
+@router.get(
+    "/ledger",
+    response_model=list[LeaveMonthlyLedgerResponse],
+    dependencies=[require_permission("leave.read")],
+)
+async def get_leave_ledger(
+    employment_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    bucket_id: str | None = None,
+    fy_year: int | None = None,
+    calendar_year: int | None = None,
+) -> list[LeaveMonthlyLedgerResponse]:
+    emp_uuid = to_uuid(employment_id)
+    stmt = (
+        select(LeaveMonthlyLedger, LeaveBalanceBucket)
+        .join(
+            LeaveBalanceBucket,
+            (col(LeaveBalanceBucket.tenant_id) == LeaveMonthlyLedger.tenant_id)
+            & (col(LeaveBalanceBucket.id) == LeaveMonthlyLedger.bucket_id),
+        )
+        .where(LeaveMonthlyLedger.tenant_id == tenant_id)
+        .where(LeaveMonthlyLedger.employment_id == emp_uuid)
+    )
+    if bucket_id:
+        stmt = stmt.where(LeaveMonthlyLedger.bucket_id == to_uuid(bucket_id))
+    if fy_year is not None:
+        stmt = stmt.where(LeaveMonthlyLedger.fy_year == fy_year)
+    if calendar_year is not None:
+        stmt = stmt.where(LeaveMonthlyLedger.calendar_year == calendar_year)
+
+    stmt = stmt.order_by(
+        col(LeaveMonthlyLedger.calendar_year).asc(),
+        col(LeaveMonthlyLedger.calendar_month).asc(),
+        col(LeaveBalanceBucket.name).asc(),
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        LeaveMonthlyLedgerResponse(
+            id=to_typed_id("leave_ledger", ledger_row.id),
+            employment_id=to_typed_id("employment", ledger_row.employment_id),
+            bucket_id=to_typed_id("leave_bucket", bucket.id),
+            bucket_name=bucket.name,
+            bucket_code=bucket.code,
+            calendar_year=ledger_row.calendar_year,
+            calendar_month=ledger_row.calendar_month,
+            fy_year=ledger_row.fy_year,
+            opening=float(ledger_row.opening),
+            accrued=float(ledger_row.accrued),
+            granted=float(ledger_row.granted),
+            held=float(ledger_row.held),
+            adjustment=float(ledger_row.adjustment),
+            taken=float(ledger_row.taken),
+            lapsed=float(ledger_row.lapsed),
+            encashed=float(ledger_row.encashed),
+            closing=float(ledger_row.closing),
+            available=float(ledger_row.closing - ledger_row.held),
+        )
+        for ledger_row, bucket in rows
+    ]
+
+
+@router.get(
+    "/transactions",
+    response_model=list[LeaveBalanceTransactionResponse],
+    dependencies=[require_permission("leave.read")],
+)
+async def get_leave_transactions(
+    employment_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    bucket_id: str | None = None,
+    from_date: date | None = None,
+    to_date: date | None = None,
+) -> list[LeaveBalanceTransactionResponse]:
+    emp_uuid = to_uuid(employment_id)
+    stmt = (
+        select(LeaveBalanceTransaction, LeaveBalanceBucket, LeaveType)
+        .join(
+            LeaveBalanceBucket,
+            (col(LeaveBalanceBucket.tenant_id) == LeaveBalanceTransaction.tenant_id)
+            & (col(LeaveBalanceBucket.id) == LeaveBalanceTransaction.bucket_id),
+        )
+        .outerjoin(
+            LeaveType,
+            (col(LeaveType.tenant_id) == LeaveBalanceTransaction.tenant_id)
+            & (col(LeaveType.id) == LeaveBalanceTransaction.leave_type_id),
+        )
+        .where(LeaveBalanceTransaction.tenant_id == tenant_id)
+        .where(LeaveBalanceTransaction.employment_id == emp_uuid)
+    )
+    if bucket_id:
+        stmt = stmt.where(LeaveBalanceTransaction.bucket_id == to_uuid(bucket_id))
+    if from_date:
+        stmt = stmt.where(LeaveBalanceTransaction.effective_date >= from_date)
+    if to_date:
+        stmt = stmt.where(LeaveBalanceTransaction.effective_date <= to_date)
+
+    stmt = stmt.order_by(
+        col(LeaveBalanceTransaction.effective_date).desc(),
+        col(LeaveBalanceTransaction.recorded_at).desc(),
+    )
+    rows = (await session.execute(stmt)).all()
+    return [
+        LeaveBalanceTransactionResponse(
+            id=to_typed_id("leave_transaction", tx.id),
+            employment_id=to_typed_id("employment", tx.employment_id),
+            bucket_id=to_typed_id("leave_bucket", b.id),
+            bucket_name=b.name,
+            bucket_code=b.code,
+            leave_type_id=to_typed_id("leave_type", lt.id) if lt else None,
+            leave_type_name=lt.name if lt else None,
+            leave_type_code=lt.code if lt else None,
+            transaction_type=tx.transaction_type,
+            quantity=float(tx.quantity),
+            previous_balance=float(tx.previous_balance),
+            new_balance=float(tx.new_balance),
+            effective_date=tx.effective_date,
+            reason=tx.reason,
+            reference_id=str(tx.reference_id) if tx.reference_id else None,
+            reference_type=tx.reference_type,
+            recorded_by=str(tx.recorded_by),
+            approved_by=str(tx.approved_by) if tx.approved_by else None,
+            recorded_at=tx.recorded_at,
+        )
+        for tx, b, lt in rows
+    ]
