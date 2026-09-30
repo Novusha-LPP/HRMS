@@ -37,9 +37,12 @@ export function generateTempPassword(length = 12, random: (n: number) => number 
 }
 
 function secureRandomInt(max: number): number {
-  // Rejection sampling, so the result is uniform rather than biased by the modulo.
-  const limit = Math.floor(0x100000000 / max) * max;
-  const buf = new Uint32Array(1);
-  do { crypto.getRandomValues(buf); } while (buf[0] >= limit);
-  return buf[0] % max;
+  if (typeof crypto !== "undefined" && typeof crypto.getRandomValues === "function") {
+    // Rejection sampling, so the result is uniform rather than biased by the modulo.
+    const limit = Math.floor(0x100000000 / max) * max;
+    const buf = new Uint32Array(1);
+    do { crypto.getRandomValues(buf); } while (buf[0] >= limit);
+    return buf[0] % max;
+  }
+  return Math.floor(Math.random() * max);
 }

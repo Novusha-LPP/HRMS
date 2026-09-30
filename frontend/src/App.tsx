@@ -1,6 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
 import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
-import { lazy, Suspense, type ReactNode } from "react";
+import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { PlatformAuthProvider, usePlatformAuth } from "./context/PlatformAuthContext";
 import { ThemeProvider } from "./context/ThemeContext";
@@ -25,6 +25,8 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ defaul
 const DailyAnalysisPage = lazy(() => import("./pages/DailyAnalysisPage").then(m => ({ default: m.DailyAnalysisPage })));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage").then(m => ({ default: m.ChangePasswordPage })));
 
+import { ErrorBoundary } from "./components/common/ErrorBoundary";
+
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
 function RequireAuth({ children, allowPasswordChange = false }: { children: ReactNode; allowPasswordChange?: boolean }) {
@@ -44,63 +46,81 @@ function RequirePlatformAuth({ children }: { children: ReactNode }) {
   return <>{children}</>;
 }
 
+function ExternalRedirect({ to }: { to: string }) {
+  useEffect(() => {
+    window.location.href = to;
+  }, [to]);
+  return (
+    <div className="flex h-screen items-center justify-center p-6 text-sm text-fg-muted">
+      Redirecting to API documentation…
+    </div>
+  );
+}
+
 export default function App() {
   return (
-    <ThemeProvider>
-      <QueryClientProvider client={qc}>
-        <AuthProvider>
-          <ToastProvider>
-            <BrowserRouter>
-              <Suspense fallback={<p role="status" className="p-6">Loading…</p>}>
-              <Routes>
-                <Route path="/login" element={<LoginPage />} />
-                <Route path="/register" element={<RegisterCompanyPage />} />
-                <Route path="/change-password" element={<RequireAuth allowPasswordChange><ChangePasswordPage /></RequireAuth>} />
-                <Route
-                  path="/platform/*"
-                  element={
-                    <PlatformAuthProvider>
-                      <Routes>
-                        <Route path="/login" element={<PlatformLoginPage />} />
-                        <Route path="/forgot-password" element={<PlatformForgotPasswordPage />} />
-                        <Route path="/reset-password" element={<PlatformResetPasswordPage />} />
-                        <Route path="/" element={<RequirePlatformAuth><PlatformConsolePage /></RequirePlatformAuth>} />
-                      </Routes>
-                    </PlatformAuthProvider>
-                  }
-                />
-                <Route
-                  path="/*"
-                  element={
-                    <RequireAuth>
-                      <AppShell>
-                        <Routes>
-                          <Route path="/" element={<Navigate to="/dashboard" replace />} />
-                          <Route path="/dashboard" element={<DashboardPage />} />
-                          <Route path="/employees" element={<EmployeePage />} />
-                          <Route path="/daily-analysis" element={<DailyAnalysisPage />} />
-                          <Route path="/kyc" element={<Navigate to="/profile?tab=kyc" replace />} />
-                          <Route path="/attendance" element={<AttendancePage />} />
-                          <Route path="/leave" element={<LeavePage />} />
-                          <Route path="/corrections" element={<CorrectionsPage />} />
-                          <Route path="/organization" element={<OrganizationPage />} />
-                          <Route path="/profile" element={<ProfilePage />} />
-                          <Route path="/policy" element={<PolicyPage />} />
-                          <Route path="/leave-policies" element={<Navigate to="/policy?tab=leave" replace />} />
-                          <Route path="/onboarding" element={<OnboardingPage />} />
-                          <Route path="/reports" element={<ReportsPage />} />
-                          <Route path="*" element={<Navigate to="/dashboard" replace />} />
-                        </Routes>
-                      </AppShell>
-                    </RequireAuth>
-                  }
-                />
-              </Routes>
-              </Suspense>
-            </BrowserRouter>
-          </ToastProvider>
-        </AuthProvider>
-      </QueryClientProvider>
-    </ThemeProvider>
+    <ErrorBoundary variant="fullscreen">
+      <ThemeProvider>
+        <QueryClientProvider client={qc}>
+          <AuthProvider>
+            <ToastProvider>
+              <BrowserRouter>
+                <Suspense fallback={<p role="status" className="p-6">Loading…</p>}>
+                <Routes>
+                  <Route path="/docs" element={<ExternalRedirect to="https://hrmsapi.alvision.in/docs" />} />
+                  <Route path="/login" element={<LoginPage />} />
+                  <Route path="/register" element={<RegisterCompanyPage />} />
+                  <Route path="/change-password" element={<RequireAuth allowPasswordChange><ChangePasswordPage /></RequireAuth>} />
+                  <Route
+                    path="/platform/*"
+                    element={
+                      <PlatformAuthProvider>
+                        <ErrorBoundary variant="card">
+                          <Routes>
+                            <Route path="/login" element={<PlatformLoginPage />} />
+                            <Route path="/forgot-password" element={<PlatformForgotPasswordPage />} />
+                            <Route path="/reset-password" element={<PlatformResetPasswordPage />} />
+                            <Route path="/" element={<RequirePlatformAuth><PlatformConsolePage /></RequirePlatformAuth>} />
+                          </Routes>
+                        </ErrorBoundary>
+                      </PlatformAuthProvider>
+                    }
+                  />
+                  <Route
+                    path="/*"
+                    element={
+                      <RequireAuth>
+                        <AppShell>
+                          <ErrorBoundary variant="card">
+                            <Routes>
+                              <Route path="/" element={<Navigate to="/dashboard" replace />} />
+                              <Route path="/dashboard" element={<DashboardPage />} />
+                              <Route path="/employees" element={<EmployeePage />} />
+                              <Route path="/daily-analysis" element={<DailyAnalysisPage />} />
+                              <Route path="/kyc" element={<Navigate to="/profile?tab=kyc" replace />} />
+                              <Route path="/attendance" element={<AttendancePage />} />
+                              <Route path="/leave" element={<LeavePage />} />
+                              <Route path="/corrections" element={<CorrectionsPage />} />
+                              <Route path="/organization" element={<OrganizationPage />} />
+                              <Route path="/profile" element={<ProfilePage />} />
+                              <Route path="/policy" element={<PolicyPage />} />
+                              <Route path="/leave-policies" element={<Navigate to="/policy?tab=leave" replace />} />
+                              <Route path="/onboarding" element={<OnboardingPage />} />
+                              <Route path="/reports" element={<ReportsPage />} />
+                              <Route path="*" element={<Navigate to="/dashboard" replace />} />
+                            </Routes>
+                          </ErrorBoundary>
+                        </AppShell>
+                      </RequireAuth>
+                    }
+                  />
+                </Routes>
+                </Suspense>
+              </BrowserRouter>
+            </ToastProvider>
+          </AuthProvider>
+        </QueryClientProvider>
+      </ThemeProvider>
+    </ErrorBoundary>
   );
 }

@@ -72,5 +72,12 @@ export function useToast() {
 }
 
 export function errorMessage(e: unknown) {
-  return e instanceof Error && e.message ? e.message : "Something went wrong. Please try again.";
+  if (e instanceof Error && e.message) {
+    const reqId = (e as { requestId?: string }).requestId;
+    if (reqId) {
+      return `${e.message} (Ref: ${reqId.slice(0, 16)})`;
+    }
+    return e.message;
+  }
+  return "Something went wrong. Please try again.";
 }

@@ -5,13 +5,13 @@ import { useQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import {
   Search, Bell, PanelLeft, ChevronRight, ChevronsUpDown, LogOut, Sun, Moon, Monitor,
-  Umbrella, FilePenLine, CheckCheck, CircleCheck, CircleX, UserCircle,
+  Umbrella, FilePenLine, CheckCheck, CircleCheck, CircleX, UserCircle, ExternalLink, BookOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
 import type { UserRole } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
-import { leaveApi } from "../../api/leave";
+import { DECISION_STATUSES, leaveApi } from "../../api/leave";
 import { correctionsApi } from "../../api/corrections";
 import { Avatar } from "../ui/Avatar";
 import { Segmented } from "../ui/Tabs";
@@ -149,34 +149,60 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
               <p className="px-2 pb-1.5 text-[11px] font-medium text-fg-subtle">{section.label}</p>
             )}
             <div className="space-y-0.5">
-              {section.items.map((item) => (
-                <NavLink
-                  key={item.to}
-                  to={item.to}
-                  onClick={onNavigate}
-                  title={collapsed ? item.label : undefined}
-                  className={({ isActive }) =>
-                    `group flex h-8 items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors ${
+              {section.items.map((item) =>
+                item.external ? (
+                  <a
+                    key={item.to}
+                    href={item.to}
+                    target="_blank"
+                    rel="noopener noreferrer"
+                    onClick={onNavigate}
+                    title={collapsed ? item.label : undefined}
+                    className={`group flex h-8 items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors ${
                       collapsed ? "justify-center" : "px-2.5"
-                    } ${
-                      isActive
-                        ? "bg-surface text-fg shadow-xs ring-1 ring-line"
-                        : "text-fg-muted hover:bg-fg/[0.045] hover:text-fg"
-                    }`
-                  }
-                >
-                  {({ isActive }) => (
-                    <>
-                      <item.icon
-                        size={16}
-                        strokeWidth={isActive ? 2.2 : 1.9}
-                        className={isActive ? "text-accent" : "text-fg-subtle transition-colors group-hover:text-fg-muted"}
-                      />
-                      {!collapsed && <span className="truncate">{item.label}</span>}
-                    </>
-                  )}
-                </NavLink>
-              ))}
+                    } text-fg-muted hover:bg-fg/[0.045] hover:text-fg`}
+                  >
+                    <item.icon
+                      size={16}
+                      strokeWidth={1.9}
+                      className="text-fg-subtle transition-colors group-hover:text-fg-muted"
+                    />
+                    {!collapsed && (
+                      <span className="flex flex-1 items-center justify-between truncate">
+                        <span className="truncate">{item.label}</span>
+                        <ExternalLink size={12} className="shrink-0 opacity-40 group-hover:opacity-80" />
+                      </span>
+                    )}
+                  </a>
+                ) : (
+                  <NavLink
+                    key={item.to}
+                    to={item.to}
+                    onClick={onNavigate}
+                    title={collapsed ? item.label : undefined}
+                    className={({ isActive }) =>
+                      `group flex h-8 items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors ${
+                        collapsed ? "justify-center" : "px-2.5"
+                      } ${
+                        isActive
+                          ? "bg-surface text-fg shadow-xs ring-1 ring-line"
+                          : "text-fg-muted hover:bg-fg/[0.045] hover:text-fg"
+                      }`
+                    }
+                  >
+                    {({ isActive }) => (
+                      <>
+                        <item.icon
+                          size={16}
+                          strokeWidth={isActive ? 2.2 : 1.9}
+                          className={isActive ? "text-accent" : "text-fg-subtle transition-colors group-hover:text-fg-muted"}
+                        />
+                        {!collapsed && <span className="truncate">{item.label}</span>}
+                      </>
+                    )}
+                  </NavLink>
+                )
+              )}
             </div>
           </div>
         ))}
@@ -229,6 +255,15 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
           <Link to="/profile" onClick={() => setOpen(false)} className="menu-item">
             <UserCircle size={15} /> My profile
           </Link>
+          <a
+            href="https://hrmsapi.alvision.in/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            onClick={() => setOpen(false)}
+            className="menu-item"
+          >
+            <BookOpen size={15} /> API Documentation
+          </a>
           <div className="my-1 h-px bg-line" />
           <div className="flex items-center justify-between gap-2 px-2.5 py-2">
             <span className="text-[13px] text-fg-muted">Theme</span>
@@ -302,9 +337,16 @@ function useInbox() {
   const isHR = role === "HR" || role === "SUPER_ADMIN";
   const isApprover = role !== "EMPLOYEE";
 
+  // Only what the inbox shows: decisions waiting on an approver, or an employee's own
+  // resolved requests — never the whole (paged) list.
   const leave = useQuery({
-    queryKey: ["leave-applications"],
-    queryFn: () => leaveApi.listApplications(isHR ? undefined : empId),
+    queryKey: ["leave-applications", "inbox", isApprover, isHR ? "all" : empId],
+    queryFn: () =>
+      leaveApi.listApplications({
+        employmentId: isHR ? undefined : empId,
+        statuses: isApprover ? DECISION_STATUSES : ["APPROVED", "REJECTED"],
+        limit: 50,
+      }),
     enabled: !!user,
   });
   const cors = useQuery({

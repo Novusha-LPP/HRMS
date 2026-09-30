@@ -2,11 +2,11 @@ import { kycApi } from "../api/kyc";
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, Navigate, useSearchParams } from "react-router-dom";
-import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
+import { useInfiniteQuery, useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { differenceInCalendarDays, format } from "date-fns";
 import { Plus, Umbrella, CheckCheck, ChevronRight, CalendarRange, CloudOff, SlidersHorizontal } from "lucide-react";
 import type { LeaveApplication, LeaveBalance, LeaveType } from "../api/leave";
-import { leaveApi } from "../api/leave";
+import { DECISION_STATUSES, LEAVE_PAGE_SIZE, leaveApi } from "../api/leave";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
@@ -21,7 +21,6 @@ import { LeaveLedgerView } from "../components/leave/LeaveLedgerView";
 
 const PENDING = ["PENDING_L1", "PENDING_L2", "PENDING_L3"];
 const CANCEL_PENDING = ["CANCEL_PENDING_L1", "CANCEL_PENDING_L2", "CANCEL_PENDING_L3"];
-const needsDecision = (s: string) => PENDING.includes(s) || CANCEL_PENDING.includes(s);
 
 function dateRange(a: string, b: string) {
   const from = new Date(a);
@@ -68,12 +67,21 @@ export function LeavePage() {
     queryFn: () => leaveApi.getBalances(user!.employmentId!),
     enabled: !!user?.employmentId,
   });
-  const apps = useQuery<LeaveApplication[]>({
-    queryKey: ["leave-applications"],
-    queryFn: () => leaveApi.listApplications(isHR ? undefined : (user!.employmentId ?? undefined)),
-    // HR can review every request without being an employee themselves; everyone
-    // else only ever sees their own, which needs their employment id.
+  // HR can review every request without being an employee themselves; everyone
+  // else only ever sees their own, which needs their employment id.
+  const listFor = isHR ? undefined : (user?.employmentId ?? undefined);
+  const apps = useInfiniteQuery({
+    queryKey: ["leave-applications", "list", listFor ?? "all"],
+    queryFn: ({ pageParam }) => leaveApi.listApplications({ employmentId: listFor, after: pageParam }),
+    initialPageParam: undefined as string | undefined,
+    getNextPageParam: (last) => (last.length === LEAVE_PAGE_SIZE ? last[last.length - 1].id : undefined),
     enabled: !!user && (isHR || !!user.employmentId),
+  });
+  // Filtered on the server, so nothing waiting for a decision hides on an unloaded page.
+  const awaiting = useQuery<LeaveApplication[]>({
+    queryKey: ["leave-applications", "awaiting", listFor ?? "all"],
+    queryFn: () => leaveApi.listApplications({ employmentId: listFor, statuses: DECISION_STATUSES, limit: 200 }),
+    enabled: !!user && isApprover && (isHR || !!user.employmentId),
   });
   const people = usePeopleDirectory(isApprover);
 
@@ -83,10 +91,11 @@ export function LeavePage() {
   if (!user) return null;
   const employmentId = user.employmentId;
 
-  const all = apps.data ?? [];
-  const pending = all.filter((a) => needsDecision(a.status));
+  const all = apps.data?.pages.flat() ?? [];
+  const pending = awaiting.data ?? [];
   const list = tab === "approvals" ? pending : all;
-  const selected = all.find((a) => a.id === openId) ?? null;
+  const current = tab === "approvals" ? awaiting : apps;
+  const selected = all.find((a) => a.id === openId) ?? pending.find((a) => a.id === openId) ?? null;
 
   return (
     <>
@@ -149,14 +158,15 @@ export function LeavePage() {
               {
                 value: "all",
                 label: isHR ? "All requests" : "My requests",
-                count: apps.isPending ? undefined : all.length,
+                // Exact only once every page is loaded.
+                count: apps.isPending || apps.hasNextPage ? undefined : all.length,
               },
               ...(isApprover
                 ? [
                     {
                       value: "approvals" as const,
                       label: "Needs approval",
-                      count: apps.isPending ? undefined : pending.length,
+                      count: awaiting.isPending ? undefined : pending.length,
                     },
                   ]
                 : []),
@@ -172,9 +182,9 @@ export function LeavePage() {
               isPrivileged={isApprover}
             />
           </div>
-        ) : apps.isPending ? (
+        ) : current.isPending ? (
           <div className="space-y-3 p-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}</div>
-        ) : apps.isError ? (
+        ) : current.isError ? (
           <EmptyState icon={CloudOff} title="Requests unavailable" description="They’ll appear once the leave service is reachable." />
         ) : list.length === 0 ? (
           tab === "approvals" ? (
@@ -209,6 +219,13 @@ export function LeavePage() {
                 </button>
               </li>
             ))}
+            {tab === "all" && apps.hasNextPage && (
+              <li className="px-5 py-3 text-center">
+                <button className="btn-secondary btn-sm" onClick={() => apps.fetchNextPage()} disabled={apps.isFetchingNextPage}>
+                  {apps.isFetchingNextPage ? "Loading…" : "Load more"}
+                </button>
+              </li>
+            )}
           </ul>
         )}
       </div>

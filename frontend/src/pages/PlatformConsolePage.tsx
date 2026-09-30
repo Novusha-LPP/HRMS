@@ -5,6 +5,7 @@ import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
   Building2, ClipboardList, LayoutGrid, LogOut, Plus, Search, ShieldAlert, ShieldCheck,
   ShieldOff, Users, ChevronRight, ChevronLeft, TriangleAlert, Archive, ArchiveRestore, Sun, Moon, Monitor,
+  BookOpen, ExternalLink,
 } from "lucide-react";
 import { format } from "date-fns";
 import { usePlatformAuth } from "../context/PlatformAuthContext";
@@ -110,6 +111,19 @@ export function PlatformConsolePage() {
               {n.label}
             </button>
           ))}
+          <div className="my-2 h-px bg-line" />
+          <a
+            href="https://hrmsapi.alvision.in/docs"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="group flex h-8 w-full items-center justify-between rounded-lg px-2.5 text-left text-[13px] font-medium text-fg-muted transition-colors hover:bg-fg/[0.045] hover:text-fg"
+          >
+            <span className="flex items-center gap-2.5">
+              <BookOpen size={16} strokeWidth={1.9} className="text-fg-subtle transition-colors group-hover:text-fg-muted" />
+              API Docs
+            </span>
+            <ExternalLink size={12} className="opacity-40 group-hover:opacity-80" />
+          </a>
         </nav>
 
         <div className="shrink-0 border-t border-line p-3">

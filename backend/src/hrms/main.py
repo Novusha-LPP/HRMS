@@ -7,20 +7,19 @@ PostgreSQL via set_config('app.tenant_id', ...) so RLS policies can enforce
 row-level isolation.
 """
 
-import logging
 from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import JSONResponse
 from sqlalchemy import text
-from sqlalchemy.exc import IntegrityError
 
 from hrms import model_registry  # noqa: F401
 from hrms.core.config import settings
 from hrms.core.database import engine
-from hrms.core.errors import CodedHTTPException
-from hrms.core.security import PasswordTooLong
+from hrms.core.error_handlers import register_exception_handlers
+from hrms.core.logging import setup_logging
+from hrms.core.middleware import RequestLoggingMiddleware
+from hrms.core.perf import QueryMetricsMiddleware, instrument_engine
 from hrms.modules.corrections.router import router as corrections_router
 from hrms.modules.dashboard.router import router as dashboard_router
 from hrms.modules.kernel.auth.router import router as auth_router
@@ -34,6 +33,9 @@ from hrms.modules.platform.router import router as platform_router
 from hrms.modules.policy.router import router as policy_router
 from hrms.modules.reports.router import router as reports_router
 from hrms.modules.time.router import router as time_router
+
+# Initialize enterprise logging
+setup_logging(log_level=settings.log_level, log_format=settings.log_format)
 
 
 @asynccontextmanager
@@ -62,6 +64,8 @@ app = FastAPI(
     redoc_url="/redoc",
 )
 
+# ─── Middleware ───────────────────────────────────────────────────────────────
+app.add_middleware(RequestLoggingMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,
@@ -69,6 +73,10 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
 )
+
+if settings.query_metrics:
+    instrument_engine(engine)
+    app.add_middleware(QueryMetricsMiddleware)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
@@ -95,37 +103,5 @@ async def health() -> dict[str, str]:
     return {"status": "ok", "version": settings.app_version}
 
 
-logger = logging.getLogger(__name__)
-
-
-@app.exception_handler(CodedHTTPException)
-async def coded_http_exception(request, exc: CodedHTTPException):
-    return JSONResponse(
-        status_code=exc.status_code,
-        content={"detail": exc.detail, "code": exc.code},
-        headers=exc.headers,
-    )
-
-
-@app.exception_handler(PasswordTooLong)
-async def password_too_long(request, exc):
-    return JSONResponse(status_code=422, content={"detail": str(exc)})
-
-
-@app.exception_handler(IntegrityError)
-async def integrity_error(request, exc):
-    # The client only learns "conflict"; the constraint name goes to the log so
-    # a 409 can actually be diagnosed (and a NOT NULL/CHECK bug isn't mistaken
-    # for a duplicate).
-    logger.warning(
-        "Integrity violation on %s %s: %s",
-        request.method,
-        request.url.path,
-        getattr(getattr(exc.orig, "__cause__", None), "constraint_name", None) or exc.orig,
-    )
-    return JSONResponse(
-        status_code=409,
-        content={
-            "detail": "This change conflicts with an existing record or references a missing record"
-        },
-    )
+# ─── Exception Handlers ───────────────────────────────────────────────────────
+register_exception_handlers(app)

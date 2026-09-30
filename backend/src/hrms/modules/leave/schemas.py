@@ -208,6 +208,21 @@ class LeaveApplicationResponse(BaseModel):
     approval_history: list[LeaveApprovalActionResponse] = []
 
 
+class LeaveTypeDays(BaseModel):
+    leave_type_id: str
+    name: str
+    color: str
+    days: float
+
+
+class LeaveApplicationSummary(BaseModel):
+    """Counts for everyone in the caller's scope — for dashboards, without fetching the list."""
+
+    by_status: dict[str, int]
+    # Approved days per leave type ("days taken").
+    approved_days_by_type: list[LeaveTypeDays]
+
+
 # ─── Balance Buckets ──────────────────────────────────────────────────────────
 
 

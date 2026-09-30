@@ -37,7 +37,19 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
     if (!user) return [];
     const go = (to: string) => () => navigate(to);
     const pages = navFor(user).flatMap((s) =>
-      s.items.map((i) => ({ id: `page:${i.to}`, group: "Go to", label: i.label, icon: i.icon, hint: s.label, run: go(i.to) })),
+      s.items.map((i) => ({
+        id: `page:${i.to}`,
+        group: i.external ? "Resources" : "Go to",
+        label: i.label,
+        icon: i.icon,
+        hint: s.label,
+        run: i.external
+          ? () => {
+              onClose();
+              window.open(i.to, "_blank", "noopener,noreferrer");
+            }
+          : go(i.to),
+      })),
     );
     const actions: Command[] = [
       { id: "leave", group: "Actions", label: "Apply for leave", icon: Umbrella, run: go("/leave?new=1") },

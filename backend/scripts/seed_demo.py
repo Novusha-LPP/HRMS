@@ -34,7 +34,7 @@ from hrms.core.ids import to_typed_id
 from hrms.core.security import hash_password
 
 TENANT_ID = UUID("00000000-0000-0000-0000-000000000001")
-DEMO_PASSWORD = "Passw0rd!"
+DEMO_PASSWORD = os.environ.get("HRMS_DEMO_PASSWORD", "Passw0rd!")
 
 engine = create_async_engine(settings.database_url)
 Session = async_sessionmaker(engine, expire_on_commit=False)

@@ -40,7 +40,7 @@ from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import text
+from sqlalchemy import and_, func, or_, text
 from sqlmodel import col, select
 
 from hrms.core.approvals import require_reviewer
@@ -53,7 +53,7 @@ from hrms.core.authz import (
     require_global_permission,
     require_permission,
     resolve_acting_employment_id,
-    visible_employment_ids,
+    visible_employments_select,
 )
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import now_utc, tenure_months
@@ -64,6 +64,7 @@ from hrms.modules.leave.engine import (
     compute_fy_year,
     get_or_create_ledger_row,
     lock_leave_bucket,
+    record_accruals,
     record_transaction,
 )
 from hrms.modules.leave.models import (
@@ -84,14 +85,18 @@ from hrms.modules.leave.models import (
     LeaveTypeBucketMapping,
 )
 from hrms.modules.leave.policy_resolver import (
+    resolve_bucket_policy,
     resolve_employee_bucket_policy,
     resolve_employee_fy_start_month,
+    resolve_fy_start_months_bulk,
+    resolve_leave_policy_sets_bulk,
 )
 from hrms.modules.leave.schemas import (
     AccrualRunResponse,
     CompOffGrantRequest,
     CompOffGrantResponse,
     LeaveApplicationResponse,
+    LeaveApplicationSummary,
     LeaveApplyRequest,
     LeaveApprovalActionRequest,
     LeaveApprovalActionResponse,
@@ -117,6 +122,7 @@ from hrms.modules.leave.schemas import (
     LeaveTypeBucketMappingCreate,
     LeaveTypeBucketMappingResponse,
     LeaveTypeCreate,
+    LeaveTypeDays,
     LeaveTypeResponse,
     LeaveTypeUpdate,
     YearEndCloseResponse,
@@ -542,6 +548,9 @@ async def run_accrual(
         .where(LeaveType.tenant_id == tenant_id)
         .where(LeaveType.archived_at == None)  # noqa: E711
         .where(col(LeaveType.is_paid) | col(LeaveType.is_comp_off))
+        # Deterministic: when several types share a bucket, the oldest type is the one the
+        # period's accrual is recorded against (the order used to be whatever Postgres chose).
+        .order_by(col(LeaveType.recorded_at), col(LeaveType.id))
     )
     leave_types = list(lt_rows.scalars())
     if not leave_types:
@@ -556,7 +565,19 @@ async def run_accrual(
         """),
         {"tid": str(tenant_id), **params},
     )
-    employees = sorted(((r[0], r[1], r[2]) for r in emp_rows), key=lambda e: str(e[0]))
+    employees = sorted(((UUID(str(r[0])), r[1], r[2]) for r in emp_rows), key=lambda e: str(e[0]))
+
+    # Everything per employee is resolved up front in a handful of queries (policy sets
+    # once per placement, not per person), then each leave type is credited with one
+    # set-based write — see engine.record_accruals. A 2,000-person run used to be ~100k
+    # statements in one request.
+    emp_ids = [emp_id for emp_id, _, _ in employees]
+    fy_months = await resolve_fy_start_months_bulk(session, tenant_id, emp_ids)
+    policy_sets = await resolve_leave_policy_sets_bulk(session, tenant_id, emp_ids, as_of)
+    bucket_policies: dict[tuple, LeaveBucketPolicy | None] = {}
+    # (employment, bucket) pairs that already hold an ACCRUAL for this period — before this
+    # run, or from an earlier leave type in it that maps to the same bucket.
+    accrued_for: dict[UUID, set[UUID]] = {}
 
     credited = 0
     total_days = 0.0
@@ -565,11 +586,32 @@ async def run_accrual(
         if resolved is None:
             continue
         bucket_id, _ = resolved
+        if bucket_id not in accrued_for:
+            accrued_for[bucket_id] = {
+                UUID(str(r[0]))
+                for r in await session.execute(
+                    select(LeaveBalanceTransaction.employment_id)
+                    .where(LeaveBalanceTransaction.tenant_id == tenant_id)
+                    .where(LeaveBalanceTransaction.bucket_id == bucket_id)
+                    .where(
+                        LeaveBalanceTransaction.transaction_type
+                        == LeaveTransactionType.ACCRUAL.value
+                    )
+                    .where(LeaveBalanceTransaction.effective_date == as_of)
+                )
+            }
+        already = accrued_for[bucket_id]
+        credits: list[tuple[UUID, float, int]] = []
         for emp_id, hire_date, emp_state in employees:
-            fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, emp_id)
-            entitlement = await _resolve_entitlement(
-                session, tenant_id, emp_id, bucket_id, lt, as_of
-            )
+            pset = policy_sets.get(emp_id)
+            key = (pset.id if pset else None, bucket_id)
+            if key not in bucket_policies:
+                bucket_policies[key] = (
+                    await resolve_bucket_policy(session, tenant_id, pset.id, bucket_id)
+                    if pset
+                    else None
+                )
+            entitlement = _entitlement_from(bucket_policies[key], lt)
             if entitlement.accrual_type != "MONTHLY_PRORATE":
                 continue
             monthly = round(entitlement.days_per_year / 12, 4)
@@ -578,37 +620,22 @@ async def run_accrual(
             eligible = (
                 entitlement.probation_eligible or emp_state != "PROBATION"
             ) and tenure_months(hire_date, as_of) >= entitlement.min_service_months
-            if not eligible:
+            if not eligible or emp_id in already:
                 continue
-
-            already = await session.execute(
-                select(LeaveBalanceTransaction.id)
-                .where(LeaveBalanceTransaction.tenant_id == tenant_id)
-                .where(LeaveBalanceTransaction.employment_id == emp_id)
-                .where(LeaveBalanceTransaction.bucket_id == bucket_id)
-                .where(
-                    LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value
-                )
-                .where(LeaveBalanceTransaction.effective_date == as_of)
-            )
-            if already.scalar():
-                continue
-
-            await record_transaction(
-                session,
-                tenant_id,
-                employment_id=emp_id,
-                bucket_id=bucket_id,
-                leave_type_id=lt.id,
-                transaction_type=LeaveTransactionType.ACCRUAL,
-                quantity=monthly,
-                effective_date=as_of,
-                reference_type="ACCRUAL_RUN",
-                recorded_by=principal.user_account_id,
-                fy_start_month=fy_start_month,
-            )
+            credits.append((emp_id, monthly, fy_months[emp_id]))
+            already.add(emp_id)
             credited += 1
             total_days += monthly
+        await record_accruals(
+            session,
+            tenant_id,
+            bucket_id=bucket_id,
+            leave_type_id=lt.id,
+            credits=credits,
+            effective_date=as_of,
+            reference_type="ACCRUAL_RUN",
+            recorded_by=principal.user_account_id,
+        )
 
     await session.flush()
     return AccrualRunResponse(
@@ -751,8 +778,20 @@ async def list_applications(
     tenant_id: TenantDep,
     session: SessionDep,
     employment_id: str | None = Query(default=None),
-    status: str | None = Query(default=None),
+    status: str | None = Query(
+        default=None, description="One status, or several comma-separated (PENDING_L1,PENDING_L2)"
+    ),
+    limit: int = Query(default=100, ge=1, le=200),
+    after: str | None = Query(
+        default=None,
+        description="Id of the last application on the previous page; returns the next page. "
+        "A page shorter than `limit` is the last one.",
+    ),
 ) -> list[LeaveApplicationResponse]:
+    """
+    Newest first: drafts (not yet applied) at the top, then by applied_at. Paged by keyset
+    on (applied_at, id), so any page costs the same however deep it is.
+    """
     scope = read_scope(scope, "leave.read", "leave.approve")
     q = (
         select(LeaveApplication, LeaveType)
@@ -765,16 +804,83 @@ async def list_applications(
         await authorize_employment(session, tenant_id, scope, emp_uuid)
         q = q.where(LeaveApplication.employment_id == emp_uuid)
     elif not scope.is_all:
-        allowed_ids = await visible_employment_ids(session, tenant_id, scope)
-        q = q.where(col(LeaveApplication.employment_id).in_(allowed_ids))
+        q = q.where(
+            col(LeaveApplication.employment_id).in_(visible_employments_select(tenant_id, scope))
+        )
     if status:
-        q = q.where(LeaveApplication.status == status)
-    rows = await session.execute(q.order_by(col(LeaveApplication.applied_at).desc()))
-    results = []
-    for app, lt in rows:
-        history = await _get_history(session, tenant_id, app.id)
-        results.append(_app_resp(app, lt, history))
-    return results
+        q = q.where(col(LeaveApplication.status).in_([s.strip() for s in status.split(",")]))
+    if after:
+        q = q.where(await _after_application(session, tenant_id, after))
+    rows = (
+        await session.execute(
+            q.order_by(
+                col(LeaveApplication.applied_at).desc().nulls_first(),
+                col(LeaveApplication.id).desc(),
+            ).limit(limit)
+        )
+    ).all()
+    histories = await _get_histories(session, tenant_id, [app.id for app, _ in rows])
+    return [_app_resp(app, lt, histories.get(app.id, [])) for app, lt in rows]
+
+
+@router.get("/applications/summary", response_model=LeaveApplicationSummary)
+async def application_summary(
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> LeaveApplicationSummary:
+    """Application counts by status and approved days by leave type, across the caller's scope."""
+    scope = read_scope(scope, "leave.read", "leave.approve")
+    base = [
+        LeaveApplication.tenant_id == tenant_id,
+        LeaveApplication.archived_at == None,  # noqa: E711
+    ]
+    if not scope.is_all:
+        base.append(
+            col(LeaveApplication.employment_id).in_(visible_employments_select(tenant_id, scope))
+        )
+    by_status = await session.execute(
+        select(LeaveApplication.status, func.count()).where(*base).group_by(LeaveApplication.status)
+    )
+    by_type = await session.execute(
+        select(
+            LeaveType.id, LeaveType.name, LeaveType.color, func.sum(LeaveApplication.days_requested)
+        )
+        .join(LeaveType, col(LeaveType.id) == LeaveApplication.leave_type_id)
+        .where(*base, LeaveApplication.status == LeaveApplicationStatus.APPROVED)
+        .group_by(LeaveType.id, LeaveType.name, LeaveType.color)
+        .order_by(LeaveType.name)
+    )
+    return LeaveApplicationSummary(
+        by_status={s: n for s, n in by_status.all()},
+        approved_days_by_type=[
+            LeaveTypeDays(
+                leave_type_id=to_typed_id("leave_type", lt_id), name=name, color=color, days=days
+            )
+            for lt_id, name, color, days in by_type.all()
+        ],
+    )
+
+
+async def _after_application(session, tenant_id, after: str):
+    """Keyset condition: rows after this application in (applied_at DESC NULLS FIRST, id DESC)."""
+    cursor_id = to_uuid(after)
+    applied_at = (
+        await session.execute(
+            select(LeaveApplication.applied_at)
+            .where(LeaveApplication.tenant_id == tenant_id)
+            .where(LeaveApplication.id == cursor_id)
+        )
+    ).first()
+    if applied_at is None:
+        raise HTTPException(422, "`after` is not a leave application id")
+    cursor_at = applied_at[0]
+    app_at, app_id = col(LeaveApplication.applied_at), col(LeaveApplication.id)
+    if cursor_at is None:
+        # Still among the drafts: later drafts by id, then every applied row.
+        return or_(and_(app_at.is_(None), app_id < cursor_id), app_at.is_not(None))
+    # `app_at <= cursor_at` on its own lets the index range-scan straight to the position.
+    return and_(app_at <= cursor_at, or_(app_at < cursor_at, app_id < cursor_id))
 
 
 @router.post("/applications", response_model=LeaveApplicationResponse, status_code=201)
@@ -1214,26 +1320,37 @@ async def _get_app_lt(session, tenant_id, app_id: str):
 
 
 async def _get_history(session, tenant_id, app_id) -> list[LeaveApprovalActionResponse]:
+    return (await _get_histories(session, tenant_id, [app_id])).get(app_id, [])
+
+
+async def _get_histories(
+    session, tenant_id, app_ids: list[UUID]
+) -> dict[UUID, list[LeaveApprovalActionResponse]]:
+    """Approval history for many applications in one query (a list page, not one per row)."""
+    if not app_ids:
+        return {}
     rows = await session.execute(
         select(LeaveApprovalAction)
         .where(LeaveApprovalAction.tenant_id == tenant_id)
-        .where(LeaveApprovalAction.application_id == app_id)
+        .where(col(LeaveApprovalAction.application_id).in_(app_ids))
         .order_by(col(LeaveApprovalAction.actioned_at))
     )
-    return [
-        LeaveApprovalActionResponse(
-            id=to_typed_id("leave_approval", a.id),
-            application_id=to_typed_id("leave_application", a.application_id),
-            action_type=a.action_type,
-            level=a.level,
-            approver_employment_id=to_typed_id("employment", a.approver_employment_id)
-            if a.approver_employment_id
-            else None,
-            comments=a.comments,
-            actioned_at=a.actioned_at,
+    out: dict[UUID, list[LeaveApprovalActionResponse]] = {}
+    for a in rows.scalars():
+        out.setdefault(a.application_id, []).append(
+            LeaveApprovalActionResponse(
+                id=to_typed_id("leave_approval", a.id),
+                application_id=to_typed_id("leave_application", a.application_id),
+                action_type=a.action_type,
+                level=a.level,
+                approver_employment_id=to_typed_id("employment", a.approver_employment_id)
+                if a.approver_employment_id
+                else None,
+                comments=a.comments,
+                actioned_at=a.actioned_at,
+            )
         )
-        for a in rows.scalars()
-    ]
+    return out
 
 
 class _Entitlement:
@@ -1345,6 +1462,10 @@ async def _resolve_entitlement(
     """Bucket policy if one resolves for this employee, else the leave type's own
     flat fields — the zero-config default so accrual works with no policy setup."""
     bp = await resolve_employee_bucket_policy(session, tenant_id, employment_id, bucket_id, as_of)
+    return _entitlement_from(bp, lt)
+
+
+def _entitlement_from(bp: LeaveBucketPolicy | None, lt: LeaveType) -> _Entitlement:
     if bp is not None:
         return _Entitlement(
             bp.accrual_type,

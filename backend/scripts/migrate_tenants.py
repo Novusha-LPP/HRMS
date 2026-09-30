@@ -164,7 +164,10 @@ def tokens(*texts: str | None) -> set[str]:
 
 
 def initial_password(first_name: str) -> str:
-    """The documented Sharanga scheme (docs/erp-integration-plan.md §6): Firstname@1234."""
+    """The documented Sharanga scheme (docs/erp-integration-plan.md §6): Firstname@1234, or HRMS_INITIAL_PASSWORD."""
+    default_pw = os.environ.get("HRMS_INITIAL_PASSWORD")
+    if default_pw:
+        return default_pw
     alpha = re.sub(r"\W", "", first_name) or "User"
     return f"{alpha.capitalize()}@1234"
 

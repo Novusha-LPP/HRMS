@@ -35,9 +35,20 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     debug: bool = False
     environment: str = "development"
+    # Adds Server-Timing / X-DB-Queries headers with each request's statement count and DB time
+    # (core/perf.py). For development, staging and benchmarks; leave off in production.
+    query_metrics: bool = False
+
+    # Enterprise Logging
+    log_level: str = "INFO"
+    log_format: str = "console"  # "console" | "json"
+    log_slow_request_threshold_ms: float = 1000.0
+    log_exclude_paths: str = "/health"
 
     # CORS — comma-separated origins
-    cors_origins: str = "http://localhost:3000,http://localhost:5173"
+    cors_origins: str = (
+        "http://localhost:3000,http://localhost:5173,https://testinghrms.alvision.in,http://testinghrms.alvision.in"
+    )
 
     # Storage
     storage_dir: str = "storage"
@@ -72,6 +83,11 @@ class Settings(BaseSettings):
 
     @model_validator(mode="after")
     def production_configuration(self):
+        valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
+        if self.log_level.upper() not in valid_levels:
+            raise ValueError(f"log_level must be one of {valid_levels}, got '{self.log_level}'")
+        self.log_level = self.log_level.upper()
+
         if self.environment == "production":
             if self.secret_key == "change-me-before-production" or len(self.secret_key) < 32:
                 raise ValueError(
@@ -84,13 +100,25 @@ class Settings(BaseSettings):
                     "HRMS_APP_DATABASE_URL still uses the published development password for "
                     "the hrms_app role — run ALTER ROLE hrms_app PASSWORD '<random>' and update it"
                 )
+            if self.database_url and make_url(self.database_url).password == "hrms":
+                raise ValueError(
+                    "HRMS_DATABASE_URL still uses the published development password — "
+                    "set a production HRMS_DATABASE_URL with a secure password"
+                )
             if self.debug:
                 raise ValueError("Debug mode must be disabled in production")
+            # Default to JSON format in production unless explicitly specified otherwise
+            if self.log_format == "console":
+                self.log_format = "json"
         return self
 
     @property
     def cors_origins_list(self) -> list[str]:
         return [o.strip() for o in self.cors_origins.split(",")]
+
+    @property
+    def log_exclude_paths_list(self) -> list[str]:
+        return [p.strip() for p in self.log_exclude_paths.split(",") if p.strip()]
 
 
 settings = Settings()

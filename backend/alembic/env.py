@@ -8,13 +8,14 @@ from hrms.alembic_hooks import compare_type, include_object
 from hrms.model_registry import metadata
 
 import os
+from hrms.core.config import settings
 
 config = context.config
 if config.config_file_name is not None:
     fileConfig(config.config_file_name)
 
-# Override with env var so Docker containers use the correct host
-db_url = os.environ.get("HRMS_DATABASE_URL")
+# Ensure database URL is sourced from environment or config settings
+db_url = os.environ.get("HRMS_DATABASE_URL") or settings.database_url
 if db_url:
     config.set_main_option("sqlalchemy.url", db_url)
 

@@ -1,12 +1,26 @@
+import { logger } from "../lib/logger";
+import { generateRequestId } from "../lib/uuid";
+
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8015";
 
 export class ApiError extends Error {
   status: number;
   code: string;
-  constructor(status: number, code: string, message: string) {
+  requestId?: string;
+  details?: unknown;
+
+  constructor(
+    status: number,
+    code: string,
+    message: string,
+    requestId?: string,
+    details?: unknown
+  ) {
     super(message);
     this.status = status;
     this.code = code;
+    this.requestId = requestId;
+    this.details = details;
   }
 }
 
@@ -31,6 +45,7 @@ export function getAuthToken(): string | null {
 }
 
 export const API_BASE_URL = BASE;
+export const API_DOCS_URL = `${BASE.replace(/\/+$/, "")}/docs`;
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
@@ -41,6 +56,10 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   }
   if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
 
+  // Attach or generate client request correlation ID
+  const clientRequestId = headers["X-Request-ID"] || generateRequestId();
+  headers["X-Request-ID"] = clientRequestId;
+
   const requestToken = authToken;
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
 
@@ -48,7 +67,23 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
     if (res.status === 401 && path !== "/v1/auth/login") onUnauthorized?.();
-    throw new ApiError(res.status, body.code ?? "UNKNOWN", body.detail ?? res.statusText);
+
+    const requestId =
+      body.request_id ||
+      body.error?.request_id ||
+      res.headers.get("x-request-id") ||
+      clientRequestId;
+    const code = body.code || body.error?.code || "UNKNOWN";
+    const detail = body.detail || body.error?.message || res.statusText;
+    const details = body.error?.details;
+
+    logger.error(`API ${options.method ?? "GET"} ${path} failed with ${res.status}`, {
+      code,
+      requestId,
+      detail,
+    });
+
+    throw new ApiError(res.status, code, detail, requestId, details);
   }
 
   if (res.status === 204) return undefined as T;

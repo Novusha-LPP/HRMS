@@ -12,6 +12,7 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
 
+from hrms.core.logging import set_current_tenant_id, set_current_user_id
 from hrms.core.security import TokenError, decode_access_token, decode_platform_token
 
 
@@ -69,9 +70,10 @@ async def get_current_principal(request: Request) -> Principal:
         role_names=frozenset(claims.get("roles") or []),
         token_epoch=token_epoch,
     )
-    # Kept for any code that still reads request.state directly (e.g. logging).
     request.state.principal = principal
     request.state.tenant_id = tenant_id
+    set_current_tenant_id(str(tenant_id))
+    set_current_user_id(str(user_account_id))
     return principal
 
 
@@ -109,6 +111,7 @@ async def get_current_platform_principal(request: Request) -> PlatformPrincipal:
     except (KeyError, ValueError, TypeError) as exc:
         raise _unauthorized("Malformed token") from exc
 
+    set_current_user_id(str(admin_id))
     return PlatformPrincipal(admin_id=admin_id)
 
 
