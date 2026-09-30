@@ -34,6 +34,7 @@ import argparse
 import asyncio
 import json
 import logging
+import os
 import re
 import sys
 from dataclasses import dataclass, field
@@ -164,7 +165,10 @@ def tokens(*texts: str | None) -> set[str]:
 
 
 def initial_password(first_name: str) -> str:
-    """The documented Sharanga scheme (docs/erp-integration-plan.md §6): Firstname@1234, or HRMS_INITIAL_PASSWORD."""
+    """
+    The documented Sharanga scheme (docs/erp-integration-plan.md §6): Firstname@1234,
+    or HRMS_INITIAL_PASSWORD when set.
+    """
     default_pw = os.environ.get("HRMS_INITIAL_PASSWORD")
     if default_pw:
         return default_pw

@@ -163,9 +163,13 @@ async def test_list_query_count_does_not_grow_with_rows(api):
     perf.instrument_engine(database.AsyncSessionLocal.kw["bind"])
 
     async def statements(url):
-        tally = perf.start_tally()
-        await ok(client, "GET", url)
-        return tally.count
+        seen = []
+        perf.REQUEST_OBSERVER = lambda scope, tally: seen.append(tally)
+        try:
+            await ok(client, "GET", url)
+        finally:
+            perf.REQUEST_OBSERVER = None
+        return seen[-1].count
 
     small = await statements("/v1/leave/applications?limit=2")
     large = await statements("/v1/leave/applications?limit=200")

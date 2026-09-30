@@ -61,29 +61,45 @@ def set_current_client_ip(client_ip: str | None) -> None:
 
 # ─── PII & Sensitive Data Redaction ──────────────────────────────────────────
 
-SENSITIVE_KEY_PATTERNS = {
-    "password",
-    "passwd",
-    "secret",
-    "token",
-    "access_token",
-    "refresh_token",
-    "authorization",
-    "auth",
-    "api_key",
-    "apikey",
-    "cookie",
-    "set_cookie",
-    "pan",
-    "pan_number",
-    "aadhaar",
-    "aadhaar_number",
-    "ssn",
-    "bank_account",
-    "bank_account_number",
-    "account_number",
-    "salary",
-}
+# A key is sensitive when one of its words — or two adjacent words, or the whole key — is
+# listed here. Keys are split into words on "_", "-" and camelCase, so "panNumber",
+# "x-api-key" and "bank_account_number" match, while "company_name" (which merely contains
+# "pan"), "author" ("auth") and "expand" do not.
+SENSITIVE_KEY_WORDS = frozenset(
+    {
+        "password",
+        "passwd",
+        "secret",
+        "token",
+        "auth",
+        "authorization",
+        "apikey",
+        "api_key",
+        "cookie",
+        "pan",
+        "aadhaar",
+        "aadhar",
+        "ssn",
+        "salary",
+        "bank_account",
+        "account_number",
+        "ifsc",
+        "otp",
+        "pin",
+    }
+)
+_CAMEL_BOUNDARY = re.compile(r"([a-z0-9])([A-Z])")
+_KEY_SEPARATORS = re.compile(r"[^a-z0-9]+")
+
+
+def is_sensitive_key(key: object) -> bool:
+    words = [w for w in _KEY_SEPARATORS.split(_CAMEL_BOUNDARY.sub(r"\1_\2", str(key)).lower()) if w]
+    if not words:
+        return False
+    candidates = {*words, "_".join(words)}
+    candidates.update(f"{a}_{b}" for a, b in zip(words, words[1:], strict=False))
+    return not candidates.isdisjoint(SENSITIVE_KEY_WORDS)
+
 
 PAN_REGEX = re.compile(r"\b[A-Z]{5}[0-9]{4}[A-Z]\b")
 AADHAAR_REGEX = re.compile(r"\b[2-9][0-9]{3}\s?[0-9]{4}\s?[0-9]{4}\b")
@@ -115,8 +131,7 @@ def redact_sensitive_data(obj: Any) -> Any:
     if isinstance(obj, dict):
         sanitized = {}
         for key, value in obj.items():
-            key_lower = str(key).lower().replace("-", "_")
-            if any(pattern in key_lower for pattern in SENSITIVE_KEY_PATTERNS):
+            if is_sensitive_key(key):
                 sanitized[key] = REDACTED_TEXT
             else:
                 sanitized[key] = redact_sensitive_data(value)
@@ -227,8 +242,9 @@ class JsonLogFormatter(logging.Formatter):
         # Structured exception reporting
         if record.exc_info and record.exc_info[0] is not None:
             exc_type = record.exc_info[0].__name__
-            exc_msg = str(record.exc_info[1])
-            formatted_tb = self.formatException(record.exc_info)
+            # Exception text carries data too (a database error quotes the offending row).
+            exc_msg = redact_text(str(record.exc_info[1]))
+            formatted_tb = redact_text(self.formatException(record.exc_info))
             payload["exception"] = {
                 "type": exc_type,
                 "message": exc_msg,
@@ -279,7 +295,7 @@ class ConsoleLogFormatter(logging.Formatter):
         formatted = f"{header} {message}"
 
         if record.exc_info:
-            formatted += f"\n{self.formatException(record.exc_info)}"
+            formatted += f"\n{redact_text(self.formatException(record.exc_info))}"
 
         return formatted
 
@@ -315,6 +331,17 @@ def setup_logging(
     stream_handler.addFilter(SensitiveDataFilter())
     root_logger.addHandler(stream_handler)
 
-    # Silence chatty third-party loggers
+    # Uvicorn installs its own plain-text handlers on its loggers before the app is imported,
+    # so its startup, shutdown and error lines would bypass the JSON formatter. Hand them to
+    # the root handler instead.
+    for name in ("uvicorn", "uvicorn.error", "uvicorn.access"):
+        uvicorn_logger = logging.getLogger(name)
+        uvicorn_logger.handlers.clear()
+        uvicorn_logger.propagate = True
+
+    # Silence chatty third-party loggers. Uvicorn's access log duplicates hrms.api.access
+    # (core/middleware.py), which carries the request id, tenant and timing.
     logging.getLogger("uvicorn.access").setLevel(logging.WARNING)
     logging.getLogger("passlib").setLevel(logging.WARNING)
+    # /health/ready loads the migration scripts; Alembic narrates that at INFO.
+    logging.getLogger("alembic").setLevel(logging.WARNING)

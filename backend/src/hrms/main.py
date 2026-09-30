@@ -17,9 +17,14 @@ from hrms import model_registry  # noqa: F401
 from hrms.core.config import settings
 from hrms.core.database import engine
 from hrms.core.error_handlers import register_exception_handlers
+from hrms.core.error_tracking import init_error_tracking
+from hrms.core.health import router as health_router
 from hrms.core.logging import setup_logging
+from hrms.core.metrics import MetricsMiddleware
+from hrms.core.metrics import router as metrics_router
 from hrms.core.middleware import RequestLoggingMiddleware
 from hrms.core.perf import QueryMetricsMiddleware, instrument_engine
+from hrms.core.version import APP_VERSION
 from hrms.modules.corrections.router import router as corrections_router
 from hrms.modules.dashboard.router import router as dashboard_router
 from hrms.modules.kernel.auth.router import router as auth_router
@@ -36,6 +41,7 @@ from hrms.modules.time.router import router as time_router
 
 # Initialize enterprise logging
 setup_logging(log_level=settings.log_level, log_format=settings.log_format)
+init_error_tracking()
 
 
 @asynccontextmanager
@@ -55,7 +61,7 @@ async def lifespan(app):
 app = FastAPI(
     lifespan=lifespan,
     title=settings.app_name,
-    version=settings.app_version,
+    version=APP_VERSION,
     description=(
         "Multi-tenant HRMS platform API. All endpoints require a tenant-scoped access token."
     ),
@@ -72,11 +78,19 @@ app.add_middleware(
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
+    # Let the web app read these, so it can show "Reference: req_…" when something fails.
+    expose_headers=["X-Request-ID", "X-App-Version"],
 )
 
 if settings.query_metrics:
     instrument_engine(engine)
     app.add_middleware(QueryMetricsMiddleware)
+if settings.metrics_enabled:
+    # Added last, so it's the outermost of these: it times everything below it and starts
+    # the statement tally QueryMetricsMiddleware reports from.
+    instrument_engine(engine)
+    app.add_middleware(MetricsMiddleware)
+    app.include_router(metrics_router)
 
 # ─── Routers ──────────────────────────────────────────────────────────────────
 
@@ -97,10 +111,7 @@ app.include_router(kyc_router)
 
 # ─── Health ───────────────────────────────────────────────────────────────────
 
-
-@app.get("/health", include_in_schema=False)
-async def health() -> dict[str, str]:
-    return {"status": "ok", "version": settings.app_version}
+app.include_router(health_router)
 
 
 # ─── Exception Handlers ───────────────────────────────────────────────────────

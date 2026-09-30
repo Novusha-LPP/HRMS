@@ -155,3 +155,82 @@ async def test_middleware_preserves_custom_request_id():
 
     assert response.status_code == 200
     assert response.headers["X-Request-ID"] == custom_id
+
+
+def test_redaction_matches_whole_words_not_substrings():
+    cleaned = redact_sensitive_data(
+        {
+            "company_name": "Suraj Exim",
+            "author": "hr",
+            "expand": "all",
+            "span_id": "s1",
+            "pan_number": "ABCDE1234F",
+            "panNumber": "ABCDE1234F",
+            "accessToken": "t",
+            "x-api-key": "k",
+            "bank_account_number": "123",
+            "nested": {"password": "p", "department": "Ops"},
+        }
+    )
+    assert cleaned["company_name"] == "Suraj Exim"
+    assert (cleaned["author"], cleaned["expand"], cleaned["span_id"]) == ("hr", "all", "s1")
+    for key in ("pan_number", "panNumber", "accessToken", "x-api-key", "bank_account_number"):
+        assert cleaned[key] == "***REDACTED***", key
+    assert cleaned["nested"] == {"password": "***REDACTED***", "department": "Ops"}
+
+
+def test_exception_text_and_traceback_are_redacted():
+    try:
+        raise ValueError("duplicate key value: Key (pan)=(ABCDE1234F) already exists")
+    except ValueError:
+        record = logging.LogRecord("t", logging.ERROR, __file__, 1, "failed", None, None)
+        import sys
+
+        record.exc_info = sys.exc_info()
+    payload = json.loads(JsonLogFormatter().format(record))
+    assert "ABCDE1234F" not in json.dumps(payload)
+    assert "ABCDE****F" in payload["exception"]["message"]
+    assert "ABCDE1234F" not in ConsoleLogFormatter().format(record)
+
+
+@pytest.mark.asyncio
+@pytest.mark.parametrize("unsafe", ["x" * 300, "abc\ninjected-line", "id with spaces", "<script>"])
+async def test_unsafe_request_ids_are_replaced(unsafe):
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/health", headers={"X-Request-ID": unsafe})
+    assert response.headers["X-Request-ID"].startswith("req_")
+    assert response.headers["X-Request-ID"] != unsafe
+
+
+@pytest.mark.asyncio
+async def test_forwarded_for_header_is_not_trusted_for_client_ip(caplog):
+    transport = ASGITransport(app=app, client=("10.0.0.7", 1234))
+    with caplog.at_level(logging.DEBUG, logger="hrms.api.access"):
+        async with AsyncClient(transport=transport, base_url="http://test") as client:
+            await client.get("/health", headers={"X-Forwarded-For": "1.2.3.4"})
+    [record] = [r for r in caplog.records if r.name == "hrms.api.access"]
+    assert record.client_ip == "10.0.0.7"
+
+
+@pytest.mark.asyncio
+async def test_responses_carry_the_app_version():
+    from hrms.core.version import APP_VERSION
+
+    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+        response = await client.get("/health")
+    assert response.headers["X-App-Version"] == APP_VERSION
+
+
+def test_uvicorn_loggers_go_through_the_app_handler():
+    from hrms.core.config import settings
+    from hrms.core.logging import setup_logging
+
+    logging.getLogger("uvicorn.error").addHandler(logging.StreamHandler())
+    try:
+        setup_logging("INFO", "json")
+        for name in ("uvicorn", "uvicorn.error"):
+            assert logging.getLogger(name).handlers == [] and logging.getLogger(name).propagate
+        [handler] = logging.getLogger().handlers
+        assert isinstance(handler.formatter, JsonLogFormatter)
+    finally:
+        setup_logging(settings.log_level, settings.log_format)  # as the app configured it

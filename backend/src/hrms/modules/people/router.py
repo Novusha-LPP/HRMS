@@ -37,6 +37,7 @@ from hrms.core.authz import (
 from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
+from hrms.core.metrics import SCHEDULED_ACTIONS
 from hrms.core.tenancy import TenantDep
 from hrms.modules.kernel.models import UserAccount
 from hrms.modules.people.models import (
@@ -1086,7 +1087,9 @@ async def apply_due_actions(session, tenant_id):
                 pa.applied_at = datetime.now(UTC)
                 session.add(pa)
                 await session.flush()
+            SCHEDULED_ACTIONS.labels("applied").inc()
         except Exception as exc:
+            SCHEDULED_ACTIONS.labels("failed").inc()
             reason = (str(exc.detail) if isinstance(exc, HTTPException) else type(exc).__name__)[
                 :500
             ]

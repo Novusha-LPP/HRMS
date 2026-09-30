@@ -82,5 +82,9 @@ npm run lint && npm test && npm run build
 |---|---|
 | [RUNBOOK.md](RUNBOOK.md) | Set-up, migrations, authentication and roles, onboarding, policies, leave, ERP import, production |
 | [docs/README.md](docs/README.md) | Index of the architecture and system-design documents |
+| [docs/RELEASING.md](docs/RELEASING.md) | Versions, the changelog, how a release is cut, migration rules |
+| [docs/OBSERVABILITY.md](docs/OBSERVABILITY.md) | Logs, error tracking, metrics, health checks, and the alert runbook |
+| [docs/performance-baseline-2026-09-30.md](docs/performance-baseline-2026-09-30.md) | Measured performance, what was optimised and what's next |
+| [CHANGELOG.md](CHANGELOG.md) | What changed in each release |
 | [docs/erp-integration-plan.md](docs/erp-integration-plan.md) | Importing Suraj Group and Sharanga Production — plan, mapping, status, open decisions |
 | [docs/CODE_REVIEW_2026-09-28.md](docs/CODE_REVIEW_2026-09-28.md) | Code review findings and what was done about them |

@@ -4,6 +4,7 @@ import { createContext, useContext, useEffect, useState, useCallback } from "rea
 import type { ReactNode } from "react";
 import { api, ApiError, getAuthToken, setAuthToken, setUnauthorizedHandler } from "../api/client";
 import { SignInError } from "../lib/signInError";
+import { setErrorTrackingUser } from "../lib/errorTracking";
 
 // The backend can grant several fine-grained roles per user (see
 // backend/src/hrms/core/authz.py — SUPER_ADMIN, HR_MANAGER, MANAGER,
@@ -159,6 +160,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(null);
     setUser(null);
   }, [queryClient]);
+
+  useEffect(() => {
+    setErrorTrackingUser(user ? { id: user.id, tenantId: user.tenantId } : null);
+  }, [user]);
 
   useEffect(() => {
     setUnauthorizedHandler(logout);

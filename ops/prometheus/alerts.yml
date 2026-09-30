@@ -1,0 +1,92 @@
+# Alert rules for the HRMS API. Thresholds follow docs/performance-baseline-2026-09-30.md
+# (p95 < 300 ms for reads). Every alert links to what to do in docs/OBSERVABILITY.md.
+groups:
+  - name: hrms-api
+    rules:
+      - alert: HrmsApiDown
+        expr: up{job="hrms-api"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "HRMS API instance {{ $labels.instance }} is not answering scrapes"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsapidown"
+
+      - alert: HrmsNotReady
+        expr: probe_success{job="hrms-ready"} == 0
+        for: 2m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} reports not ready (database unreachable or migrations pending)"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsnotready"
+
+      - alert: HrmsHighErrorRate
+        expr: |
+          sum(rate(hrms_http_requests_total{job="hrms-api",status=~"5.."}[5m]))
+            / sum(rate(hrms_http_requests_total{job="hrms-api"}[5m])) > 0.01
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "More than 1% of API requests are failing with 5xx ({{ $value | humanizePercentage }})"
+          runbook_url: "docs/OBSERVABILITY.md#hrmshigherrorrate"
+
+      - alert: HrmsSlowResponses
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le) (rate(hrms_http_request_duration_seconds_bucket{job="hrms-api",route!~"/health.*|/metrics"}[5m]))
+          ) > 0.3
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "API p95 latency is {{ $value | humanizeDuration }} (target 300 ms)"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsslowresponses"
+
+      - alert: HrmsDatabasePoolSaturated
+        expr: max by (instance) (hrms_db_pool_checked_out / hrms_db_pool_limit) > 0.8
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.instance }} is using {{ $value | humanizePercentage }} of its database connections"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsdatabasepoolsaturated"
+
+      - alert: HrmsQueryCountRegression
+        expr: |
+          histogram_quantile(0.95,
+            sum by (le, route) (rate(hrms_db_statements_per_request_bucket{job="hrms-api"}[15m]))
+          ) > 50
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.route }} runs ~{{ $value }} SQL statements per request (p95) — likely an N+1 loop"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsquerycountregression"
+
+  - name: hrms-security
+    rules:
+      - alert: HrmsLoginLockoutSpike
+        expr: sum(increase(hrms_http_requests_total{job="hrms-api",route="/v1/auth/login",status="429"}[10m])) > 20
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} sign-in lockouts in 10 minutes — possible password guessing"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsloginlockoutspike"
+
+      - alert: HrmsLoginFailureSpike
+        expr: sum(increase(hrms_http_requests_total{job="hrms-api",route="/v1/auth/login",status="401"}[10m])) > 100
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} failed sign-ins in 10 minutes"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsloginlockoutspike"
+
+  - name: hrms-jobs
+    rules:
+      - alert: HrmsAccrualFailed
+        expr: sum(increase(hrms_http_requests_total{job="hrms-api",route="/v1/leave/accrual/run",status=~"5.."}[1h])) > 0
+        labels: {severity: critical}
+        annotations:
+          summary: "A monthly leave accrual run failed — balances were not credited"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsaccrualfailed"
+
+      - alert: HrmsScheduledActionsFailing
+        expr: sum(increase(hrms_scheduled_personnel_actions_total{job="hrms-api",outcome="failed"}[1h])) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $value }} scheduled personnel action(s) could not be applied and were parked as FAILED"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsscheduledactionsfailing"
