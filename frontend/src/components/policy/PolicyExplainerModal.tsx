@@ -41,7 +41,7 @@ export function PolicyExplainerModal({
             <div>
               <h2 className="text-base font-semibold text-fg">How HRMS Policies Work</h2>
               <p className="text-xs text-fg-subtle">
-                A simple guide to configuring attendance working hours and leave entitlement pools.
+                A simple guide to configuring attendance working hours and leave entitlement rules.
               </p>
             </div>
           </div>
@@ -61,52 +61,42 @@ export function PolicyExplainerModal({
           <div className="space-y-5 text-[13px]">
             <div className="rounded-xl border border-brand-500/20 bg-brand-500/[0.03] p-4 text-xs">
               <span className="font-semibold text-fg block mb-1">
-                The 4-Layer Enterprise Leave Model:
+                Three things to set up, in order:
               </span>
               <p className="text-fg-subtle">
-                In modern HR systems, why someone applies for leave (the reason) is separated from where
-                their balance is kept (the accounting ledger). Here is how the pieces connect:
+                Each leave type keeps its own balance automatically — there's no ledger or account to
+                configure by hand. Here's how the pieces connect:
               </p>
             </div>
 
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid gap-3 sm:grid-cols-3">
               <div className="rounded-xl border border-line bg-surface p-4">
                 <div className="flex items-center gap-2 text-accent font-semibold mb-1.5">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-500/10 text-xs">1</span>
-                  <span>Leave Types (The Application Reason)</span>
+                  <span>Leave Types</span>
                 </div>
                 <p className="text-xs text-fg-subtle">
-                  What employees select in dropdowns: <b>Casual Leave</b>, <b>Sick Leave</b>, <b>Paid Leave</b>, <b>LWP</b>, <b>Maternity</b>. Defines notice periods, doctor's notes, and half-day rules.
+                  What employees select in dropdowns: <b>Casual Leave</b>, <b>Sick Leave</b>, <b>Privilege Leave</b>, <b>LWP</b>, <b>Maternity</b>. Defines notice periods, doctor's notes, and half-day rules.
                 </p>
               </div>
 
               <div className="rounded-xl border border-line bg-surface p-4">
                 <div className="flex items-center gap-2 text-accent font-semibold mb-1.5">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-500/10 text-xs">2</span>
-                  <span>Balance Buckets (The Accounting Pool)</span>
+                  <span>Policy Sets</span>
                 </div>
                 <p className="text-xs text-fg-subtle">
-                  The actual balance account: <b>PL_BAL</b>, <b>SL_BAL</b>, <b>LWP_BAL</b>. Maintains the monthly ledger (opening, credited, taken, closing). Mapped 1:1 or shared across multiple types.
+                  How many days are given, for a leave type: annual quota (e.g. 18 days/yr), monthly accrual rate, year-end carry-forward cap, encashment, and probation restrictions.
                 </p>
               </div>
 
               <div className="rounded-xl border border-line bg-surface p-4">
                 <div className="flex items-center gap-2 text-accent font-semibold mb-1.5">
                   <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-500/10 text-xs">3</span>
-                  <span>Policy Sets (The Entitlement Rules)</span>
+                  <span>Scope Assignments</span>
                 </div>
                 <p className="text-xs text-fg-subtle">
-                  Determines how many days are given: annual quota (e.g. 18 days/yr), monthly accrual rate, year-end carry forward limits, encashment, and probation restrictions.
-                </p>
-              </div>
-
-              <div className="rounded-xl border border-line bg-surface p-4">
-                <div className="flex items-center gap-2 text-accent font-semibold mb-1.5">
-                  <span className="grid h-5 w-5 place-items-center rounded-full bg-brand-500/10 text-xs">4</span>
-                  <span>Scope Assignments (Who Gets It)</span>
-                </div>
-                <p className="text-xs text-fg-subtle">
-                  Assign policy sets hierarchically: Whole Company default ➔ Department overrides (e.g. Factory vs HQ) ➔ Individual employee overrides.
+                  Who gets which policy set: Whole Company default ➔ Department overrides (e.g. Factory vs HQ) ➔ Individual employee overrides.
                 </p>
               </div>
             </div>
@@ -117,7 +107,7 @@ export function PolicyExplainerModal({
               <div className="flex flex-col sm:flex-row items-center justify-between gap-3 text-center text-xs">
                 <div className="rounded-lg bg-surface border border-line p-2.5 flex-1 w-full">
                   <p className="font-semibold text-fg">1. Employee Applies</p>
-                  <p className="text-fg-subtle mt-0.5">Validates against available bucket balance</p>
+                  <p className="text-fg-subtle mt-0.5">Validates against their available balance</p>
                 </div>
                 <ArrowRight size={14} className="text-fg-subtle shrink-0 hidden sm:block" />
                 <div className="rounded-lg bg-warning/10 border border-warning/20 p-2.5 flex-1 w-full text-warning">
@@ -191,36 +181,43 @@ export function PolicyExplainerModal({
           <div className="space-y-4 text-[13px]">
             <div className="rounded-xl border border-line p-4 bg-surface space-y-2">
               <span className="font-semibold text-fg text-xs flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-success" /> Example A: Standard 1-to-1 Mapping (Most Common)
+                <CheckCircle2 size={14} className="text-success" /> Example A: A standard leave type
               </span>
               <p className="text-xs text-fg-subtle">
-                Each leave type draws from its own separate balance pool:
+                Leave Types ➔ add "Privilege Leave" (code PL, 18 days/year, accrues monthly). It's usable
+                immediately — no further setup needed for the whole company to share the same 18-day quota.
               </p>
-              <div className="grid grid-cols-3 gap-2 text-xs font-mono bg-muted/30 p-2.5 rounded-lg border border-line">
-                <div>Casual Leave ➔ <b>CL_BAL</b></div>
-                <div>Sick Leave ➔ <b>SL_BAL</b></div>
-                <div>Privilege Leave ➔ <b>PL_BAL</b></div>
-              </div>
             </div>
 
             <div className="rounded-xl border border-line p-4 bg-surface space-y-2">
               <span className="font-semibold text-fg text-xs flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-success" /> Example B: Consolidated Paid Time Off (PTO)
+                <CheckCircle2 size={14} className="text-success" /> Example B: Capped carry-forward
               </span>
               <p className="text-xs text-fg-subtle">
-                Employees can request either "Casual Leave" or "Sick Leave", but both draw from a single pooled "Paid Leave" bucket of 24 days.
+                On that same Privilege Leave type, turn on Carry Forward with a cap of 10 days. At year-end
+                close, anything above 10 lapses automatically and the remaining 10 becomes next year's
+                opening balance.
               </p>
-              <div className="text-xs font-mono bg-muted/30 p-2.5 rounded-lg border border-line">
-                [Casual Leave] + [Sick Leave] ➔ both mapped to ➔ <b>PL_BAL (24 days/yr pool)</b>
-              </div>
             </div>
 
             <div className="rounded-xl border border-line p-4 bg-surface space-y-2">
               <span className="font-semibold text-fg text-xs flex items-center gap-2">
-                <CheckCircle2 size={14} className="text-success" /> Example C: Leave Without Pay (LWP)
+                <CheckCircle2 size={14} className="text-success" /> Example C: Different quota per department
               </span>
               <p className="text-xs text-fg-subtle">
-                Leave Without Pay is mapped to an unlimited bucket (<b className="font-mono">LWP_BAL</b>). It has no available balance restrictions, allowing employees to request unpaid days off which flow directly to payroll deductions.
+                Policy Sets ➔ create "Factory Policy" ➔ add a rule for Privilege Leave with 12 days/year
+                instead of 18 ➔ assign it to the Factory department. Everyone else keeps the company
+                default of 18.
+              </p>
+            </div>
+
+            <div className="rounded-xl border border-line p-4 bg-surface space-y-2">
+              <span className="font-semibold text-fg text-xs flex items-center gap-2">
+                <CheckCircle2 size={14} className="text-success" /> Example D: Leave Without Pay (LWP)
+              </span>
+              <p className="text-xs text-fg-subtle">
+                A leave type with no annual quota and "Paid" turned off. It has no balance to run out of,
+                so employees can always apply — days simply flow through to payroll as unpaid.
               </p>
             </div>
           </div>
@@ -229,7 +226,7 @@ export function PolicyExplainerModal({
         {/* Footer */}
         <div className="flex items-center justify-between border-t border-line pt-4">
           <p className="text-xs text-fg-subtle flex items-center gap-1">
-            <HelpCircle size={13} /> Need help? Use standard presets for 1-click configuration.
+            <HelpCircle size={13} /> Start with Leave Types, then Policy Sets if you need department-specific rules.
           </p>
           <button className="btn-primary btn-sm" onClick={onClose}>
             Got it

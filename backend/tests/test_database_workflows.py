@@ -106,16 +106,21 @@ async def test_end_to_end_integrity_and_workflows(api):
     )
     assert response.status_code == 409
 
-    # Entitlements spanning New Year are allocated and released in the same years.
+    # Entitlements spanning a financial-year boundary (default: April) are allocated
+    # and released against both FYs, not just the calendar year the leave started in.
     year = date.today().year + 1
     lt = await ok(
         client,
         "POST",
         "/v1/leave/types",
-        json={"name": "Annual", "code": "AL", "days_per_year": 20},
+        # High enough that one month's accrual (days_per_year / 12) comfortably
+        # covers the handful of working days on each side of the boundary below.
+        json={"name": "Annual", "code": "AL", "days_per_year": 120, "accrual_enabled": True},
     )
-    for y in [year, year + 1]:
-        await ok(client, "POST", f"/v1/leave/balances/init?employment_id={emp['id']}&year={y}")
+    # Accrual refuses a future period, so credit *this* month — the future leave
+    # dates below inherit it via the ledger's prior-row lookup (nothing else
+    # exists in between), proving accrual now, apply-for-later-FY works.
+    await ok(client, "POST", "/v1/leave/accrual/run")
     leave = await ok(
         client,
         "POST",
@@ -123,8 +128,8 @@ async def test_end_to_end_integrity_and_workflows(api):
         headers=emp_header,
         json={
             "leave_type_id": lt["id"],
-            "from_date": f"{year}-12-29",
-            "to_date": f"{year + 1}-01-04",
+            "from_date": f"{year}-03-29",
+            "to_date": f"{year}-04-04",
         },
     )
     await ok(
@@ -133,9 +138,10 @@ async def test_end_to_end_integrity_and_workflows(api):
     await ok(
         client, "POST", f"/v1/leave/applications/{leave['id']}/approve", json={"action": "APPROVE"}
     )
+    # March 29-31 falls in FY(year-1) (Apr(year-1)-Mar(year)); April 1-4 falls in FY(year).
     used = []
-    for y in [year, year + 1]:
-        balance = await ok(client, "GET", f"/v1/leave/balances?employment_id={emp['id']}&year={y}")
+    for fy in [year - 1, year]:
+        balance = await ok(client, "GET", f"/v1/leave/balances?employment_id={emp['id']}&year={fy}")
         assert balance[0]["pending_days"] == 0 and balance[0]["used_days"] > 0
         used.append(balance[0]["used_days"])
     assert sum(used) == leave["days_requested"]
@@ -146,8 +152,8 @@ async def test_end_to_end_integrity_and_workflows(api):
         headers=emp_header,
         json={"cancel_reason": "Plans changed"},
     )
-    for y in [year, year + 1]:
-        balance = await ok(client, "GET", f"/v1/leave/balances?employment_id={emp['id']}&year={y}")
+    for fy in [year - 1, year]:
+        balance = await ok(client, "GET", f"/v1/leave/balances?employment_id={emp['id']}&year={fy}")
         assert balance[0]["used_days"] == 0
 
     # KYC edits invalidate the verified snapshot and authenticated downloads work.
@@ -237,9 +243,13 @@ async def test_concurrent_leave_and_read_only_writes(api):
         client,
         "POST",
         "/v1/leave/types",
-        json={"name": "Limited", "code": "LTD", "days_per_year": 1},
+        # 12/12 = exactly 1 day/month accrued — one clean, exact day available,
+        # so the two 1-day applications below really are racing for the same day.
+        json={"name": "Limited", "code": "LTD", "days_per_year": 12, "accrual_enabled": True},
     )
-    await ok(client, "POST", f"/v1/leave/balances/init?employment_id={emp['id']}&year={year}")
+    # Accrual refuses a future period; credit this month and let the future
+    # applications below inherit it via the ledger's prior-row lookup.
+    await ok(client, "POST", "/v1/leave/accrual/run")
     first = date(year, 2, 1)
     while first.weekday() >= 5:
         first += timedelta(days=1)
@@ -261,7 +271,10 @@ async def test_concurrent_leave_and_read_only_writes(api):
         )
     )
     assert sorted(r.status_code for r in responses) == [200, 409]
-    balances = await ok(client, "GET", f"/v1/leave/balances?employment_id={emp['id']}&year={year}")
+    # January/February fall in FY(year-1) under the default April-start financial year.
+    balances = await ok(
+        client, "GET", f"/v1/leave/balances?employment_id={emp['id']}&year={year - 1}"
+    )
     assert balances[0]["pending_days"] == 1
 
     email = uuid4().hex + "@example.com"

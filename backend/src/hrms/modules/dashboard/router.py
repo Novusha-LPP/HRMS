@@ -30,6 +30,7 @@ from hrms.core.authz import (
     resolve_acting_employment_id,
 )
 from hrms.core.database import SessionDep
+from hrms.core.ids import to_typed_id
 from hrms.core.tenancy import TenantDep
 from hrms.modules.onboarding.models import CaseStatus, OnboardingCase, OnboardingItem
 from hrms.modules.people.models import PersonnelAction, PersonnelActionStatus
@@ -207,21 +208,76 @@ async def manager_dashboard(
         .limit(10)
     )
     pending = list(pending_pa.scalars())
+    names = {r["id"]: r["name"] for r in team}
+
+    pending_requests: list[dict] = [
+        {
+            "kind": "PERSONNEL_ACTION",
+            "id": to_typed_id("personnel_action", pa.id),
+            "employment_id": to_typed_id("employment", pa.employment_id),
+            "name": names.get(pa.employment_id, "—"),
+            "detail": pa.type,
+            "submitted_at": pa.effective_date.isoformat(),
+            "link": "/employees",
+        }
+        for pa in pending
+    ]
+    if team_ids:
+        pending_requests += [
+            {
+                "kind": "LEAVE",
+                "id": to_typed_id("leave_application", r["id"]),
+                "employment_id": to_typed_id("employment", r["employment_id"]),
+                "name": r["name"],
+                "detail": f"{r['leave_type_name']} · {r['days_requested']:g}d · {r['from_date']}"
+                          + (f" – {r['to_date']}" if r["to_date"] != r["from_date"] else ""),
+                "submitted_at": r["applied_at"].isoformat(),
+                "link": "/leave?tab=approvals",
+            }
+            for r in (await session.execute(text("""
+                SELECT la.id, la.employment_id, la.applied_at, la.from_date, la.to_date,
+                       la.days_requested, lt.name AS leave_type_name,
+                       p.legal_first_name || ' ' || p.legal_last_name AS name
+                FROM leave_applications la
+                JOIN leave_types lt ON lt.tenant_id = la.tenant_id AND lt.id = la.leave_type_id
+                JOIN employments e ON e.tenant_id = la.tenant_id AND e.id = la.employment_id
+                JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+                WHERE la.tenant_id = CAST(:tid AS uuid)
+                  AND la.employment_id = ANY(CAST(:team_ids AS uuid[]))
+                  AND (la.status LIKE 'PENDING%' OR la.status LIKE 'CANCEL_PENDING%')
+                ORDER BY la.applied_at DESC LIMIT 10
+            """), {"tid": str(tenant_id), "team_ids": [str(i) for i in team_ids]})).mappings().all()
+        ]
+        pending_requests += [
+            {
+                "kind": "CORRECTION",
+                "id": to_typed_id("attendance_correction", r["id"]),
+                "employment_id": to_typed_id("employment", r["employment_id"]),
+                "name": r["name"],
+                "detail": f"{r['correction_type']} · {r['work_date']}",
+                "submitted_at": r["submitted_at"].isoformat(),
+                "link": "/corrections?tab=approvals",
+            }
+            for r in (await session.execute(text("""
+                SELECT c.id, c.employment_id, c.submitted_at, c.work_date, c.correction_type,
+                       p.legal_first_name || ' ' || p.legal_last_name AS name
+                FROM attendance_correction_requests c
+                JOIN employments e ON e.tenant_id = c.tenant_id AND e.id = c.employment_id
+                JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+                WHERE c.tenant_id = CAST(:tid AS uuid)
+                  AND c.employment_id = ANY(CAST(:team_ids AS uuid[]))
+                  AND c.status LIKE 'PENDING%'
+                ORDER BY c.submitted_at DESC LIMIT 10
+            """), {"tid": str(tenant_id), "team_ids": [str(i) for i in team_ids]})).mappings().all()
+        ]
+    pending_requests.sort(key=lambda r: r["submitted_at"], reverse=True)
 
     return {
         "role": "MANAGER",
         "team_size": len(team),
         "today": {"date": today.isoformat(), **attendance_summary},
         "team": team,
-        "pending_approvals": [
-            {
-                "id": str(pa.id),
-                "employment_id": str(pa.employment_id),
-                "type": pa.type,
-                "effective_date": pa.effective_date.isoformat(),
-            }
-            for pa in pending
-        ],
+        "pending_approvals": pending_requests[:10],
     }
 
 
@@ -340,6 +396,90 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
           {emp_clause}
     """)
     )["n"]
+
+    pending_leave_count = (
+        await one(f"""
+        SELECT COUNT(*) AS n FROM leave_applications la
+        JOIN employments e ON e.tenant_id = la.tenant_id AND e.id = la.employment_id
+        WHERE la.tenant_id = CAST(:tid AS uuid)
+          AND (la.status LIKE 'PENDING%' OR la.status LIKE 'CANCEL_PENDING%')
+          {emp_clause}
+    """)
+    )["n"]
+
+    pending_correction_count = (
+        await one(f"""
+        SELECT COUNT(*) AS n FROM attendance_correction_requests c
+        JOIN employments e ON e.tenant_id = c.tenant_id AND e.id = c.employment_id
+        WHERE c.tenant_id = CAST(:tid AS uuid) AND c.status LIKE 'PENDING%'
+          {emp_clause}
+    """)
+    )["n"]
+
+    # The actionable "who's waiting on you" queue — the most recent pending leave
+    # requests and attendance corrections, by name, across everyone the caller's
+    # scope covers. Personnel actions aren't included: they're reviewed from the
+    # Employees page, which already surfaces them, not from this dashboard.
+    pending_requests = sorted(
+        [
+            {
+                "kind": "LEAVE",
+                "id": to_typed_id("leave_application", r["id"]),
+                "employment_id": to_typed_id("employment", r["employment_id"]),
+                "name": r["name"],
+                "department": r["department"] or "General",
+                "company": r["company"],
+                "detail": f"{r['leave_type_name']} · {r['days_requested']:g}d · {r['from_date']}"
+                          + (f" – {r['to_date']}" if r["to_date"] != r["from_date"] else ""),
+                "is_cancellation": r["status"].startswith("CANCEL"),
+                "submitted_at": r["applied_at"].isoformat(),
+                "link": "/leave?tab=approvals",
+            }
+            for r in await rows(f"""
+                SELECT la.id, la.employment_id, la.applied_at, la.from_date, la.to_date,
+                       la.days_requested, la.status, lt.name AS leave_type_name,
+                       p.legal_first_name || ' ' || p.legal_last_name AS name,
+                       ou.name AS department, le.name AS company
+                FROM leave_applications la
+                JOIN leave_types lt ON lt.tenant_id = la.tenant_id AND lt.id = la.leave_type_id
+                JOIN employments e ON e.tenant_id = la.tenant_id AND e.id = la.employment_id
+                JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+                JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+                {_CURRENT_DEPARTMENT}
+                WHERE la.tenant_id = CAST(:tid AS uuid)
+                  AND (la.status LIKE 'PENDING%' OR la.status LIKE 'CANCEL_PENDING%')
+                  {emp_clause}
+                ORDER BY la.applied_at DESC LIMIT 8
+            """)
+        ] + [
+            {
+                "kind": "CORRECTION",
+                "id": to_typed_id("attendance_correction", r["id"]),
+                "employment_id": to_typed_id("employment", r["employment_id"]),
+                "name": r["name"],
+                "department": r["department"] or "General",
+                "company": r["company"],
+                "detail": f"{r['correction_type']} · {r['work_date']}",
+                "is_cancellation": False,
+                "submitted_at": r["submitted_at"].isoformat(),
+                "link": "/corrections?tab=approvals",
+            }
+            for r in await rows(f"""
+                SELECT c.id, c.employment_id, c.submitted_at, c.work_date, c.correction_type,
+                       p.legal_first_name || ' ' || p.legal_last_name AS name,
+                       ou.name AS department, le.name AS company
+                FROM attendance_correction_requests c
+                JOIN employments e ON e.tenant_id = c.tenant_id AND e.id = c.employment_id
+                JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+                JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+                {_CURRENT_DEPARTMENT}
+                WHERE c.tenant_id = CAST(:tid AS uuid) AND c.status LIKE 'PENDING%'
+                  {emp_clause}
+                ORDER BY c.submitted_at DESC LIMIT 8
+            """)
+        ],
+        key=lambda r: r["submitted_at"], reverse=True,
+    )[:8]
 
     open_ob_count = (
         await one(f"""
@@ -561,10 +701,14 @@ async def hr_dashboard(scope: ScopeDep, tenant_id: TenantDep, session: SessionDe
         },
         "month": {"month": month_start.strftime("%B %Y"), "new_hires": new_hire_count},
         "actions": {
-            "pending_approvals": pending_pa_count,
+            "pending_approvals": pending_pa_count + pending_leave_count + pending_correction_count,
+            "pending_leave": pending_leave_count,
+            "pending_corrections": pending_correction_count,
+            "pending_personnel_actions": pending_pa_count,
             "open_onboarding": open_ob_count,
             "pending_kyc": kyc["submitted"],
         },
+        "pending_requests": pending_requests,
         "upcoming_birthdays": upcoming_birthdays,
         "upcoming_anniversaries": upcoming_anniversaries,
         "department_distribution": department_distribution,

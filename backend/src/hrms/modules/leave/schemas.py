@@ -147,10 +147,44 @@ class LeaveEncashmentResponse(BaseModel):
     recorded_at: datetime
 
 
+class LeaveBalanceAdjustmentRequest(BaseModel):
+    employment_id: str = Field(
+        description="Employee being adjusted — an HR/admin action, not self-service"
+    )
+    leave_type_id: str
+    quantity: float = Field(description="Positive to add days, negative to remove")
+    effective_date: date | None = None
+    reason: str = Field(min_length=1, max_length=500)
+    kind: Literal["OPENING", "ADJUSTMENT"] = "ADJUSTMENT"
+
+    @model_validator(mode="after")
+    def validate_quantity(self):
+        if self.quantity == 0:
+            raise ValueError("quantity must not be zero")
+        return self
+
+
+class LeaveBalanceAdjustmentResponse(BaseModel):
+    employment_id: str
+    leave_type_id: str
+    leave_type_name: str
+    kind: str
+    quantity: float
+    new_balance: float
+    effective_date: date
+    reason: str
+
+
 class AccrualRunResponse(BaseModel):
     period: str
     balances_credited: int
     days_credited_total: float
+
+
+class YearEndCloseResponse(BaseModel):
+    fy_year: int
+    buckets_closed: int
+    days_lapsed: float
 
 
 class LeaveApplicationResponse(BaseModel):

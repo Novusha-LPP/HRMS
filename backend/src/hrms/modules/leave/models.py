@@ -65,8 +65,10 @@ class LeaveType(SQLModel, table=True):
     # sick leave) shouldn't be cashed out, only ones HR explicitly flags.
     encashable: bool = Field(default=False)
     # Whether POST /v1/leave/accrual/run credits this type monthly
-    # (days_per_year / 12) instead of it only ever being set once via
-    # POST /v1/leave/balances/init.
+    # (days_per_year / 12). Only takes effect where no LeaveBucketPolicy
+    # resolves for the employee — this is the zero-config fallback (see
+    # leave/router.py::_resolve_entitlement); an explicit bucket policy's own
+    # accrual_type/days_per_year wins when one applies.
     accrual_enabled: bool = Field(default=False)
 
 
@@ -107,7 +109,10 @@ class LeaveApplication(SQLModel, table=True):
     leave_type_id: UUID
     from_date: date
     to_date: date
-    days_by_year: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False))
+    # Keyed "YYYY-MM" — one entry per calendar month the application touches,
+    # matching leave_monthly_ledger's (calendar_year, calendar_month) grain
+    # (a leave spanning a month boundary posts one engine transaction per key).
+    days_by_month: dict = Field(default_factory=dict, sa_column=Column(JSONB, nullable=False))
     document_id: UUID | None = Field(default=None)
     days_requested: float
     half_day_option: str = Field(default="NONE", max_length=15)

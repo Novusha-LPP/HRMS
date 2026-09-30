@@ -6,9 +6,16 @@ Leave types (HR-managed, tenant-wide catalog — not per-employee data):
   POST   /v1/leave/types                      (leave.write)
   PATCH  /v1/leave/types/{id}                 (leave.write)
 
-Leave balances:
-  GET    /v1/leave/balances          ?employment_id=&year=   (defaults to self)
-  POST   /v1/leave/balances/init     — bulk-initialise balances for a year
+Leave balances — summarised from the ledger (buckets/policies/monthly ledger/
+transaction journal live further down this file; see leave/engine.py and
+leave/policy_resolver.py for the accounting itself). Nothing to "initialise" —
+a balance's first row is created lazily by whatever touches it first (an
+accrual run, a hold, a grant):
+  GET    /v1/leave/balances          ?employment_id=&year=   (year = an FY
+                                        label, e.g. 2026 for FY2026-27;
+                                        defaults to self, current FY)
+  POST   /v1/leave/accrual/run       ?period=YYYY-MM          (leave.write)
+  POST   /v1/leave/year-end-close    ?fy_year=                (leave.write)
 
 Leave applications:
   GET    /v1/leave/applications      ?employment_id=&status= (defaults to
@@ -28,8 +35,9 @@ own and is checked against their scope if they name someone else; approver
 identity is always the caller (from the verified token), never a parameter.
 """
 
+import re
 from datetime import date, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query
 from sqlalchemy import text
@@ -48,17 +56,22 @@ from hrms.core.authz import (
     visible_employment_ids,
 )
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import now_utc
+from hrms.core.datetime_utils import now_utc, tenure_months
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
+from hrms.modules.leave.engine import (
+    compute_fy_year,
+    get_or_create_ledger_row,
+    lock_leave_bucket,
+    record_transaction,
+)
 from hrms.modules.leave.models import (
     CompOffGrant,
     LeaveApplication,
     LeaveApplicationStatus,
     LeaveApprovalAction,
     LeaveApprovalActionType,
-    LeaveBalance,
     LeaveBalanceBucket,
     LeaveBalanceTransaction,
     LeaveBucketPolicy,
@@ -66,8 +79,13 @@ from hrms.modules.leave.models import (
     LeaveMonthlyLedger,
     LeavePolicyAssignment,
     LeavePolicySet,
+    LeaveTransactionType,
     LeaveType,
     LeaveTypeBucketMapping,
+)
+from hrms.modules.leave.policy_resolver import (
+    resolve_employee_bucket_policy,
+    resolve_employee_fy_start_month,
 )
 from hrms.modules.leave.schemas import (
     AccrualRunResponse,
@@ -77,6 +95,8 @@ from hrms.modules.leave.schemas import (
     LeaveApplyRequest,
     LeaveApprovalActionRequest,
     LeaveApprovalActionResponse,
+    LeaveBalanceAdjustmentRequest,
+    LeaveBalanceAdjustmentResponse,
     LeaveBalanceBucketCreate,
     LeaveBalanceBucketResponse,
     LeaveBalanceBucketUpdate,
@@ -99,6 +119,7 @@ from hrms.modules.leave.schemas import (
     LeaveTypeCreate,
     LeaveTypeResponse,
     LeaveTypeUpdate,
+    YearEndCloseResponse,
 )
 from hrms.modules.policy.engine import resolve_policy
 
@@ -169,55 +190,29 @@ async def list_balances(
     tenant_id: TenantDep,
     session: SessionDep,
     employment_id: str | None = Query(default=None, description="Defaults to your own employment"),
-    year: int | None = Query(default=None),
+    year: int | None = Query(
+        default=None,
+        description="A financial-year label (e.g. 2026 for FY2026-27), not a calendar year",
+    ),
 ) -> list[LeaveBalanceResponse]:
+    """
+    One row per leave type with an active balance, summed from the ledger for
+    the given financial year (the employee's own, via their legal entity's
+    financial_year_start_month). carry_forward_days is the FY's opening
+    balance; allocated_days is what was credited (accrual + grants) during
+    the FY itself — the two used to be two separate stored numbers, they're
+    now two different aggregates over the same ledger rows. A type with no
+    ledger activity yet in this FY (e.g. never accrued) doesn't appear —
+    same as when this read the old, now-retired leave_balances table.
+    """
     scope = read_scope(scope, "leave.read", "leave.approve")
     emp_uuid = resolve_acting_employment_id(principal, employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
 
+    fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, emp_uuid)
     if year is None:
-        year = now_utc().year
-    rows = await session.execute(
-        select(LeaveBalance, LeaveType)
-        .join(LeaveType, col(LeaveType.id) == LeaveBalance.leave_type_id)
-        .where(LeaveBalance.tenant_id == tenant_id)
-        .where(LeaveBalance.employment_id == emp_uuid)
-        .where(LeaveBalance.year == year)
-    )
-    return [
-        LeaveBalanceResponse(
-            id=to_typed_id("leave_balance", b.id),
-            employment_id=to_typed_id("employment", emp_uuid),
-            leave_type_id=to_typed_id("leave_type", b.leave_type_id),
-            leave_type_name=lt.name,
-            leave_type_code=lt.code,
-            year=b.year,
-            allocated_days=b.allocated_days,
-            carry_forward_days=b.carry_forward_days,
-            used_days=b.used_days,
-            pending_days=b.pending_days,
-            available_days=max(
-                0.0, b.allocated_days + b.carry_forward_days - b.used_days - b.pending_days
-            ),
-            color=lt.color,
-        )
-        for b, lt in rows
-    ]
-
-
-@router.post("/balances/init", status_code=201, dependencies=[require_permission("leave.write")])
-async def init_balances(
-    tenant_id: TenantDep,
-    session: SessionDep,
-    scope: ScopeDep,
-    employment_id: str = Query(...),
-    year: int = Query(...),
-) -> dict:
-    """Create leave balance records for all active leave types for one employee/year."""
-    scope = scope.for_permission("leave.write")
-    emp_uuid = to_uuid(employment_id)
-    await authorize_employment(session, tenant_id, scope, emp_uuid)
-    await lock_resource(session, tenant_id, f"leave:{emp_uuid}")
+        today = now_utc().date()
+        year = compute_fy_year(today.year, today.month, fy_start_month)
 
     lt_rows = await session.execute(
         select(LeaveType)
@@ -225,38 +220,62 @@ async def init_balances(
         .where(LeaveType.is_active == True)  # noqa: E712
         .where(LeaveType.archived_at == None)  # noqa: E711
     )
-    created = 0
+    results: list[LeaveBalanceResponse] = []
     for lt in lt_rows.scalars():
-        existing = await session.execute(
-            select(LeaveBalance)
-            .where(LeaveBalance.tenant_id == tenant_id)
-            .where(LeaveBalance.employment_id == emp_uuid)
-            .where(LeaveBalance.leave_type_id == lt.id)
-            .where(LeaveBalance.year == year)
-        )
-        if existing.scalars().first():
+        resolved = await _resolve_bucket_for_type(session, tenant_id, lt, create_if_missing=False)
+        if resolved is None:
             continue
-        lb = LeaveBalance(
-            tenant_id=tenant_id,
-            id=uuid4(),
-            employment_id=emp_uuid,
-            leave_type_id=lt.id,
-            year=year,
-            allocated_days=lt.days_per_year,
-            recorded_at=now_utc(),
+        bucket_id, _ = resolved
+        ledger_rows = (
+            (
+                await session.execute(
+                    select(LeaveMonthlyLedger)
+                    .where(LeaveMonthlyLedger.tenant_id == tenant_id)
+                    .where(LeaveMonthlyLedger.employment_id == emp_uuid)
+                    .where(LeaveMonthlyLedger.bucket_id == bucket_id)
+                    .where(LeaveMonthlyLedger.fy_year == year)
+                    .order_by(
+                        col(LeaveMonthlyLedger.calendar_year),
+                        col(LeaveMonthlyLedger.calendar_month),
+                    )
+                )
+            )
+            .scalars()
+            .all()
         )
-        session.add(lb)
-        created += 1
-    await session.flush()
-    return {"created": created, "employment_id": employment_id, "year": year}
+        if not ledger_rows:
+            continue
+        carry_forward_days = ledger_rows[0].opening
+        allocated_days = sum(r.accrued + r.granted for r in ledger_rows)
+        used_days = sum(r.taken for r in ledger_rows)
+        pending_days = sum(r.held for r in ledger_rows)
+        available_days = max(0.0, ledger_rows[-1].closing - pending_days)
+        results.append(
+            LeaveBalanceResponse(
+                id=to_typed_id("leave_ledger", ledger_rows[-1].id),
+                employment_id=to_typed_id("employment", emp_uuid),
+                leave_type_id=to_typed_id("leave_type", lt.id),
+                leave_type_name=lt.name,
+                leave_type_code=lt.code,
+                year=year,
+                allocated_days=round(allocated_days, 4),
+                carry_forward_days=round(carry_forward_days, 4),
+                used_days=round(used_days, 4),
+                pending_days=round(pending_days, 4),
+                available_days=round(available_days, 4),
+                color=lt.color,
+            )
+        )
+    return results
 
 
-# ─── Comp-off, encashment & accrual ────────────────────────────────────────────
+# ─── Comp-off, encashment, manual adjustment & accrual ─────────────────────────
 #
-# All three are direct HR/admin balance adjustments with an audit-trail row,
-# not a second approval chain mirroring leave applications — comp-off and
-# encashment are one-shot credits/debits an HR user enters after the fact,
-# and accrual is a scheduled top-up. None of this needs multi-level review.
+# All four are direct HR/admin balance adjustments with an audit-trail row,
+# not a second approval chain mirroring leave applications — comp-off,
+# encashment and manual adjustment are one-shot credits/debits an HR user
+# enters after the fact, and accrual is a scheduled top-up. None of this
+# needs multi-level review.
 
 
 @router.post(
@@ -299,15 +318,28 @@ async def grant_comp_off(
         recorded_at=now_utc(),
     )
     session.add(grant)
-    await _adjust_balance(
-        session,
-        tenant_id,
-        emp_uuid,
-        lt.id,
-        body.work_date.year,
-        allocated_delta=body.days_granted,
-        create_if_missing=True,
-    )
+    await session.flush()
+
+    resolved = await _resolve_bucket_for_type(session, tenant_id, lt)
+    if (
+        resolved is not None
+    ):  # always true for the comp-off type, kept for symmetry with other call sites
+        bucket_id, _ = resolved
+        fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, emp_uuid)
+        await record_transaction(
+            session,
+            tenant_id,
+            employment_id=emp_uuid,
+            bucket_id=bucket_id,
+            leave_type_id=lt.id,
+            transaction_type=LeaveTransactionType.GRANT,
+            quantity=body.days_granted,
+            effective_date=body.work_date,
+            reference_id=grant.id,
+            reference_type="COMP_OFF",
+            recorded_by=principal.user_account_id,
+            fy_start_month=fy_start_month,
+        )
     await session.flush()
     return CompOffGrantResponse(
         id=to_typed_id("comp_off_grant", grant.id),
@@ -343,20 +375,26 @@ async def encash_leave(
         raise HTTPException(400, f"{lt.name} is not marked encashable")
 
     effective_date = body.effective_date or now_utc().date()
-    row = await session.execute(
-        select(LeaveBalance)
-        .where(LeaveBalance.tenant_id == tenant_id)
-        .where(LeaveBalance.employment_id == emp_uuid)
-        .where(LeaveBalance.leave_type_id == lt.id)
-        .where(LeaveBalance.year == effective_date.year)
+    resolved = await _resolve_bucket_for_type(session, tenant_id, lt)
+    if resolved is None:
+        raise HTTPException(400, f"{lt.name} has no balance bucket to encash from")
+    bucket_id, _ = resolved
+    fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, emp_uuid)
+
+    await lock_leave_bucket(session, tenant_id, emp_uuid, bucket_id)
+    ledger_row = await get_or_create_ledger_row(
+        session,
+        tenant_id,
+        emp_uuid,
+        bucket_id,
+        effective_date.year,
+        effective_date.month,
+        fy_start_month=fy_start_month,
     )
-    lb = row.scalars().first()
-    available = (
-        (lb.allocated_days + lb.carry_forward_days - lb.used_days - lb.pending_days) if lb else 0.0
-    )
+    available = ledger_row.closing - ledger_row.held
     if body.days > available:
         raise HTTPException(
-            400, f"Only {available} days available to encash, requested {body.days}"
+            400, f"Only {available:g} days available to encash, requested {body.days:g}"
         )
 
     enc = LeaveEncashment(
@@ -371,8 +409,20 @@ async def encash_leave(
         recorded_at=now_utc(),
     )
     session.add(enc)
-    await _adjust_balance(
-        session, tenant_id, emp_uuid, lt.id, effective_date.year, allocated_delta=-body.days
+    await session.flush()
+    await record_transaction(
+        session,
+        tenant_id,
+        employment_id=emp_uuid,
+        bucket_id=bucket_id,
+        leave_type_id=lt.id,
+        transaction_type=LeaveTransactionType.ENCASHMENT,
+        quantity=body.days,
+        effective_date=effective_date,
+        reference_id=enc.id,
+        reference_type="ENCASHMENT",
+        recorded_by=principal.user_account_id,
+        fy_start_month=fy_start_month,
     )
     await session.flush()
     return LeaveEncashmentResponse(
@@ -389,11 +439,73 @@ async def encash_leave(
 
 
 @router.post(
+    "/balances/adjust",
+    response_model=LeaveBalanceAdjustmentResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
+async def adjust_balance(
+    body: LeaveBalanceAdjustmentRequest,
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> LeaveBalanceAdjustmentResponse:
+    """
+    One-shot manual credit or debit to an employee's leave balance, for cases
+    the normal flows don't cover: seeding an opening balance carried over
+    from a previous system (kind="OPENING"), or correcting a mistake
+    (kind="ADJUSTMENT"). Posts a single transaction through the same ledger
+    every other write path uses — the two kinds differ only in which ledger
+    column and audit label they post under; the balance math is identical.
+    """
+    scope = scope.for_permission("leave.write")
+    emp_uuid = to_uuid(body.employment_id)
+    await authorize_employment(session, tenant_id, scope, emp_uuid)
+    await lock_resource(session, tenant_id, f"leave:{emp_uuid}")
+
+    lt = await _get_lt(session, tenant_id, body.leave_type_id)
+    resolved = await _resolve_bucket_for_type(session, tenant_id, lt)
+    if resolved is None:
+        raise HTTPException(400, f"{lt.name} has no balance bucket to adjust")
+    bucket_id, _ = resolved
+    effective_date = body.effective_date or now_utc().date()
+    fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, emp_uuid)
+
+    tx, _ledger_row = await record_transaction(
+        session,
+        tenant_id,
+        employment_id=emp_uuid,
+        bucket_id=bucket_id,
+        leave_type_id=lt.id,
+        transaction_type=LeaveTransactionType(body.kind),
+        quantity=body.quantity,
+        effective_date=effective_date,
+        reference_type="MANUAL",
+        recorded_by=principal.user_account_id,
+        reason=body.reason,
+        fy_start_month=fy_start_month,
+    )
+    await session.flush()
+    return LeaveBalanceAdjustmentResponse(
+        employment_id=body.employment_id,
+        leave_type_id=body.leave_type_id,
+        leave_type_name=lt.name,
+        kind=tx.transaction_type,
+        quantity=body.quantity,
+        new_balance=tx.new_balance,
+        effective_date=effective_date,
+        reason=body.reason,
+    )
+
+
+@router.post(
     "/accrual/run",
     response_model=AccrualRunResponse,
     dependencies=[require_permission("leave.write")],
 )
 async def run_accrual(
+    principal: CurrentUser,
     scope: ScopeDep,
     tenant_id: TenantDep,
     session: SessionDep,
@@ -402,32 +514,34 @@ async def run_accrual(
     ),
 ) -> AccrualRunResponse:
     """
-    Credits days_per_year / 12 to every active employee's balance for every
-    leave type with accrual_enabled. last_accrued_period is a high-water
-    mark (compared as a "YYYY-MM" string), not a set of periods ever run —
-    so this is safe to call more than once for the same or an earlier
-    month, but a month that's already behind the mark is skipped rather
-    than re-credited; it does not backfill a month that was skipped by
+    Credits every eligible employee's bucket, per resolved entitlement, for
+    every paid or comp-off leave type. "Resolved entitlement" is an explicit
+    LeaveBucketPolicy if one applies to that employee, else the leave type's
+    own days_per_year/accrual_enabled fields — a tenant that's never touched
+    Policy -> Leave policies gets exactly today's behaviour, just posted
+    through the ledger. Idempotency is a journal lookup (an ACCRUAL
+    transaction already dated this exact period) rather than a separate
+    marker field, so this is safe to call more than once for the same or an
+    earlier period; it does not backfill a month that was skipped by
     mistake. Meant to be triggered by an external cron; there is no in-app
     scheduler (see RUNBOOK.md).
     """
     scope = scope.for_permission("leave.write")
     if period is None:
         period = now_utc().strftime("%Y-%m")
-    import re
-
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
         raise HTTPException(422, "period must be YYYY-MM")
     if period > now_utc().strftime("%Y-%m"):
         raise HTTPException(422, "Cannot accrue a future period")
     await lock_resource(session, tenant_id, "leave-accrual")
-    year = int(period[:4])
+    year, month = int(period[:4]), int(period[5:7])
+    as_of = date(year, month, 1)
 
     lt_rows = await session.execute(
         select(LeaveType)
         .where(LeaveType.tenant_id == tenant_id)
-        .where(LeaveType.accrual_enabled == True)  # noqa: E712
         .where(LeaveType.archived_at == None)  # noqa: E711
+        .where(col(LeaveType.is_paid) | col(LeaveType.is_comp_off))
     )
     leave_types = list(lt_rows.scalars())
     if not leave_types:
@@ -436,50 +550,194 @@ async def run_accrual(
     clause, params = scope.employment_filter_sql("e")
     emp_rows = await session.execute(
         text(f"""
-            SELECT e.id FROM employments e
+            SELECT e.id, e.hire_date, e.employment_state FROM employments e
             WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state NOT IN ('SEPARATED')
             {clause}
         """),
         {"tid": str(tenant_id), **params},
     )
-    employment_ids = [r[0] for r in emp_rows]
+    employees = sorted(((r[0], r[1], r[2]) for r in emp_rows), key=lambda e: str(e[0]))
 
     credited = 0
     total_days = 0.0
     for lt in leave_types:
-        monthly = round(lt.days_per_year / 12, 4)
-        if monthly <= 0:
+        resolved = await _resolve_bucket_for_type(session, tenant_id, lt)
+        if resolved is None:
             continue
-        for emp_id in sorted(employment_ids):
-            await lock_resource(session, tenant_id, f"leave:{emp_id}")
-            row = await session.execute(
-                select(LeaveBalance)
-                .where(LeaveBalance.tenant_id == tenant_id)
-                .where(LeaveBalance.employment_id == emp_id)
-                .where(LeaveBalance.leave_type_id == lt.id)
-                .where(LeaveBalance.year == year)
+        bucket_id, _ = resolved
+        for emp_id, hire_date, emp_state in employees:
+            fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, emp_id)
+            entitlement = await _resolve_entitlement(
+                session, tenant_id, emp_id, bucket_id, lt, as_of
             )
-            lb = row.scalars().first()
-            if lb is None:
-                lb = LeaveBalance(
-                    tenant_id=tenant_id,
-                    id=uuid4(),
-                    employment_id=emp_id,
-                    leave_type_id=lt.id,
-                    year=year,
-                    recorded_at=now_utc(),
-                )
-            if lb.last_accrued_period is not None and lb.last_accrued_period >= period:
+            if entitlement.accrual_type != "MONTHLY_PRORATE":
                 continue
-            lb.allocated_days += monthly
-            lb.last_accrued_period = period
-            session.add(lb)
+            monthly = round(entitlement.days_per_year / 12, 4)
+            if monthly <= 0:
+                continue
+            eligible = (
+                entitlement.probation_eligible or emp_state != "PROBATION"
+            ) and tenure_months(hire_date, as_of) >= entitlement.min_service_months
+            if not eligible:
+                continue
+
+            already = await session.execute(
+                select(LeaveBalanceTransaction.id)
+                .where(LeaveBalanceTransaction.tenant_id == tenant_id)
+                .where(LeaveBalanceTransaction.employment_id == emp_id)
+                .where(LeaveBalanceTransaction.bucket_id == bucket_id)
+                .where(
+                    LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value
+                )
+                .where(LeaveBalanceTransaction.effective_date == as_of)
+            )
+            if already.scalar():
+                continue
+
+            await record_transaction(
+                session,
+                tenant_id,
+                employment_id=emp_id,
+                bucket_id=bucket_id,
+                leave_type_id=lt.id,
+                transaction_type=LeaveTransactionType.ACCRUAL,
+                quantity=monthly,
+                effective_date=as_of,
+                reference_type="ACCRUAL_RUN",
+                recorded_by=principal.user_account_id,
+                fy_start_month=fy_start_month,
+            )
             credited += 1
             total_days += monthly
 
     await session.flush()
     return AccrualRunResponse(
         period=period, balances_credited=credited, days_credited_total=round(total_days, 2)
+    )
+
+
+@router.post(
+    "/year-end-close",
+    response_model=YearEndCloseResponse,
+    dependencies=[require_permission("leave.write")],
+)
+async def close_year_end(
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    fy_year: int = Query(..., description="e.g. 2026 for FY2026-27 under an April-start policy"),
+) -> YearEndCloseResponse:
+    """
+    For every (employment, bucket) with ledger activity in fy_year: cap the
+    FY's closing balance at the resolved policy's max_carry_forward_days
+    (posting a LAPSE for the excess) or leave it uncapped if no cap resolves
+    — the remainder simply IS next FY's opening, the same way every other
+    month-to-month transition already works, via the ordinary prior-row
+    lookup in get_or_create_ledger_row/the forward cascade. No separate
+    CARRY_FORWARD transaction is posted: doing so on top of the LAPSE would
+    double the balance (CARRY_FORWARD's effect is additive), and posting it
+    on the new FY's row instead only works when that row doesn't already
+    exist (an advance-dated hold can create it first) — the LAPSE + cascade
+    path handles both cases correctly with one transaction.
+
+    Idempotent per (employment, bucket): skipped if a YEAR_END-referenced
+    transaction already exists dated this FY's closing month.
+    """
+    scope = scope.for_permission("leave.write")
+    clause, params = scope.employment_filter_sql("e")
+    combos = (
+        await session.execute(
+            text(f"""
+                SELECT DISTINCT lml.employment_id, lml.bucket_id
+                FROM leave_monthly_ledger lml
+                JOIN employments e ON e.tenant_id = lml.tenant_id AND e.id = lml.employment_id
+                WHERE lml.tenant_id = CAST(:tid AS uuid) AND lml.fy_year = :fy_year
+                {clause}
+            """),
+            {"tid": str(tenant_id), "fy_year": fy_year, **params},
+        )
+    ).all()
+
+    closed = 0
+    lapsed_total = 0.0
+    close_run_id = uuid4()
+    for employment_id, bucket_id in combos:
+        fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, employment_id)
+        if fy_start_month == 1:
+            last_year, last_month = fy_year, 12
+        else:
+            last_year, last_month = fy_year + 1, fy_start_month - 1
+        closing_effective_date = date(last_year, last_month, 1)
+
+        already = await session.execute(
+            select(LeaveBalanceTransaction.id)
+            .where(LeaveBalanceTransaction.tenant_id == tenant_id)
+            .where(LeaveBalanceTransaction.employment_id == employment_id)
+            .where(LeaveBalanceTransaction.bucket_id == bucket_id)
+            .where(LeaveBalanceTransaction.reference_type == "YEAR_END")
+            .where(LeaveBalanceTransaction.effective_date == closing_effective_date)
+        )
+        if already.scalar():
+            continue
+
+        await lock_leave_bucket(session, tenant_id, employment_id, bucket_id)
+        last_row = await get_or_create_ledger_row(
+            session,
+            tenant_id,
+            employment_id,
+            bucket_id,
+            last_year,
+            last_month,
+            fy_start_month=fy_start_month,
+        )
+        closing = last_row.closing
+        cap = await _resolve_bucket_carry_forward_cap(
+            session, tenant_id, employment_id, bucket_id, closing_effective_date
+        )
+
+        if cap is not None and closing > cap:
+            lapse_amount = closing - cap
+            await record_transaction(
+                session,
+                tenant_id,
+                employment_id=employment_id,
+                bucket_id=bucket_id,
+                transaction_type=LeaveTransactionType.LAPSE,
+                quantity=lapse_amount,
+                effective_date=closing_effective_date,
+                reference_id=close_run_id,
+                reference_type="YEAR_END",
+                recorded_by=principal.user_account_id,
+                reason=f"FY{fy_year} year-end close: capped at {cap:g}, {lapse_amount:g} lapsed",
+                fy_start_month=fy_start_month,
+            )
+            lapsed_total += lapse_amount
+        else:
+            # Nothing to lapse, but still stamp this (employment, bucket) as
+            # closed for this FY — a zero-effect marker, purely for the
+            # idempotency check above.
+            await record_transaction(
+                session,
+                tenant_id,
+                employment_id=employment_id,
+                bucket_id=bucket_id,
+                transaction_type=LeaveTransactionType.ADJUSTMENT,
+                quantity=0.0,
+                effective_date=closing_effective_date,
+                reference_id=close_run_id,
+                reference_type="YEAR_END",
+                recorded_by=principal.user_account_id,
+                reason=(
+                    f"FY{fy_year} year-end close: {max(0.0, closing):g} carried "
+                    "forward, nothing lapsed"
+                ),
+                fy_start_month=fy_start_month,
+            )
+        closed += 1
+
+    return YearEndCloseResponse(
+        fy_year=fy_year, buckets_closed=closed, days_lapsed=round(lapsed_total, 2)
     )
 
 
@@ -550,7 +808,7 @@ async def create_application(
         from_date=body.from_date,
         to_date=body.to_date,
         days_requested=days,
-        days_by_year=allocation,
+        days_by_month=allocation,
         document_id=to_uuid(body.document_id) if body.document_id else None,
         half_day_option=body.half_day_option,
         reason=body.reason,
@@ -580,18 +838,26 @@ async def submit_application(
 
     await _validate_application(session, tenant_id, app.employment_id, lt, app, app.days_requested)
     await _check_overlap(session, tenant_id, app)
-    app.days_by_year = await _allocate_days(
+    app.days_by_month = await _allocate_days(
         session, tenant_id, app.employment_id, app.from_date, app.to_date, app.half_day_option
     )
-    app.days_requested = sum(app.days_by_year.values())
-    await _change_application_balance(session, tenant_id, app, lt, pending=1)
+    app.days_requested = sum(app.days_by_month.values())
+    await _hold_leave_balance(session, tenant_id, principal, app, lt)
 
     if lt.requires_approval:
         app.status = LeaveApplicationStatus.PENDING_L1
         app.current_level = 1
     else:
         app.status = LeaveApplicationStatus.APPROVED
-        await _change_application_balance(session, tenant_id, app, lt, pending=-1, used=1)
+        await _post_leave_transaction(
+            session,
+            tenant_id,
+            principal,
+            app,
+            lt,
+            LeaveTransactionType.LEAVE_TAKEN,
+            approved_by=principal.user_account_id,
+        )
     app.applied_at = now_utc()
     session.add(app)
     await session.flush()
@@ -630,7 +896,15 @@ async def approve_application(
 
     if app.current_level >= app.total_levels:
         app.status = LeaveApplicationStatus.APPROVED
-        await _change_application_balance(session, tenant_id, app, lt, pending=-1, used=1)
+        await _post_leave_transaction(
+            session,
+            tenant_id,
+            principal,
+            app,
+            lt,
+            LeaveTransactionType.LEAVE_TAKEN,
+            approved_by=principal.user_account_id,
+        )
     else:
         app.current_level += 1
         next_status = [
@@ -677,7 +951,9 @@ async def reject_application(
     session.add(action)
 
     app.status = LeaveApplicationStatus.REJECTED
-    await _change_application_balance(session, tenant_id, app, lt, pending=-1)
+    await _post_leave_transaction(
+        session, tenant_id, principal, app, lt, LeaveTransactionType.RELEASE
+    )
     session.add(app)
     await session.flush()
     return _app_resp(app, lt, await _get_history(session, tenant_id, app.id))
@@ -711,7 +987,9 @@ async def cancel_application(
         app.status = LeaveApplicationStatus.CANCELLED
         app.cancel_reason = body.cancel_reason
         app.cancel_requested_at = now_utc()
-        await _change_application_balance(session, tenant_id, app, lt, pending=-1)
+        await _post_leave_transaction(
+            session, tenant_id, principal, app, lt, LeaveTransactionType.RELEASE
+        )
         session.add(app)
         await session.flush()
         return _app_resp(app, lt, await _get_history(session, tenant_id, app.id))
@@ -723,7 +1001,9 @@ async def cancel_application(
             app.total_levels = lt.cancel_approval_levels
         else:
             app.status = LeaveApplicationStatus.CANCELLED
-            await _change_application_balance(session, tenant_id, app, lt, used=-1)
+            await _post_leave_transaction(
+                session, tenant_id, principal, app, lt, LeaveTransactionType.LEAVE_REVERSED
+            )
         app.cancel_reason = body.cancel_reason
         app.cancel_requested_at = now_utc()
         session.add(app)
@@ -765,7 +1045,15 @@ async def approve_cancellation(
 
     if app.current_level >= app.total_levels:
         app.status = LeaveApplicationStatus.CANCELLED
-        await _change_application_balance(session, tenant_id, app, lt, used=-1)
+        await _post_leave_transaction(
+            session,
+            tenant_id,
+            principal,
+            app,
+            lt,
+            LeaveTransactionType.LEAVE_REVERSED,
+            approved_by=principal.user_account_id,
+        )
     else:
         app.current_level += 1
         cancel_statuses = [
@@ -948,50 +1236,176 @@ async def _get_history(session, tenant_id, app_id) -> list[LeaveApprovalActionRe
     ]
 
 
-async def _adjust_balance(
-    session,
-    tenant_id,
-    employment_id,
-    leave_type_id,
-    year: int,
-    pending_delta: float = 0.0,
-    used_delta: float = 0.0,
-    allocated_delta: float = 0.0,
-    create_if_missing: bool = False,
-) -> None:
-    row = await session.execute(
-        select(LeaveBalance)
-        .where(LeaveBalance.tenant_id == tenant_id)
-        .where(LeaveBalance.employment_id == employment_id)
-        .where(LeaveBalance.leave_type_id == leave_type_id)
-        .where(LeaveBalance.year == year)
+class _Entitlement:
+    """What an employee gets for one bucket — an explicit LeaveBucketPolicy if
+    one resolves, else the owning leave type's own fields (see _resolve_entitlement)."""
+
+    __slots__ = (
+        "accrual_type",
+        "days_per_year",
+        "carry_forward_enabled",
+        "max_carry_forward_days",
+        "probation_eligible",
+        "min_service_months",
     )
-    lb = row.scalars().first()
-    if not lb and create_if_missing:
-        lb = LeaveBalance(
+
+    def __init__(
+        self,
+        accrual_type: str,
+        days_per_year: float,
+        carry_forward_enabled: bool,
+        max_carry_forward_days: float | None,
+        probation_eligible: bool,
+        min_service_months: int,
+    ) -> None:
+        self.accrual_type = accrual_type
+        self.days_per_year = days_per_year
+        self.carry_forward_enabled = carry_forward_enabled
+        self.max_carry_forward_days = max_carry_forward_days
+        self.probation_eligible = probation_eligible
+        self.min_service_months = min_service_months
+
+
+async def _resolve_bucket_for_type(
+    session, tenant_id, lt: LeaveType, *, create_if_missing: bool = True
+) -> tuple[UUID, bool] | None:
+    """
+    The bucket this leave type's balance lives in.
+
+    An explicit leave_type_bucket_mapping row if one already exists (Policy
+    Sets creates one automatically the first time a leave type gets an
+    entitlement rule); otherwise, on a WRITE path (create_if_missing=True), a
+    1:1 bucket is auto-created on first use and mapped — so a tenant that's
+    never touched Policy Sets still gets a real, ledger-backed balance per
+    leave type, same as before buckets existed. On a READ path
+    (list_balances), create_if_missing=False so just looking at balances
+    never fabricates a bucket that's never had any activity.
+
+    Unpaid leave (LWP) with no explicit mapping returns None — not tracked,
+    matching today's behaviour; map it to an is_unlimited bucket yourself if
+    you want it logged (e.g. for payroll export).
+
+    Returns (bucket_id, is_unlimited), or None if this type isn't tracked.
+    """
+    found = (
+        await session.execute(
+            select(LeaveTypeBucketMapping, LeaveBalanceBucket)
+            .join(
+                LeaveBalanceBucket,
+                col(LeaveBalanceBucket.id) == LeaveTypeBucketMapping.bucket_id,
+            )
+            .where(LeaveTypeBucketMapping.tenant_id == tenant_id)
+            .where(LeaveTypeBucketMapping.leave_type_id == lt.id)
+        )
+    ).first()
+    if found:
+        _mapping, bucket = found
+        return bucket.id, bucket.is_unlimited
+
+    if not create_if_missing or (not lt.is_paid and not lt.is_comp_off):
+        return None
+
+    code = lt.code[:20]
+    if (
+        await session.execute(
+            select(LeaveBalanceBucket.id)
+            .where(LeaveBalanceBucket.tenant_id == tenant_id)
+            .where(LeaveBalanceBucket.code == code)
+        )
+    ).scalar():
+        code = f"{code[:16]}-{uuid4().hex[:3]}"
+
+    bucket_id = uuid4()
+    session.add(
+        LeaveBalanceBucket(
             tenant_id=tenant_id,
-            id=uuid4(),
-            employment_id=employment_id,
-            leave_type_id=leave_type_id,
-            year=year,
+            id=bucket_id,
+            name=lt.name,
+            code=code,
+            is_unlimited=False,
             recorded_at=now_utc(),
         )
-    if not lb:
-        raise HTTPException(409, f"Initialize the leave balance for {year} first")
-    if lb:
-        if (
-            pending_delta > 0
-            and pending_delta
-            > lb.allocated_days + lb.carry_forward_days - lb.used_days - lb.pending_days
-        ):
-            raise HTTPException(409, f"Insufficient leave balance for {year}")
-        if pending_delta:
-            lb.pending_days = max(0.0, lb.pending_days + pending_delta)
-        if used_delta:
-            lb.used_days = max(0.0, lb.used_days + used_delta)
-        if allocated_delta:
-            lb.allocated_days = max(0.0, lb.allocated_days + allocated_delta)
-        session.add(lb)
+    )
+    session.add(
+        LeaveTypeBucketMapping(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            leave_type_id=lt.id,
+            bucket_id=bucket_id,
+            recorded_at=now_utc(),
+        )
+    )
+    await session.flush()
+    return bucket_id, False
+
+
+async def _resolve_entitlement(
+    session, tenant_id, employment_id: UUID, bucket_id: UUID, lt: LeaveType, as_of: date
+) -> _Entitlement:
+    """Bucket policy if one resolves for this employee, else the leave type's own
+    flat fields — the zero-config default so accrual works with no policy setup."""
+    bp = await resolve_employee_bucket_policy(session, tenant_id, employment_id, bucket_id, as_of)
+    if bp is not None:
+        return _Entitlement(
+            bp.accrual_type,
+            bp.days_per_year,
+            bp.carry_forward_enabled,
+            bp.max_carry_forward_days,
+            bp.probation_eligible,
+            bp.min_service_months,
+        )
+    return _Entitlement(
+        "MONTHLY_PRORATE" if lt.accrual_enabled else "NONE",
+        lt.days_per_year,
+        lt.carry_forward,
+        lt.max_carry_forward_days,
+        True,  # no eligibility gate today -> preserve "accrual runs for everyone active"
+        0,
+    )
+
+
+async def _resolve_bucket_carry_forward_cap(
+    session, tenant_id, employment_id: UUID, bucket_id: UUID, as_of: date
+) -> float | None:
+    """
+    max_carry_forward_days for this bucket at year-end: an explicit
+    LeaveBucketPolicy if one resolves (0.0 if it has carry-forward disabled
+    entirely), else — only when the bucket has exactly one mapped leave type,
+    so there's no ambiguity about which type's rule applies — that type's own
+    max_carry_forward_days. None means uncapped: when nothing configured
+    says otherwise, year-end close carries everything forward rather than
+    guessing what to lapse.
+    """
+    bp = await resolve_employee_bucket_policy(session, tenant_id, employment_id, bucket_id, as_of)
+    if bp is not None:
+        return bp.max_carry_forward_days if bp.carry_forward_enabled else 0.0
+
+    mapped_types = (
+        (
+            await session.execute(
+                select(LeaveTypeBucketMapping.leave_type_id)
+                .where(LeaveTypeBucketMapping.tenant_id == tenant_id)
+                .where(LeaveTypeBucketMapping.bucket_id == bucket_id)
+            )
+        )
+        .scalars()
+        .all()
+    )
+    if len(mapped_types) == 1:
+        lt = (
+            (
+                await session.execute(
+                    select(LeaveType)
+                    .where(LeaveType.tenant_id == tenant_id)
+                    .where(LeaveType.id == mapped_types[0])
+                )
+            )
+            .scalars()
+            .first()
+        )
+        if lt is not None:
+            return lt.max_carry_forward_days if lt.carry_forward else 0.0
+    return None
 
 
 def _assert_pending(app: LeaveApplication) -> None:
@@ -1013,6 +1427,12 @@ def _assert_cancel_pending(app: LeaveApplication) -> None:
 
 
 async def _allocate_days(session, tenant_id, employment_id, start, end, half_day):
+    """
+    Split [start, end] into working days, keyed "YYYY-MM" — one entry per
+    calendar month touched, matching leave_monthly_ledger's grain. A leave
+    spanning a month (or financial-year) boundary posts one engine
+    transaction per key; see _post_leave_transaction / _hold_leave_balance.
+    """
     from hrms.core.datetime_utils import is_working_day
 
     holidays = (
@@ -1032,7 +1452,7 @@ async def _allocate_days(session, tenant_id, employment_id, start, end, half_day
     while day <= end:
         policy = await resolve_policy(employment_id, day, session, tenant_id)
         if day not in holidays and is_working_day(day, policy.work_days, policy.saturday_pattern):
-            key = str(day.year)
+            key = f"{day.year:04d}-{day.month:02d}"
             allocation[key] = allocation.get(key, 0.0) + (0.5 if half_day != "NONE" else 1.0)
         day += timedelta(days=1)
     return allocation
@@ -1088,25 +1508,91 @@ async def _check_overlap(session, tenant_id, app):
         raise HTTPException(409, "This leave overlaps an existing application")
 
 
-async def _change_application_balance(session, tenant_id, app, lt, pending=0, used=0):
+def _application_allocation(app: LeaveApplication) -> dict[str, float]:
+    allocation = app.days_by_month
+    if allocation:
+        return allocation
+    # Legacy applications recorded before this column existed: recover a single
+    # "YYYY-MM" key from from_date, provided the whole thing fits one month.
+    if app.from_date.year != app.to_date.year or app.from_date.month != app.to_date.month:
+        raise HTTPException(409, "A legacy cross-month application needs balance reconciliation")
+    return {f"{app.from_date.year:04d}-{app.from_date.month:02d}": app.days_requested}
+
+
+async def _post_leave_transaction(
+    session,
+    tenant_id,
+    principal,
+    app: LeaveApplication,
+    lt: LeaveType,
+    transaction_type: LeaveTransactionType,
+    *,
+    approved_by: UUID | None = None,
+) -> None:
+    """Post RELEASE / LEAVE_TAKEN / LEAVE_REVERSED, one transaction per (year,
+    month) segment. For the balance-checked HOLD, see _hold_leave_balance."""
     if not lt.is_paid and not lt.is_comp_off:
         return
-    allocation = app.days_by_year
-    if not allocation:
-        # Legacy single-year applications retain their recorded entitlement amount.
-        if app.from_date.year != app.to_date.year:
-            raise HTTPException(409, "A legacy cross-year application needs balance reconciliation")
-        allocation = {str(app.from_date.year): app.days_requested}
-    for year, days in sorted(allocation.items()):
-        await _adjust_balance(
+    resolved = await _resolve_bucket_for_type(session, tenant_id, lt)
+    if resolved is None:
+        return
+    bucket_id, _ = resolved
+    fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, app.employment_id)
+    for period, days in sorted(_application_allocation(app).items()):
+        if days <= 0:
+            continue
+        year, month = int(period[:4]), int(period[5:7])
+        await record_transaction(
             session,
             tenant_id,
-            app.employment_id,
-            lt.id,
-            int(year),
-            pending_delta=pending * days,
-            used_delta=used * days,
+            employment_id=app.employment_id,
+            bucket_id=bucket_id,
+            leave_type_id=lt.id,
+            transaction_type=transaction_type,
+            quantity=days,
+            effective_date=date(year, month, 1),
+            reference_id=app.id,
+            reference_type="LEAVE_APPLICATION",
+            recorded_by=principal.user_account_id,
+            approved_by=approved_by,
+            fy_start_month=fy_start_month,
         )
+
+
+async def _hold_leave_balance(
+    session, tenant_id, principal, app: LeaveApplication, lt: LeaveType
+) -> None:
+    """Balance-checked HOLD at submission — checks every segment before posting
+    any of them, so a partial failure never leaves some months held and others not."""
+    if not lt.is_paid and not lt.is_comp_off:
+        return
+    resolved = await _resolve_bucket_for_type(session, tenant_id, lt)
+    if resolved is None:
+        return
+    bucket_id, is_unlimited = resolved
+    fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, app.employment_id)
+    allocation = _application_allocation(app)
+    if not is_unlimited:
+        for period, days in sorted(allocation.items()):
+            if days <= 0:
+                continue
+            year, month = int(period[:4]), int(period[5:7])
+            await lock_leave_bucket(session, tenant_id, app.employment_id, bucket_id)
+            row = await get_or_create_ledger_row(
+                session,
+                tenant_id,
+                app.employment_id,
+                bucket_id,
+                year,
+                month,
+                fy_start_month=fy_start_month,
+            )
+            available = row.closing - row.held
+            if days > available:
+                raise HTTPException(
+                    409, f"Insufficient leave balance for {period} ({available:g} day(s) available)"
+                )
+    await _post_leave_transaction(session, tenant_id, principal, app, lt, LeaveTransactionType.HOLD)
 
 
 async def _check_reviewer(session, tenant_id, principal, scope, app, cancel=False):

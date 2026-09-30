@@ -53,10 +53,27 @@ export interface LeaveEncashment {
   recorded_at: string;
 }
 
+export interface LeaveBalanceAdjustment {
+  employment_id: string;
+  leave_type_id: string;
+  leave_type_name: string;
+  kind: string;
+  quantity: number;
+  new_balance: number;
+  effective_date: string;
+  reason: string;
+}
+
 export interface AccrualRunResult {
   period: string;
   balances_credited: number;
   days_credited_total: number;
+}
+
+export interface YearEndCloseResult {
+  fy_year: number;
+  buckets_closed: number;
+  days_lapsed: number;
 }
 
 export interface LeaveBalance {
@@ -110,12 +127,11 @@ export const leaveApi = {
   createType: (body: Partial<LeaveType>) => api.post<LeaveType>("/v1/leave/types", body),
   updateType: (id: string, body: Partial<LeaveType>) => api.patch<LeaveType>(`/v1/leave/types/${id}`, body),
 
+  /** year is a financial-year label (e.g. 2026 for FY2026-27), not a calendar year. */
   getBalances: (employmentId: string, year?: number) => {
     const q = year ? `?employment_id=${employmentId}&year=${year}` : `?employment_id=${employmentId}`;
     return api.get<LeaveBalance[]>(`/v1/leave/balances${q}`);
   },
-  initBalances: (employmentId: string, year: number) =>
-    api.post<{ created: number }>(`/v1/leave/balances/init?employment_id=${employmentId}&year=${year}`, {}),
 
   listApplications: (employmentId?: string, status?: string) => {
     const params = new URLSearchParams();
@@ -162,21 +178,34 @@ export const leaveApi = {
   encash: (body: { employment_id: string; leave_type_id: string; days: number; notes?: string }) =>
     api.post<LeaveEncashment>("/v1/leave/encashment", body),
 
+  adjustBalance: (body: {
+    employment_id: string;
+    leave_type_id: string;
+    quantity: number;
+    effective_date?: string;
+    reason: string;
+    kind: "OPENING" | "ADJUSTMENT";
+  }) => api.post<LeaveBalanceAdjustment>("/v1/leave/balances/adjust", body),
+
   runAccrual: (period?: string) =>
     api.post<AccrualRunResult>(`/v1/leave/accrual/run${period ? `?period=${period}` : ""}`, {}),
 
+  /** fyYear is a label (e.g. 2026 for FY2026-27) — caps each bucket's closing balance at its
+   * policy's carry-forward cap (lapsing the rest); uncapped buckets just carry everything forward. */
+  yearEndClose: (fyYear: number) =>
+    api.post<YearEndCloseResult>(`/v1/leave/year-end-close?fy_year=${fyYear}`, {}),
+
   // ─── Buckets & Mappings ──────────────────────────────────────────────────
+  // Internal ledger plumbing only, no longer surfaced as a management UI:
+  // Policy Sets resolves/creates these behind the scenes per leave type, and
+  // the ledger view lists them to label a monthly balance row.
   listBuckets: () => api.get<LeaveBalanceBucket[]>("/v1/leave/buckets"),
   createBucket: (body: { name: string; code: string; is_unlimited?: boolean }) =>
     api.post<LeaveBalanceBucket>("/v1/leave/buckets", body),
-  updateBucket: (id: string, body: { name?: string; is_active?: boolean }) =>
-    api.patch<LeaveBalanceBucket>(`/v1/leave/buckets/${id}`, body),
-  deleteBucket: (id: string) => api.delete(`/v1/leave/buckets/${id}`),
 
   listBucketMappings: () => api.get<LeaveTypeBucketMapping[]>("/v1/leave/bucket-mappings"),
   createBucketMapping: (body: { leave_type_id: string; bucket_id: string }) =>
     api.post<LeaveTypeBucketMapping>("/v1/leave/bucket-mappings", body),
-  deleteBucketMapping: (id: string) => api.delete(`/v1/leave/bucket-mappings/${id}`),
 
   // ─── Policy Sets & Bucket Policies ───────────────────────────────────────
   listPolicySets: () => api.get<LeavePolicySet[]>("/v1/leave/policy-sets"),
