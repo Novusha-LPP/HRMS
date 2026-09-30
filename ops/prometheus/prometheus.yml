@@ -1,41 +1,19 @@
-# Example Prometheus configuration for the HRMS API. Adjust the targets to your deployment
-# (static hosts here; on ECS/Kubernetes use their service discovery instead).
+# Prometheus configuration for the HRMS API.
 # Docs: docs/OBSERVABILITY.md
 global:
-  scrape_interval: 30s
-  evaluation_interval: 30s
+  scrape_interval: 15s
+  evaluation_interval: 15s
 
 rule_files:
   - alerts.yml
 
 scrape_configs:
-  # One target per API container. Each runs a single uvicorn worker (the Dockerfile
-  # default), so every container is scraped on its own.
+  # Scrape the HRMS FastAPI backend metrics endpoint
   - job_name: hrms-api
     metrics_path: /metrics
-    authorization:
-      type: Bearer
-      credentials_file: /etc/prometheus/secrets/hrms-metrics-token  # = HRMS_METRICS_TOKEN
+    # If HRMS_METRICS_TOKEN is set in backend/.env, uncomment and supply the token below:
+    # bearer_token: "your-secret-token"
     static_configs:
-      - targets: ["hrms-api-1:8015", "hrms-api-2:8015"]
+      - targets: ["127.0.0.1:8015"]
         labels:
           environment: production
-
-  # Readiness (database reachable, migrations applied) needs an HTTP probe: the blackbox
-  # exporter calls /health/ready and reports probe_success. Module "http_2xx" is the
-  # exporter's default HTTP check.
-  - job_name: hrms-ready
-    metrics_path: /probe
-    params:
-      module: [http_2xx]
-    static_configs:
-      - targets:
-          - http://hrms-api-1:8015/health/ready
-          - http://hrms-api-2:8015/health/ready
-    relabel_configs:
-      - source_labels: [__address__]
-        target_label: __param_target
-      - source_labels: [__param_target]
-        target_label: instance
-      - target_label: __address__
-        replacement: blackbox-exporter:9115
