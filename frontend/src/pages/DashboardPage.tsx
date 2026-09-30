@@ -10,7 +10,7 @@ import {
 } from "lucide-react";
 import { dashboardApi } from "../api/dashboard";
 import { leaveApi } from "../api/leave";
-import type { LeaveApplication, LeaveBalance } from "../api/leave";
+import type { LeaveApplicationSummary, LeaveBalance } from "../api/leave";
 import { correctionsApi } from "../api/corrections";
 import { useQueryClient, useMutation } from "@tanstack/react-query";
 import { useAuth } from "../context/AuthContext";
@@ -218,9 +218,9 @@ function HRDashboard() {
     queryFn: () => dashboardApi.hr(),
   });
 
-  const { data: apps } = useQuery<LeaveApplication[]>({
-    queryKey: ["leave-applications"],
-    queryFn: () => leaveApi.listApplications(),
+  const { data: leaveSummary } = useQuery<LeaveApplicationSummary>({
+    queryKey: ["leave-applications", "summary"],
+    queryFn: () => leaveApi.applicationSummary(),
   });
 
   const hc = (data?.headcount as Dict) ?? {};
@@ -244,19 +244,18 @@ function HRDashboard() {
   const pendingPersonnel = num(actions.pending_personnel_actions);
   const presentPct = total > 0 ? Math.round((present / total) * 100) : 0;
 
-  const leaveLive = !!apps?.length;
+  const byStatus = leaveSummary?.by_status ?? {};
+  const countOf = (match: (status: string) => boolean) =>
+    Object.entries(byStatus).reduce((n, [status, count]) => (match(status) ? n + count : n), 0);
+  const leaveLive = Object.keys(byStatus).length > 0;
   const leaveStatus = {
-    pending: (apps ?? []).filter((a) => a.status.includes("PENDING")).length,
-    approved: (apps ?? []).filter((a) => a.status === "APPROVED").length,
-    rejected: (apps ?? []).filter((a) => a.status === "REJECTED").length,
+    pending: countOf((s) => s.includes("PENDING")),
+    approved: countOf((s) => s === "APPROVED"),
+    rejected: countOf((s) => s === "REJECTED"),
   };
-  const leaveTypes = Object.values(
-    (apps ?? []).reduce<Record<string, { label: string; value: number; color: string }>>((acc, a) => {
-      acc[a.leave_type_name] ??= { label: a.leave_type_name, value: 0, color: a.leave_type_color };
-      acc[a.leave_type_name].value += a.days_requested;
-      return acc;
-    }, {}),
-  );
+  const leaveTypes = (leaveSummary?.approved_days_by_type ?? []).map((t) => ({
+    label: t.name, value: t.days, color: t.color,
+  }));
   const leaveTotal = leaveTypes.reduce((s, t) => s + t.value, 0) || 1;
 
   const handleCopyWish = (bday: BirthdayItem) => {

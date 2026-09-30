@@ -136,3 +136,5 @@ Sharanga_Production.*.csv
 # Credential
 # --------------------------------------------------
 credential.md
+# Performance harness output (backend/perf/)
+backend/perf/out/

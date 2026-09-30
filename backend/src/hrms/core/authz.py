@@ -27,11 +27,11 @@ from typing import Annotated
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
-from sqlalchemy import text
+from sqlalchemy import Uuid, text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hrms.core.authn import CurrentUser, Principal
-from hrms.core.database import SessionDep
+from hrms.core.database import GRANTS_KEY, SessionDep
 from hrms.core.ids import to_uuid
 from hrms.core.tenancy import TenantDep
 
@@ -291,18 +291,24 @@ async def _all_reports(
 
 
 async def resolve_scope(session: AsyncSession, tenant_id: UUID, principal: Principal) -> Scope:
-    rows = await session.execute(
-        text("""
-            SELECT r.name AS role_name, ra.scope_type, ra.scope_value
-            FROM role_assignments ra
-            JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
-            WHERE ra.tenant_id = CAST(:tid AS uuid)
-              AND ra.user_account_id = CAST(:uid AS uuid)
-              AND (ra.expires_at IS NULL OR ra.expires_at > now())
-        """),
-        {"tid": str(tenant_id), "uid": str(principal.user_account_id)},
-    )
-    grants = rows.mappings().all()
+    # get_session already read this user's live grants in its account-check round trip;
+    # anything else (scripts, other sessions) reads them here.
+    fetched = getattr(session, "info", {}).get(GRANTS_KEY)
+    if fetched is not None and fetched[0] == principal.user_account_id:
+        grants = fetched[1]
+    else:
+        rows = await session.execute(
+            text("""
+                SELECT r.name AS role_name, ra.scope_type, ra.scope_value
+                FROM role_assignments ra
+                JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
+                WHERE ra.tenant_id = CAST(:tid AS uuid)
+                  AND ra.user_account_id = CAST(:uid AS uuid)
+                  AND (ra.expires_at IS NULL OR ra.expires_at > now())
+            """),
+            {"tid": str(tenant_id), "uid": str(principal.user_account_id)},
+        )
+        grants = rows.mappings().all()
 
     resolved = []
     for g in grants:
@@ -451,6 +457,20 @@ async def authorize_write(
             raise HTTPException(403, "Missing self-service permission")
         return
     await authorize_employment(session, tenant_id, scope.for_permission(permission), target)
+
+
+def visible_employments_select(tenant_id: UUID, scope: Scope):
+    """
+    The same set as visible_employment_ids, as a subquery to embed with
+    `col(X.employment_id).in_(...)` — Postgres filters in one statement instead of the
+    ids making a round trip into Python and back as an IN list of thousands.
+    """
+    clause, params = scope.employment_filter_sql("e")
+    return (
+        text(f"SELECT e.id FROM employments e WHERE e.tenant_id = :visible_tid {clause}")
+        .bindparams(visible_tid=tenant_id, **params)
+        .columns(id=Uuid)
+    )
 
 
 async def visible_employment_ids(session, tenant_id: UUID, scope: Scope) -> list[UUID]:

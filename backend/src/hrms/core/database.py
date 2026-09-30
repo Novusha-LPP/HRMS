@@ -9,8 +9,10 @@ bug that forgets a WHERE tenant_id = ... clause still can't read another
 tenant's rows — Postgres itself refuses.
 """
 
+import json
 import logging
 from collections.abc import AsyncGenerator
+from datetime import date
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -28,6 +30,10 @@ logger = logging.getLogger(__name__)
 # admin) may only reach these until they have. Everything else is refused
 # server-side — the frontend redirect is a convenience, not the control.
 PASSWORD_CHANGE_EXEMPT_PATHS = frozenset({"/v1/auth/change-password", "/v1/auth/me"})
+
+# session.info key: (user_account_id, live role grants) read by get_session in the same
+# round trip as the account checks, so core/authz.resolve_scope needn't query them again.
+GRANTS_KEY = "hrms_role_grants"
 
 engine = create_async_engine(
     settings.app_database_url or settings.database_url,
@@ -62,45 +68,59 @@ async def get_session(
             text("SELECT set_config('app.tenant_id', :tid, true)"),
             {"tid": str(tenant_id)},
         )
-        # Suspension/archival is checked here too, not just at login — a
-        # platform admin suspending a tenant mid-session should cut off its
-        # already-issued tokens on their very next request, not wait out an
-        # up-to-8h JWT. tenants has no RLS, so this SELECT is unaffected by
-        # the set_config just above.
-        row = (
-            (
-                await session.execute(
-                    text("SELECT status, archived_at FROM tenants WHERE id = :tid"),
-                    {"tid": str(tenant_id)},
-                )
-            )
-            .mappings()
-            .first()
-        )
-        if not row or row["status"] != "ACTIVE" or row["archived_at"] is not None:
-            raise HTTPException(status.HTTP_403_FORBIDDEN, "This company's account is suspended")
-        # One query answers every "may this token still act?" question. The
-        # employment's state is read live, so a separation locks the person out
-        # from the moment it's applied and a rehire lets them back in, with no
-        # account flag to keep in sync.
-        account = (
+        # Everything "may this token still act?" needs, in one round trip:
+        # - Suspension/archival is checked here too, not just at login — a platform admin
+        #   suspending a tenant mid-session cuts off its already-issued tokens on their very
+        #   next request, not after an up-to-8h JWT. (tenants has no RLS.)
+        # - The account and its employment are read live, so a separation locks the person
+        #   out from the moment it's applied and a rehire lets them back in, with no account
+        #   flag to keep in sync.
+        # - The caller's live role grants, for get_current_scope (session.info, below).
+        # - Whether any scheduled personnel action is due, so the common "nothing due" case
+        #   costs no extra query. date.today() matches apply_due_actions exactly.
+        auth = (
             (
                 await session.execute(
                     text("""
-            SELECT ua.status, ua.employment_id, ua.must_change_password,
-                   ua.token_epoch, e.employment_state
-            FROM user_accounts ua
+            SELECT t.status AS tenant_status, t.archived_at AS tenant_archived_at,
+                   ua.id IS NOT NULL AS account_found, ua.status, ua.employment_id,
+                   ua.must_change_password, ua.token_epoch, e.employment_state,
+                   EXISTS (
+                       SELECT 1 FROM personnel_actions pa
+                       WHERE pa.tenant_id = t.id AND pa.status = 'SCHEDULED'
+                         AND pa.effective_date <= :today
+                   ) AS actions_due,
+                   (
+                       SELECT COALESCE(
+                           json_agg(json_build_array(r.name, ra.scope_type, ra.scope_value)),
+                           '[]'
+                       )
+                       FROM role_assignments ra
+                       JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
+                       WHERE ra.tenant_id = t.id AND ra.user_account_id = ua.id
+                         AND (ra.expires_at IS NULL OR ra.expires_at > now())
+                   ) AS grants
+            FROM tenants t
+            LEFT JOIN user_accounts ua
+                   ON ua.tenant_id = t.id AND ua.id = CAST(:uid AS uuid)
             LEFT JOIN employments e ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
-            WHERE ua.tenant_id = :tid AND ua.id = :uid
+            WHERE t.id = CAST(:tid AS uuid)
         """),
-                    {"tid": tenant_id, "uid": principal.user_account_id},
+                    {
+                        "tid": str(tenant_id),
+                        "uid": str(principal.user_account_id),
+                        "today": date.today(),
+                    },
                 )
             )
             .mappings()
             .first()
         )
+        if not auth or auth["tenant_status"] != "ACTIVE" or auth["tenant_archived_at"] is not None:
+            raise HTTPException(status.HTTP_403_FORBIDDEN, "This company's account is suspended")
+        account = auth
         if (
-            not account
+            not account["account_found"]
             or account["status"] != "ACTIVE"
             or account["employment_id"] != principal.employment_id
             or account["employment_state"] == "SEPARATED"
@@ -114,8 +134,17 @@ async def get_session(
                 "You must change your password before continuing",
                 code="PASSWORD_CHANGE_REQUIRED",
             )
+        grants = auth["grants"]
+        session.info[GRANTS_KEY] = (
+            principal.user_account_id,
+            [
+                {"role_name": g[0], "scope_type": g[1], "scope_value": g[2]}
+                for g in (json.loads(grants) if isinstance(grants, str) else grants)
+            ],
+        )
         try:
-            await _apply_scheduled_actions(session, tenant_id)
+            if auth["actions_due"]:
+                await _apply_scheduled_actions(session, tenant_id)
             yield session
             await session.commit()
             _finish_files(session, committed=True)

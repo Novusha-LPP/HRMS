@@ -1,10 +1,16 @@
+import { logger } from "../lib/logger";
+import { generateRequestId } from "../lib/uuid";
+
 const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8015";
 
 export class PlatformApiError extends Error {
   status: number;
-  constructor(status: number, message: string) {
+  requestId?: string;
+
+  constructor(status: number, message: string, requestId?: string) {
     super(message);
     this.status = status;
+    this.requestId = requestId;
   }
 }
 
@@ -25,12 +31,27 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   };
   if (platformToken) headers["Authorization"] = `Bearer ${platformToken}`;
 
+  const clientRequestId = headers["X-Request-ID"] || generateRequestId();
+  headers["X-Request-ID"] = clientRequestId;
+
   const requestToken = platformToken;
   const res = await fetch(`${BASE}${path}`, { ...options, headers });
   if (requestToken !== platformToken) throw new Error("Session changed");
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
-    throw new PlatformApiError(res.status, body.detail ?? res.statusText);
+    const requestId =
+      body.request_id ||
+      body.error?.request_id ||
+      res.headers.get("x-request-id") ||
+      clientRequestId;
+    const detail = body.detail ?? body.error?.message ?? res.statusText;
+
+    logger.error(`Platform API ${options.method ?? "GET"} ${path} failed with ${res.status}`, {
+      requestId,
+      detail,
+    });
+
+    throw new PlatformApiError(res.status, detail, requestId);
   }
   if (res.status === 204) return undefined as T;
   const data = await res.json();

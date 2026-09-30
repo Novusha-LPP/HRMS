@@ -122,6 +122,20 @@ export interface LeaveApplication {
   approval_history: LeaveApprovalAction[];
 }
 
+/** Statuses that wait on an approver's decision (leave or its cancellation). */
+export const DECISION_STATUSES = [
+  "PENDING_L1", "PENDING_L2", "PENDING_L3",
+  "CANCEL_PENDING_L1", "CANCEL_PENDING_L2", "CANCEL_PENDING_L3",
+];
+
+/** Page size for the applications list; a shorter page is the last one. */
+export const LEAVE_PAGE_SIZE = 100;
+
+export interface LeaveApplicationSummary {
+  by_status: Record<string, number>;
+  approved_days_by_type: { leave_type_id: string; name: string; color: string; days: number }[];
+}
+
 export const leaveApi = {
   listTypes: () => api.get<LeaveType[]>("/v1/leave/types"),
   createType: (body: Partial<LeaveType>) => api.post<LeaveType>("/v1/leave/types", body),
@@ -133,12 +147,17 @@ export const leaveApi = {
     return api.get<LeaveBalance[]>(`/v1/leave/balances${q}`);
   },
 
-  listApplications: (employmentId?: string, status?: string) => {
+  /** Newest first, one page. `statuses` are OR-ed; `after` is the last id of the previous page. */
+  listApplications: (opts: { employmentId?: string; statuses?: string[]; limit?: number; after?: string } = {}) => {
     const params = new URLSearchParams();
-    if (employmentId) params.set("employment_id", employmentId);
-    if (status) params.set("status", status);
+    if (opts.employmentId) params.set("employment_id", opts.employmentId);
+    if (opts.statuses?.length) params.set("status", opts.statuses.join(","));
+    params.set("limit", String(opts.limit ?? LEAVE_PAGE_SIZE));
+    if (opts.after) params.set("after", opts.after);
     return api.get<LeaveApplication[]>(`/v1/leave/applications?${params}`);
   },
+  /** Counts by status and approved days by type for everyone in the caller's scope. */
+  applicationSummary: () => api.get<LeaveApplicationSummary>("/v1/leave/applications/summary"),
   createApplication: (employmentId: string, body: {
     leave_type_id: string;
     from_date: string;

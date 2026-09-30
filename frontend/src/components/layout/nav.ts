@@ -1,5 +1,5 @@
 import {
-  LayoutGrid, Users, Clock, Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck,
+  LayoutGrid, Users, Clock, Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck, BookOpen,
 } from "lucide-react";
 import type { LucideIcon } from "lucide-react";
 import type { UserRole } from "../../context/AuthContext";
@@ -11,6 +11,8 @@ export interface NavItem {
   roles?: UserRole[];
   /** Gate on a fine-grained permission instead of/in addition to a coarse role. */
   permission?: string;
+  /** Whether this link points to an external destination (e.g. Swagger API docs). */
+  external?: boolean;
 }
 
 export interface NavSection {
@@ -49,6 +51,12 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/policy", label: "Policies", icon: ShieldCheck, roles: HR_ROLES },
     ],
   },
+  {
+    label: "Developers",
+    items: [
+      { to: "https://hrmsapi.alvision.in/docs", label: "API Docs", icon: BookOpen, external: true },
+    ],
+  },
 ];
 
 interface NavUser {
@@ -70,7 +78,7 @@ export function navFor(user: NavUser): NavSection[] {
 
 export function findNav(pathname: string) {
   for (const s of NAV_SECTIONS) {
-    const item = s.items.find((i) => pathname.startsWith(i.to));
+    const item = s.items.find((i) => !i.external && pathname.startsWith(i.to));
     if (item) return { section: s.label, item };
   }
   return null;

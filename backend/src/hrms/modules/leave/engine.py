@@ -14,6 +14,7 @@ from __future__ import annotations
 from datetime import date
 from uuid import UUID, uuid4
 
+from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import and_, col, or_, select
 
@@ -305,3 +306,143 @@ async def record_transaction(
     await session.flush()
 
     return tx, ledger_row
+
+
+async def record_accruals(
+    session: AsyncSession,
+    tenant_id: UUID,
+    *,
+    bucket_id: UUID,
+    leave_type_id: UUID,
+    credits: list[tuple[UUID, float, int]],
+    effective_date: date,
+    reference_type: str,
+    recorded_by: UUID,
+) -> None:
+    """
+    record_transaction(ACCRUAL) for many employees in one bucket, with the same result:
+    the same advisory locks, the same ledger rows and closing arithmetic, the same journal
+    rows. `credits` is (employment_id, quantity, fy_start_month), in the order to lock.
+
+    The set-based path covers every employee with no ledger row after the target month
+    — a regular monthly run, where nothing needs to cascade forward. Anyone who does have
+    a later row (a back-dated run) goes through record_transaction itself, so the forward
+    cascade lives in exactly one place.
+
+    The ledger rows are written with SQL, not through the ORM: the caller must not already
+    hold loaded LeaveMonthlyLedger objects for these (employment, bucket, month) rows.
+    """
+    if not credits:
+        return
+    year, month = effective_date.year, effective_date.month
+    tid = str(tenant_id)
+    await session.execute(
+        text(
+            "SELECT pg_advisory_xact_lock(hashtextextended(k, 0))"
+            " FROM unnest(CAST(:keys AS text[])) k"
+        ),
+        {"keys": [f"{tenant_id}:leave:{emp}:{bucket_id}" for emp, _, _ in credits]},
+    )
+    ids = [str(emp) for emp, _, _ in credits]
+    later = {
+        UUID(str(r[0]))
+        for r in await session.execute(
+            text("""
+                SELECT DISTINCT employment_id FROM leave_monthly_ledger
+                WHERE tenant_id = CAST(:tid AS uuid) AND bucket_id = CAST(:bucket AS uuid)
+                  AND employment_id = ANY(CAST(:ids AS uuid[]))
+                  AND (calendar_year, calendar_month) > (:y, :m)
+            """),
+            {"tid": tid, "bucket": str(bucket_id), "ids": ids, "y": year, "m": month},
+        )
+    }
+    bulk = [c for c in credits if c[0] not in later]
+    for emp, quantity, fy_start_month in credits:
+        if emp in later:
+            await record_transaction(
+                session,
+                tenant_id,
+                employment_id=emp,
+                bucket_id=bucket_id,
+                leave_type_id=leave_type_id,
+                transaction_type=LeaveTransactionType.ACCRUAL,
+                quantity=quantity,
+                effective_date=effective_date,
+                reference_type=reference_type,
+                recorded_by=recorded_by,
+                fy_start_month=fy_start_month,
+            )
+    if not bulk:
+        return
+    # Flush ORM state so the SQL below sees any rows record_transaction just wrote.
+    await session.flush()
+    emps = [str(emp) for emp, _, _ in bulk]
+    params = {"tid": tid, "bucket": str(bucket_id), "y": year, "m": month, "emps": emps}
+    # Missing target rows open at the prior row's closing (get_or_create_ledger_row).
+    await session.execute(
+        text("""
+            INSERT INTO leave_monthly_ledger (tenant_id, id, recorded_at, employment_id,
+                bucket_id, calendar_year, calendar_month, fy_year, opening, accrued, granted,
+                held, adjustment, taken, lapsed, encashed, closing)
+            SELECT CAST(:tid AS uuid), gen_random_uuid(), now(), c.emp, CAST(:bucket AS uuid),
+                   :y, :m, c.fy_year, COALESCE(p.closing, 0), 0, 0, 0, 0, 0, 0, 0,
+                   COALESCE(p.closing, 0)
+            FROM unnest(CAST(:emps AS uuid[]), CAST(:fy AS int[])) AS c(emp, fy_year)
+            LEFT JOIN LATERAL (
+                SELECT closing FROM leave_monthly_ledger
+                WHERE tenant_id = CAST(:tid AS uuid) AND employment_id = c.emp
+                  AND bucket_id = CAST(:bucket AS uuid)
+                  AND (calendar_year, calendar_month) < (:y, :m)
+                ORDER BY calendar_year DESC, calendar_month DESC LIMIT 1
+            ) p ON true
+            ON CONFLICT (tenant_id, employment_id, bucket_id, calendar_year, calendar_month)
+            DO NOTHING
+        """),
+        {**params, "fy": [compute_fy_year(year, month, fy) for _, _, fy in bulk]},
+    )
+    # accrued += quantity, then closing recomputed term by term in recalculate_closing's
+    # order, so the float result is identical to the one-at-a-time path.
+    updated = await session.execute(
+        text("""
+            UPDATE leave_monthly_ledger l
+            SET accrued = l.accrued + s.qty,
+                closing = l.opening + (l.accrued + s.qty) + l.granted + l.adjustment
+                          - l.taken - l.lapsed - l.encashed
+            FROM (
+                SELECT l2.id, c.qty, l2.closing AS old_closing
+                FROM unnest(CAST(:emps AS uuid[]), CAST(:qty AS float8[])) AS c(emp, qty)
+                JOIN leave_monthly_ledger l2
+                  ON l2.tenant_id = CAST(:tid AS uuid) AND l2.employment_id = c.emp
+                 AND l2.bucket_id = CAST(:bucket AS uuid)
+                 AND l2.calendar_year = :y AND l2.calendar_month = :m
+            ) s
+            WHERE l.tenant_id = CAST(:tid AS uuid) AND l.id = s.id
+            RETURNING l.employment_id, s.qty, s.old_closing - l.held, l.closing - l.held
+        """),
+        {**params, "qty": [q for _, q, _ in bulk]},
+    )
+    journal = updated.all()
+    await session.execute(
+        text("""
+            INSERT INTO leave_balance_transactions (tenant_id, id, employment_id, bucket_id,
+                leave_type_id, transaction_type, quantity, previous_balance, new_balance,
+                effective_date, reference_type, recorded_by, recorded_at)
+            SELECT CAST(:tid AS uuid), gen_random_uuid(), j.emp, CAST(:bucket AS uuid),
+                   CAST(:lt AS uuid), 'ACCRUAL', j.qty, j.prev, j.new, :eff, :ref,
+                   CAST(:by AS uuid), now()
+            FROM unnest(CAST(:emps AS uuid[]), CAST(:qty AS float8[]),
+                        CAST(:prev AS float8[]), CAST(:new AS float8[])) AS j(emp, qty, prev, new)
+        """),
+        {
+            "tid": tid,
+            "bucket": str(bucket_id),
+            "lt": str(leave_type_id),
+            "eff": effective_date,
+            "ref": reference_type,
+            "by": str(recorded_by),
+            "emps": [str(r[0]) for r in journal],
+            "qty": [r[1] for r in journal],
+            "prev": [r[2] for r in journal],
+            "new": [r[3] for r in journal],
+        },
+    )
