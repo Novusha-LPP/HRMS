@@ -8,6 +8,8 @@
  * - Extensible hook for remote error reporting / APM tools (e.g. Sentry, Datadog).
  */
 
+import { reportError } from "./errorTracking";
+
 export type LogLevel = "debug" | "info" | "warn" | "error";
 
 const LOG_LEVELS: Record<LogLevel, number> = {
@@ -61,6 +63,7 @@ export const logger = {
   },
 
   error(message: string, error?: unknown, context?: unknown): void {
+    reportError(error, context);
     if (!shouldLog("error")) return;
     const prefix = formatPrefix("error");
     if (error !== undefined && context !== undefined) {

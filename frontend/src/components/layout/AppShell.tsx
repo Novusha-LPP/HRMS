@@ -281,6 +281,9 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
           <button onClick={logout} className="menu-item hover:text-danger">
             <LogOut size={15} /> Sign out
           </button>
+          <p className="px-2.5 pb-1 pt-1.5 text-[11px] text-fg-subtle tabular-nums">
+            Version {__APP_VERSION__} · {__GIT_SHA__}
+          </p>
         </div>
       )}
     </div>

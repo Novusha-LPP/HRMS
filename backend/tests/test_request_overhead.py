@@ -18,9 +18,13 @@ PASSWORD = "Test-password-123"
 
 
 async def _statements(client, url, headers):
-    tally = perf.start_tally(keep_statements=True)
-    await ok(client, "GET", url, headers=headers)
-    return tally
+    seen = []
+    perf.REQUEST_OBSERVER = lambda scope, tally: seen.append(tally)
+    try:
+        await ok(client, "GET", url, headers=headers)
+    finally:
+        perf.REQUEST_OBSERVER = None
+    return seen[-1]
 
 
 async def test_authenticated_request_overhead_is_two_statements(api):

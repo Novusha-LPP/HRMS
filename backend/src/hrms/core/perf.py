@@ -48,23 +48,28 @@ def current_tally() -> QueryTally | None:
     return _current.get()
 
 
+def _before_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    conn.info.setdefault("hrms_query_start", []).append(time.perf_counter())
+
+
+def _after_cursor_execute(conn, cursor, statement, parameters, context, executemany):
+    started = conn.info["hrms_query_start"].pop()
+    tally = _current.get()
+    if tally is None:
+        return
+    tally.count += 1
+    tally.seconds += time.perf_counter() - started
+    if tally.keep_statements:
+        tally.statements.append(statement)
+
+
 def instrument_engine(engine: AsyncEngine) -> None:
+    """Count statements and SQL time into the current tally. Idempotent per engine."""
     sync_engine = engine.sync_engine
-
-    @event.listens_for(sync_engine, "before_cursor_execute")
-    def _before(conn, cursor, statement, parameters, context, executemany):
-        conn.info.setdefault("hrms_query_start", []).append(time.perf_counter())
-
-    @event.listens_for(sync_engine, "after_cursor_execute")
-    def _after(conn, cursor, statement, parameters, context, executemany):
-        started = conn.info["hrms_query_start"].pop()
-        tally = _current.get()
-        if tally is None:
-            return
-        tally.count += 1
-        tally.seconds += time.perf_counter() - started
-        if tally.keep_statements:
-            tally.statements.append(statement)
+    if event.contains(sync_engine, "after_cursor_execute", _after_cursor_execute):
+        return
+    event.listen(sync_engine, "before_cursor_execute", _before_cursor_execute)
+    event.listen(sync_engine, "after_cursor_execute", _after_cursor_execute)
 
 
 class QueryMetricsMiddleware:
@@ -77,7 +82,10 @@ class QueryMetricsMiddleware:
         if scope["type"] != "http":
             await self.app(scope, receive, send)
             return
-        tally = start_tally(keep_statements=REQUEST_OBSERVER is not None)
+        # core/metrics.MetricsMiddleware, when installed, has already started this request's
+        # tally; count into that one rather than a second.
+        shared = scope.get("state", {}).get("query_tally")
+        tally = shared or start_tally(keep_statements=REQUEST_OBSERVER is not None)
         started = time.perf_counter()
 
         async def send_with_metrics(message):
@@ -92,5 +100,11 @@ class QueryMetricsMiddleware:
             await send(message)
 
         await self.app(scope, receive, send_with_metrics)
-        if REQUEST_OBSERVER is not None:
-            REQUEST_OBSERVER(scope, tally)
+        if shared is None:  # otherwise MetricsMiddleware owns it and reports it
+            report(scope, tally)
+
+
+def report(scope, tally: QueryTally) -> None:
+    """Hand a finished request's tally to REQUEST_OBSERVER, if one is listening."""
+    if REQUEST_OBSERVER is not None:
+        REQUEST_OBSERVER(scope, tally)

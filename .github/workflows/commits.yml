@@ -1,0 +1,59 @@
+name: Commit messages
+# release-please builds the version bump and CHANGELOG from conventional commit messages, so
+# a message it can't parse silently drops out of the release notes. This checks pull request
+# titles (what a squash merge uses) and, for direct pushes, every pushed commit's subject.
+on:
+  pull_request:
+    types: [opened, edited, synchronize, reopened]
+  push:
+    branches: [main]
+
+permissions:
+  contents: read
+  pull-requests: read
+
+jobs:
+  pr-title:
+    if: github.event_name == 'pull_request'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: amannn/action-semantic-pull-request@v5
+        env:
+          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        with:
+          types: |
+            feat
+            fix
+            perf
+            refactor
+            security
+            revert
+            docs
+            test
+            ci
+            build
+            chore
+
+  pushed-commits:
+    if: github.event_name == 'push'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+      - name: Check every pushed commit subject
+        env:
+          BEFORE: ${{ github.event.before }}
+          AFTER: ${{ github.sha }}
+        run: |
+          pattern='^(feat|fix|perf|refactor|security|revert|docs|test|ci|build|chore)(\([a-z0-9._-]+\))?!?: .+'
+          if [ "$BEFORE" = "0000000000000000000000000000000000000000" ]; then range="$AFTER -1"; else range="$BEFORE..$AFTER"; fi
+          bad=0
+          while IFS= read -r subject; do
+            case "$subject" in Merge\ *|Revert\ *) continue ;; esac
+            if ! printf '%s' "$subject" | grep -Eq "$pattern"; then
+              echo "::error::Not a conventional commit, so it won't appear in the changelog: $subject"
+              bad=1
+            fi
+          done < <(git log --format=%s $range)
+          exit $bad

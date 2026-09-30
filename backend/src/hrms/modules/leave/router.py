@@ -36,6 +36,7 @@ identity is always the caller (from the verified token), never a parameter.
 """
 
 import re
+import time
 from datetime import date, timedelta
 from uuid import UUID, uuid4
 
@@ -59,6 +60,7 @@ from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import now_utc, tenure_months
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
+from hrms.core.metrics import ACCRUAL_RUN, ACCRUALS_CREDITED
 from hrms.core.tenancy import TenantDep
 from hrms.modules.leave.engine import (
     compute_fy_year,
@@ -540,6 +542,7 @@ async def run_accrual(
     if period > now_utc().strftime("%Y-%m"):
         raise HTTPException(422, "Cannot accrue a future period")
     await lock_resource(session, tenant_id, "leave-accrual")
+    started = time.perf_counter()
     year, month = int(period[:4]), int(period[5:7])
     as_of = date(year, month, 1)
 
@@ -638,6 +641,8 @@ async def run_accrual(
         )
 
     await session.flush()
+    ACCRUAL_RUN.observe(time.perf_counter() - started)
+    ACCRUALS_CREDITED.inc(credited)
     return AccrualRunResponse(
         period=period, balances_credited=credited, days_credited_total=round(total_days, 2)
     )

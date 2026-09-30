@@ -24,6 +24,13 @@ RUN uv sync --frozen --no-dev
 
 ENV PATH="/opt/venv/bin:$PATH"
 
+# Which build this is — reported by /health and attached to logs and error reports
+# (core/version.py). The release workflow passes both; a local build reports "unknown".
+ARG GIT_SHA=unknown
+ARG BUILD_TIME=
+ENV HRMS_GIT_SHA=$GIT_SHA \
+    HRMS_BUILD_TIME=$BUILD_TIME
+
 # Don't run as root. KYC uploads go to /app/storage (a volume in docker-compose).
 RUN useradd --system --create-home --uid 10001 hrms \
     && mkdir -p /app/storage \

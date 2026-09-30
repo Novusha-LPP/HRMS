@@ -375,7 +375,14 @@ async def test_unknown_and_wrong_password_are_indistinguishable(api):
         started = time.perf_counter()
         r = await sign_in(client, identifier, "definitely-wrong-1")
         timings[label], bodies[label] = time.perf_counter() - started, (r.status_code, r.json())
-    assert bodies["unknown"] == bodies["known"] == (401, {"detail": "Invalid credentials"})
+    # Every error body carries this request's own id and time; apart from those two, the
+    # responses must be byte-for-byte the same.
+    for _status, body in bodies.values():
+        body.pop("request_id", None)
+        for per_request in ("request_id", "timestamp"):
+            body.get("error", {}).pop(per_request, None)
+    assert bodies["unknown"] == bodies["known"]
+    assert bodies["known"][0] == 401 and bodies["known"][1]["detail"] == "Invalid credentials"
     # A miss must spend a real password-check's time (bcrypt ≈ 0.1–0.3 s), otherwise
     # response time reveals which identifiers exist. 0.05 s only guards its removal.
     assert timings["unknown"] > 0.05

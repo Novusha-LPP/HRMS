@@ -32,7 +32,7 @@ class Settings(BaseSettings):
 
     # Application
     app_name: str = "HRMS Platform"
-    app_version: str = "0.1.0"
+    # (The version is not a setting: see core/version.py.)
     debug: bool = False
     environment: str = "development"
     # Adds Server-Timing / X-DB-Queries headers with each request's statement count and DB time
@@ -45,10 +45,20 @@ class Settings(BaseSettings):
     log_slow_request_threshold_ms: float = 1000.0
     log_exclude_paths: str = "/health"
 
+    # Error tracking (core/error_tracking.py). Off unless a DSN is set.
+    sentry_dsn: str | None = None
+    # Defaults to `environment`; set to tell apart e.g. staging and production.
+    sentry_environment: str | None = None
+    # Share of requests traced for performance (0 = errors only).
+    sentry_traces_sample_rate: float = 0.0
+
+    # Prometheus metrics at GET /metrics (core/metrics.py).
+    metrics_enabled: bool = True
+    # Bearer token the scraper must send. Required in production while metrics are enabled.
+    metrics_token: str | None = None
+
     # CORS — comma-separated origins
-    cors_origins: str = (
-        "http://localhost:3000,http://localhost:5173,https://testinghrms.alvision.in,http://testinghrms.alvision.in"
-    )
+    cors_origins: str = "http://localhost:3000,http://localhost:5173,https://testinghrms.alvision.in,http://testinghrms.alvision.in"
 
     # Storage
     storage_dir: str = "storage"
@@ -107,6 +117,11 @@ class Settings(BaseSettings):
                 )
             if self.debug:
                 raise ValueError("Debug mode must be disabled in production")
+            if self.metrics_enabled and not self.metrics_token:
+                raise ValueError(
+                    "Production serves /metrics only behind a scrape token: set "
+                    "HRMS_METRICS_TOKEN (or HRMS_METRICS_ENABLED=false)"
+                )
             # Default to JSON format in production unless explicitly specified otherwise
             if self.log_format == "console":
                 self.log_format = "json"
