@@ -17,4 +17,8 @@ export default defineConfig({
     allowedHosts: ['testinghrms.alvision.in'],
     cors: true,
   },
+  preview: {
+    allowedHosts: ['testinghrms.alvision.in'],
+    cors: true,
+  },
 })
