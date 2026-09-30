@@ -16,6 +16,8 @@ import {
   type LeaveBucketPolicy,
   type LeavePolicyAssignment,
   type LeaveBalanceBucket,
+  type LeaveType,
+  type LeaveTypeBucketMapping,
 } from "../../api/leave";
 import { orgApi, type LegalEntity, type OrgUnit } from "../../api/org";
 import { peopleApi } from "../../api/people";
@@ -55,9 +57,9 @@ export function LeavePolicySetsTab({
   const [setDescription, setSetDescription] = useState("");
   const [setIsDefault, setSetIsDefault] = useState(false);
 
-  // Bucket Policy Sheet state
+  // Leave Entitlement Rule Sheet state
   const [policySheetOpen, setPolicySheetOpen] = useState(false);
-  const [bucketId, setBucketId] = useState("");
+  const [selectedTypeId, setSelectedTypeId] = useState("");
   const [accrualType, setAccrualType] = useState<"ANNUAL_UPFRONT" | "MONTHLY_PRORATE" | "NONE">(
     "MONTHLY_PRORATE"
   );
@@ -95,6 +97,16 @@ export function LeavePolicySetsTab({
   const buckets = useQuery<LeaveBalanceBucket[]>({
     queryKey: ["leave-buckets"],
     queryFn: () => leaveApi.listBuckets(),
+  });
+
+  const leaveTypes = useQuery<LeaveType[]>({
+    queryKey: ["leave-types"],
+    queryFn: () => leaveApi.listTypes(),
+  });
+
+  const bucketMappings = useQuery<LeaveTypeBucketMapping[]>({
+    queryKey: ["leave-bucket-mappings"],
+    queryFn: () => leaveApi.listBucketMappings(),
   });
 
   const legalEntities = useQuery<LegalEntity[]>({
@@ -148,10 +160,31 @@ export function LeavePolicySetsTab({
     onError: (e) => toast.error("Couldn’t create policy set", errorMessage(e)),
   });
 
+  // A "bucket" is just the ledger's internal accounting unit — almost always
+  // one per leave type. Rather than make the user create a bucket and map a
+  // leave type to it by hand (the old flow), we resolve or silently create
+  // that 1:1 bucket here, so this sheet only ever talks about leave types.
+  const resolveOrCreateBucketForType = async (type: LeaveType): Promise<string> => {
+    const existingMapping = (bucketMappings.data ?? []).find((m) => m.leave_type_id === type.id);
+    if (existingMapping) return existingMapping.bucket_id;
+
+    const code = type.code.trim().toUpperCase();
+    const reusableBucket = (buckets.data ?? []).find((b) => {
+      const bCode = b.code.toUpperCase();
+      return bCode === code || bCode === `${code}_BAL`;
+    });
+    const bucket = reusableBucket ?? (await leaveApi.createBucket({ name: type.name, code, is_unlimited: false }));
+    await leaveApi.createBucketMapping({ leave_type_id: type.id, bucket_id: bucket.id });
+    return bucket.id;
+  };
+
   const saveBucketPolicy = useMutation({
-    mutationFn: () =>
-      leaveApi.createBucketPolicy(activeSetId, {
-        bucket_id: bucketId,
+    mutationFn: async () => {
+      const type = (leaveTypes.data ?? []).find((t) => t.id === selectedTypeId);
+      if (!type) throw new Error("Select a leave type");
+      const resolvedBucketId = await resolveOrCreateBucketForType(type);
+      return leaveApi.createBucketPolicy(activeSetId, {
+        bucket_id: resolvedBucketId,
         accrual_type: accrualType,
         days_per_year: Number(daysPerYear),
         carry_forward_enabled: carryForward,
@@ -161,13 +194,16 @@ export function LeavePolicySetsTab({
         max_encashment_days: encashmentEnabled && maxEncashment ? Number(maxEncashment) : null,
         probation_eligible: probationEligible,
         min_service_months: Number(minServiceMonths) || 0,
-      }),
+      });
+    },
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["leave-bucket-policies", activeSetId] });
-      toast.success("Bucket entitlement policy saved");
+      qc.invalidateQueries({ queryKey: ["leave-buckets"] });
+      qc.invalidateQueries({ queryKey: ["leave-bucket-mappings"] });
+      toast.success("Leave entitlement rule saved");
       setPolicySheetOpen(false);
     },
-    onError: (e) => toast.error("Couldn’t save bucket policy", errorMessage(e)),
+    onError: (e) => toast.error("Couldn’t save leave rule", errorMessage(e)),
   });
 
   const deleteBucketPolicy = useMutation({
@@ -212,11 +248,16 @@ export function LeavePolicySetsTab({
   const assignmentList = (assignments.data ?? []).filter(
     (a) => a.leave_policy_set_id === activeSetId
   );
-  const bucketList = buckets.data ?? [];
+  const mappingList = bucketMappings.data ?? [];
+  const typeList = (leaveTypes.data ?? []).filter((t) => !t.is_comp_off);
 
   // Configured bucket IDs in this set
   const configuredBucketIds = new Set(bpList.map((bp) => bp.bucket_id));
-  const unconfiguredBuckets = bucketList.filter((b) => !configuredBucketIds.has(b.id));
+  const typeToBucketId = new Map(mappingList.map((m) => [m.leave_type_id, m.bucket_id]));
+  const unconfiguredTypes = typeList.filter((t) => {
+    const resolvedBucketId = typeToBucketId.get(t.id);
+    return !resolvedBucketId || !configuredBucketIds.has(resolvedBucketId);
+  });
 
   return (
     <div className="space-y-6">
@@ -265,21 +306,21 @@ export function LeavePolicySetsTab({
             <div className="flex items-center justify-between">
               <div>
                 <h3 className="text-sm font-semibold text-fg">
-                  Bucket Entitlement Rules ({activeSet.name})
+                  Leave Entitlement Rules ({activeSet.name})
                 </h3>
                 <p className="text-xs text-fg-subtle">
-                  Accrual frequency, annual quota, carry-forward and encashment parameters.
+                  Pick a leave type and set its accrual frequency, annual quota, carry-forward and encashment for this policy set.
                 </p>
               </div>
               <button
                 className="btn-primary btn-sm"
                 onClick={() => {
-                  setBucketId(unconfiguredBuckets[0]?.id || "");
+                  setSelectedTypeId(unconfiguredTypes[0]?.id || "");
                   setPolicySheetOpen(true);
                 }}
-                disabled={unconfiguredBuckets.length === 0}
+                disabled={unconfiguredTypes.length === 0}
               >
-                <Plus size={13} /> Add Bucket Rule
+                <Plus size={13} /> Add Leave Rule
               </button>
             </div>
 
@@ -293,8 +334,8 @@ export function LeavePolicySetsTab({
               <div className="card p-8">
                 <EmptyState
                   icon={Shield}
-                  title="No bucket rules configured"
-                  description={'Use the "+ Add Bucket Rule" button above to define accrual, carry-forward and encashment rules for each bucket.'}
+                  title="No leave rules configured"
+                  description={'Use the "+ Add Leave Rule" button above to define accrual, carry-forward and encashment rules for a leave type.'}
                 />
               </div>
             ) : (
@@ -543,11 +584,11 @@ export function LeavePolicySetsTab({
         </div>
       </Sheet>
 
-      {/* ─── Add/Edit Bucket Policy Sheet ─── */}
+      {/* ─── Add/Edit Leave Entitlement Rule Sheet ─── */}
       <Sheet
         open={policySheetOpen}
         onClose={() => setPolicySheetOpen(false)}
-        title="Configure Bucket Entitlement"
+        title="Configure Leave Entitlement"
         description={`Set allocation and carry-forward rules for ${activeSet?.name}.`}
         footer={
           <>
@@ -557,7 +598,7 @@ export function LeavePolicySetsTab({
             <button
               className="btn-primary"
               onClick={() => saveBucketPolicy.mutate()}
-              disabled={!bucketId || !daysPerYear || saveBucketPolicy.isPending}
+              disabled={!selectedTypeId || !daysPerYear || saveBucketPolicy.isPending}
             >
               {saveBucketPolicy.isPending ? "Saving…" : "Save Rule"}
             </button>
@@ -566,18 +607,18 @@ export function LeavePolicySetsTab({
       >
         <div className="space-y-4">
           <div>
-            <label className="label" htmlFor="bp-bucket">
-              Balance Bucket
+            <label className="label" htmlFor="bp-type">
+              Leave Type
             </label>
             <select
-              id="bp-bucket"
+              id="bp-type"
               className="input"
-              value={bucketId}
-              onChange={(e) => setBucketId(e.target.value)}
+              value={selectedTypeId}
+              onChange={(e) => setSelectedTypeId(e.target.value)}
             >
-              {unconfiguredBuckets.map((b) => (
-                <option key={b.id} value={b.id}>
-                  {b.name} ({b.code})
+              {unconfiguredTypes.map((t) => (
+                <option key={t.id} value={t.id}>
+                  {t.name} ({t.code})
                 </option>
               ))}
             </select>

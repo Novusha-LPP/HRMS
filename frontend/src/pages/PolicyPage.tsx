@@ -88,7 +88,7 @@ export function PolicyPage() {
   const rawTab = params.get("tab");
   const isLeave =
     rawTab === "leave" ||
-    ["policy-sets", "buckets", "types", "holidays", "operations"].includes(rawTab ?? "");
+    ["policy-sets", "types", "holidays", "operations"].includes(rawTab ?? "");
   const activeTab: "attendance" | "leave" = isLeave ? "leave" : "attendance";
 
   const setActiveTab = (tab: "attendance" | "leave") => {
@@ -143,7 +143,7 @@ export function PolicyPage() {
     <>
       <PageHeader
         title="Policies"
-        description="Configure attendance shifts, working hours, leave balance buckets, policy sets and holiday rules."
+        description="Configure attendance shifts, working hours, leave types, policy sets and holiday rules."
         actions={
           <div className="flex items-center gap-2">
             <button

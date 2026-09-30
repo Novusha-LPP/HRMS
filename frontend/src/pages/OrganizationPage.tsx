@@ -1,6 +1,6 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2, KeyRound, UserRoundX, UserRoundCheck, History } from "lucide-react";
 import { orgApi } from "../api/org";
@@ -45,7 +45,7 @@ export function OrganizationPage() {
           { value: "locations", label: "Locations" },
           { value: "jobs", label: "Job titles" },
           { value: "employee-ids", label: "Employee IDs" },
-          ...(canManageAccess ? [{ value: "access" as const, label: "Users & access" }] : []),
+          ...(canManageAccess ? [{ value: "access" as const, label: "Company admins" }] : []),
         ]}
       />
       {tab === "overview" && <OrganizationOverviewTab onNavigateTab={setTab} />}
@@ -62,6 +62,7 @@ export function OrganizationPage() {
 /* ─────────────────────────── Summary of Organization (Overview) ─────────────────────────── */
 
 function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) => void }) {
+  const [distView, setDistView] = useState<"company" | "dept">("company");
   const { data: hrData, isPending: hrPending } = useQuery({
     queryKey: ["dash-hr"],
     queryFn: () => dashboardApi.hr(),
@@ -85,6 +86,14 @@ function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) 
   const deptDist = (hrData?.department_distribution as { department: string; count: number }[]) ?? [];
   const hc = (hrData?.headcount as Record<string, unknown>) ?? {};
   const total = typeof hc.total === "number" ? hc.total : 0;
+
+  const companyItems = entityDist.length > 0
+    ? entityDist
+    : entities.map((e) => ({ company: e.name, short_name: e.short_name, count: 0 }));
+
+  const deptItems = deptDist.length > 0
+    ? deptDist
+    : orgUnits.map((u) => ({ department: u.name, count: 0 }));
 
   const tenureBrackets = (orgSummary?.tenure_brackets as Record<string, number>) ?? {};
   const vets = tenureBrackets.over_10_years ?? 0;
@@ -112,6 +121,17 @@ function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) 
           <div className="grid gap-6 lg:grid-cols-2">
             <Skeleton className="h-48 rounded-lg" />
             <Skeleton className="h-48 rounded-lg" />
+          </div>
+        </div>
+        <div className="card p-5 space-y-4">
+          <div className="flex justify-between items-center">
+            <Skeleton className="h-6 w-48" />
+            <Skeleton className="h-8 w-36 rounded-lg" />
+          </div>
+          <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+            {[0, 1, 2, 3].map((i) => (
+              <Skeleton key={i} className="h-24 rounded-xl" />
+            ))}
           </div>
         </div>
       </div>
@@ -172,117 +192,177 @@ function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) 
 
           {/* Two-Column Deep Breakdown */}
           <div className="grid gap-6 lg:grid-cols-2">
-            {/* Left Column: Registered Companies Overview */}
+            {/* Left Column: Seniority & Retention */}
+            <div>
+              <p className="eyebrow mb-2.5">Employee seniority & retention</p>
+              <div className="space-y-3 rounded-lg border border-line p-4">
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="font-medium text-fg">Veterans (10+ Years)</span>
+                    <span className="tabular-nums font-semibold text-fg">{vets} staff ({vetsPct}%)</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-amber-500" style={{ width: `${vetsPct}%` }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="font-medium text-fg">Established (5 to 10 Years)</span>
+                    <span className="tabular-nums font-semibold text-fg">{established} staff ({establishedPct}%)</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-brand-500" style={{ width: `${establishedPct}%` }} />
+                  </div>
+                </div>
+
+                <div>
+                  <div className="flex justify-between text-xs mb-1">
+                    <span className="font-medium text-fg">Growth (&lt; 5 Years)</span>
+                    <span className="tabular-nums font-semibold text-fg">{growth} staff ({growthPct}%)</span>
+                  </div>
+                  <div className="h-2 overflow-hidden rounded-full bg-muted">
+                    <div className="h-full rounded-full bg-info" style={{ width: `${growthPct}%` }} />
+                  </div>
+                </div>
+              </div>
+            </div>
+
+            {/* Right Column: Operating Hubs & Locations */}
             <div>
               <div className="flex items-center justify-between mb-2.5">
-                <p className="eyebrow">Group entities directory ({entityDist.length || entities.length})</p>
+                <p className="eyebrow">Operating locations & hubs ({locations.length})</p>
                 <button
-                  onClick={() => onNavigateTab("companies")}
+                  onClick={() => onNavigateTab("locations")}
                   className="link text-xs"
                 >
-                  Manage companies
+                  Manage locations
                 </button>
               </div>
               <div className="divide-y divide-line rounded-lg border border-line">
-                {entityDist.length > 0 ? (
-                  entityDist.map((e) => {
-                    const pct = total > 0 ? Math.round((e.count / total) * 100) : 0;
-                    return (
-                      <div
-                        key={e.company}
-                        className="flex items-center justify-between px-3.5 py-2.5 text-[13px]"
-                      >
-                        <div className="min-w-0 pr-2">
-                          <span className="font-medium text-fg block truncate">{e.company}</span>
-                          {e.short_name && <span className="text-xs text-fg-subtle">{e.short_name}</span>}
-                        </div>
-                        <span className="shrink-0 text-right">
-                          <span className="font-semibold text-fg tabular-nums">{e.count} staff</span>
-                          <span className="text-xs text-fg-subtle ml-1.5">({pct}%)</span>
-                        </span>
-                      </div>
-                    );
-                  })
-                ) : (
-                  entities.map((e) => (
+                {locations.length > 0 ? (
+                  locations.slice(0, 5).map((l) => (
                     <div
-                      key={e.id}
+                      key={l.id}
                       className="flex items-center justify-between px-3.5 py-2.5 text-[13px]"
                     >
-                      <div className="min-w-0">
-                        <span className="font-medium text-fg truncate block">{e.name}</span>
-                        {e.short_name && <span className="text-xs text-fg-subtle">{e.short_name}</span>}
+                      <div className="min-w-0 pr-2">
+                        <span className="font-medium text-fg block truncate">{l.name}</span>
+                        {(l.city || l.country_code) && (
+                          <span className="text-xs text-fg-subtle">
+                            {[l.city, l.country_code].filter(Boolean).join(", ")}
+                          </span>
+                        )}
                       </div>
-                      <span className="badge badge-neutral text-xs">{e.country_code}</span>
+                      <span className="badge badge-neutral text-xs">{l.country_code || "HUB"}</span>
                     </div>
                   ))
+                ) : (
+                  <div className="p-4 text-center text-xs text-fg-subtle">
+                    No operating locations configured yet.
+                  </div>
+                )}
+                {locations.length > 5 && (
+                  <div className="p-2 text-center text-xs text-fg-subtle">
+                    +{locations.length - 5} more locations
+                  </div>
                 )}
               </div>
             </div>
+          </div>
+        </div>
+      </div>
 
-            {/* Right Column: Seniority & Department Breakdown */}
-            <div className="space-y-5">
-              <div>
-                <p className="eyebrow mb-2.5">Employee seniority & retention</p>
-                <div className="space-y-3 rounded-lg border border-line p-4">
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-fg">Veterans (10+ Years)</span>
-                      <span className="tabular-nums font-semibold text-fg">{vets} staff ({vetsPct}%)</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-amber-500" style={{ width: `${vetsPct}%` }} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-fg">Established (5 to 10 Years)</span>
-                      <span className="tabular-nums font-semibold text-fg">{established} staff ({establishedPct}%)</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-brand-500" style={{ width: `${establishedPct}%` }} />
-                    </div>
-                  </div>
-
-                  <div>
-                    <div className="flex justify-between text-xs mb-1">
-                      <span className="font-medium text-fg">Growth (&lt; 5 Years)</span>
-                      <span className="tabular-nums font-semibold text-fg">{growth} staff ({growthPct}%)</span>
-                    </div>
-                    <div className="h-2 overflow-hidden rounded-full bg-muted">
-                      <div className="h-full rounded-full bg-info" style={{ width: `${growthPct}%` }} />
-                    </div>
-                  </div>
-                </div>
-              </div>
-
-              <div>
-                <div className="flex items-center justify-between mb-2.5">
-                  <p className="eyebrow">Functional allocation</p>
-                  <button
-                    onClick={() => onNavigateTab("departments")}
-                    className="link text-xs"
-                  >
-                    All departments ({orgUnits.length})
-                  </button>
-                </div>
-                <div className="grid grid-cols-2 gap-2 sm:grid-cols-4">
-                  {deptDist.map((d) => (
-                    <div key={d.department} className="rounded-lg border border-line p-2 text-center">
-                      <p className="text-base font-semibold text-fg tabular-nums">{d.count}</p>
-                      <p className="text-[11px] text-fg-subtle truncate">{d.department}</p>
-                    </div>
-                  ))}
-                  {deptDist.length === 0 && (
-                    <div className="col-span-full py-2 text-center text-xs text-fg-subtle">
-                      {orgUnits.length} departments configured
-                    </div>
-                  )}
-                </div>
-              </div>
+      {/* ─── Workforce Allocation Card ─────────────────────────────────── */}
+      <div className="card">
+        <div className="card-header">
+          <div className="flex items-center gap-2">
+            <div className="flex h-8 w-8 items-center justify-center rounded-lg bg-brand-500/10 text-brand-600 dark:text-brand-400">
+              <Building2 size={16} />
+            </div>
+            <div>
+              <h3 className="card-title">Workforce Allocation</h3>
+              <p className="card-desc">Active employees distributed across group entities & departments</p>
             </div>
           </div>
+          {/* Segmented Switcher */}
+          <div className="seg">
+            <button
+              onClick={() => setDistView("company")}
+              data-active={distView === "company"}
+              className="seg-item"
+            >
+              By Company ({companyItems.length})
+            </button>
+            <button
+              onClick={() => setDistView("dept")}
+              data-active={distView === "dept"}
+              className="seg-item"
+            >
+              By Department ({deptItems.length})
+            </button>
+          </div>
+        </div>
+
+        <div className="p-5">
+          {distView === "company" ? (
+            companyItems.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {companyItems.map((e) => {
+                  const pct = total > 0 ? Math.round((e.count / total) * 100) : 0;
+                  return (
+                    <Link
+                      key={e.company}
+                      to={`/employees?company=${encodeURIComponent(e.company)}`}
+                      className="group rounded-xl border border-line bg-surface-raised p-3.5 hover:border-brand-500/40 hover:bg-muted/40 transition-all"
+                    >
+                      <div className="flex items-center justify-between text-[13px] mb-2">
+                        <span className="font-semibold text-fg truncate group-hover:text-brand-600 dark:group-hover:text-brand-400">
+                          {e.company}
+                        </span>
+                        <span className="tabular-nums font-bold text-fg ml-2">{e.count}</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-brand-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                      </div>
+                      <div className="flex items-center justify-between text-[11px] text-fg-subtle mt-1.5">
+                        <span>{pct}% of workforce</span>
+                        <span className="opacity-0 group-hover:opacity-100 text-brand-600 dark:text-brand-400 font-medium">Filter →</span>
+                      </div>
+                    </Link>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-sm text-fg-subtle">
+                No company distribution data available.
+              </div>
+            )
+          ) : (
+            deptItems.length > 0 ? (
+              <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-4">
+                {deptItems.map((d) => {
+                  const pct = total > 0 ? Math.round((d.count / total) * 100) : 0;
+                  return (
+                    <div key={d.department} className="rounded-xl border border-line bg-surface-raised p-3.5">
+                      <div className="flex items-center justify-between text-[13px] mb-2">
+                        <span className="font-semibold text-fg truncate">{d.department}</span>
+                        <span className="tabular-nums font-bold text-fg ml-2">{d.count}</span>
+                      </div>
+                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
+                        <div className="h-full rounded-full bg-indigo-500 transition-all duration-500" style={{ width: `${pct}%` }} />
+                      </div>
+                      <p className="text-[11px] text-fg-subtle mt-1.5">{pct}% of active workforce</p>
+                    </div>
+                  );
+                })}
+              </div>
+            ) : (
+              <div className="py-8 text-center text-sm text-fg-subtle">
+                No department distribution data available.
+              </div>
+            )
+          )}
         </div>
       </div>
     </div>
@@ -1027,6 +1107,13 @@ function EmployeeIdSchemeSheet({ open, onClose, initial, availableEntities, canC
 
 /* ─────────────────────────── Users & access ─────────────────────────── */
 
+/**
+ * Company-wide admin logins only — HR managers, accountants, a second Super Admin —
+ * accounts that aren't any one employee's own login. An ordinary employee's login is
+ * now managed from their own profile (Employee → Access), not listed here; that's
+ * where the "linked employee" column used to point, and it's redundant once you're
+ * already looking at that employee.
+ */
 function AccessTab() {
   const { user } = useAuth();
   const qc = useQueryClient();
@@ -1038,6 +1125,7 @@ function AccessTab() {
   const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
   const roles = useQuery({ queryKey: ["roles"], queryFn: () => usersApi.listRoles() });
   const users = useQuery({ queryKey: ["users"], queryFn: () => usersApi.listUsers() });
+  const admins = (users.data ?? []).filter((u) => !u.employment_id);
   const entityName = new Map((entities.data ?? []).map((e) => [e.id, e.name]));
 
   const setStatus = useMutation({
@@ -1054,30 +1142,34 @@ function AccessTab() {
 
   return (
     <div className="space-y-4">
-      <div className="flex justify-end">
-        <button className="btn-primary" onClick={() => setAdding(true)} disabled={!canCreate} title={canCreate ? undefined : "You don't have permission to grant access"}>
-          <Plus size={15} /> Add user
+      <div className="flex items-start justify-between gap-3">
+        <p className="max-w-lg text-[13px] text-fg-subtle">
+          Company-wide admin logins — HR, accounts, another Super Admin. An employee's own
+          login is managed from their profile now (Employees → open them → Access).
+        </p>
+        <button className="btn-primary shrink-0" onClick={() => setAdding(true)} disabled={!canCreate} title={canCreate ? undefined : "You don't have permission to grant access"}>
+          <Plus size={15} /> Add admin
         </button>
       </div>
       {users.isError ? (
         <div className="card"><EmptyState icon={Users} title="Couldn't load users" description="The users API isn't responding." /></div>
       ) : users.isPending ? (
         <Skeleton className="h-64 rounded-xl" />
-      ) : !users.data?.length ? (
+      ) : !admins.length ? (
         <div className="card">
           <EmptyState
             icon={Users}
-            title="No logins yet"
-            description={canCreate ? "Grant someone access to sign in and manage a company." : "No user accounts are visible to you yet."}
-            action={canCreate ? <button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add user</button> : undefined}
+            title="No company-wide admins yet"
+            description={canCreate ? "Grant someone access that isn't tied to one employee — HR, accounts, another administrator." : "No admin accounts are visible to you yet."}
+            action={canCreate ? <button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add admin</button> : undefined}
           />
         </div>
       ) : (
         <div className="card overflow-hidden">
           <table className="tbl">
-            <thead><tr><th>Email</th><th>Role</th><th>Access</th><th className="hidden sm:table-cell">Linked employee</th><th>Sign-in</th>{canCreate && <th className="w-px"><span className="sr-only">Actions</span></th>}</tr></thead>
+            <thead><tr><th>Email</th><th>Role</th><th>Access</th><th>Sign-in</th>{canCreate && <th className="w-px"><span className="sr-only">Actions</span></th>}</tr></thead>
             <tbody>
-              {users.data.map((u) => (
+              {admins.map((u) => (
                 <tr key={u.id + u.role}>
                   <td className="font-medium text-fg">{u.email ?? "—"}</td>
                   <td>{u.role}</td>
@@ -1086,7 +1178,6 @@ function AccessTab() {
                       ? u.legal_entity_ids.map((id) => entityName.get(id) ?? id).join(", ")
                       : SCOPE_LABEL[u.scope_type]}
                   </td>
-                  <td className="hidden sm:table-cell">{u.employee_name ?? "—"}</td>
                   <td><SignInChip u={u} /></td>
                   {canCreate && (
                     <td className="whitespace-nowrap text-right">
@@ -1181,13 +1272,13 @@ function AddUserSheet({ open, onClose, entities, roles }: {
     <Sheet
       open={open}
       onClose={onClose}
-      title="Add user"
-      description="Grant someone a login and full access to the companies you choose."
+      title="Add admin"
+      description="Grant someone a company-wide login and full access to the companies you choose — not tied to their own employee record."
       footer={
         <>
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn-primary" type="submit" form="add-user" disabled={!valid || create.isPending}>
-            {create.isPending ? "Creating…" : "Add user"}
+            {create.isPending ? "Creating…" : "Add admin"}
           </button>
         </>
       }

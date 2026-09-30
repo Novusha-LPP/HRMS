@@ -4,7 +4,6 @@ import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
   Shield,
-  Layers,
   FileText,
   CalendarDays,
   Wallet,
@@ -14,6 +13,8 @@ import {
   RefreshCw,
   Clock,
   Umbrella,
+  CalendarCheck2,
+  PenLine,
 } from "lucide-react";
 import type { LeaveType, Holiday } from "../api/leave";
 import { leaveApi } from "../api/leave";
@@ -24,10 +25,9 @@ import { Segmented } from "../components/ui/Tabs";
 import { Skeleton, Notice } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { usePeopleDirectory } from "../lib/usePeopleDirectory";
-import { LeaveBucketsTab } from "../components/leave/LeaveBucketsTab";
 import { LeavePolicySetsTab } from "../components/leave/LeavePolicySetsTab";
 
-export type LeavePolicySection = "policy-sets" | "buckets" | "types" | "holidays" | "operations";
+export type LeavePolicySection = "policy-sets" | "types" | "holidays" | "operations";
 
 export interface LeavePoliciesViewProps {
   standaloneHeader?: boolean;
@@ -53,21 +53,21 @@ export function LeavePoliciesView({
   ) as LeavePolicySection | null;
 
   const section: LeavePolicySection =
-    rawSection && ["policy-sets", "buckets", "types", "holidays", "operations"].includes(rawSection)
+    rawSection && ["policy-sets", "types", "holidays", "operations"].includes(rawSection)
       ? rawSection
-      : "policy-sets";
+      : "types";
 
   const setSection = (next: LeavePolicySection) => {
     const nextParams = new URLSearchParams(params);
     if (!standaloneHeader) {
       nextParams.set("tab", "leave");
-      if (next === "policy-sets") {
+      if (next === "types") {
         nextParams.delete("section");
       } else {
         nextParams.set("section", next);
       }
     } else {
-      if (next === "policy-sets") {
+      if (next === "types") {
         nextParams.delete("tab");
       } else {
         nextParams.set("tab", next);
@@ -101,7 +101,7 @@ export function LeavePoliciesView({
       {standaloneHeader && (
         <PageHeader
           title="Leave policies"
-          description="Policy sets, entitlement rules, balance buckets, holiday calendars and balance operations."
+          description="Leave types, entitlement rules, holiday calendars and balance operations."
           actions={
             <div className="flex items-center gap-2">
               <Link to="/policy" className="btn-secondary btn-sm">
@@ -120,11 +120,10 @@ export function LeavePoliciesView({
           value={section}
           onChange={(s) => setSection(s as LeavePolicySection)}
           items={[
-            { value: "policy-sets", label: "Policy Sets & Rules", icon: Shield },
-            { value: "buckets", label: "Buckets & Mappings", icon: Layers },
             { value: "types", label: "Leave Types", icon: FileText },
-            { value: "holidays", label: "Holiday Calendar", icon: CalendarDays },
+            { value: "policy-sets", label: "Policy Sets & Rules", icon: Shield },
             { value: "operations", label: "Grants & Operations", icon: Wallet },
+            { value: "holidays", label: "Holiday Calendar", icon: CalendarDays },
           ]}
         />
 
@@ -135,7 +134,6 @@ export function LeavePoliciesView({
             onCloseCreateSet={onCloseCreateSet}
           />
         )}
-        {section === "buckets" && <LeaveBucketsTab />}
         {section === "types" && (
           <LeaveTypesCard types={types.data ?? []} loading={types.isPending} />
         )}
@@ -149,9 +147,12 @@ export function LeavePoliciesView({
               employees={employeeOptions}
               types={(types.data ?? []).filter((t) => t.encashable)}
             />
-            <div className="lg:col-span-2">
-              <AccrualCard />
-            </div>
+            <AdjustBalanceCard
+              employees={employeeOptions}
+              types={(types.data ?? []).filter((t) => !t.is_comp_off)}
+            />
+            <AccrualCard />
+            <YearEndCloseCard />
           </div>
         )}
       </div>
@@ -166,28 +167,61 @@ export function LeavePoliciesPage() {
 function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boolean }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const toggle = useMutation({
-    mutationFn: ({ id, field, value }: { id: string; field: "encashable" | "accrual_enabled"; value: boolean }) =>
-      leaveApi.updateType(id, { [field]: value }),
-    onSuccess: () => qc.invalidateQueries({ queryKey: ["leave-types"] }),
+  const invalidate = () => qc.invalidateQueries({ queryKey: ["leave-types"] });
+
+  const patch = useMutation({
+    mutationFn: ({ id, body }: { id: string; body: Partial<LeaveType> }) => leaveApi.updateType(id, body),
+    onSuccess: invalidate,
     onError: (e) => toast.error("Couldn’t update leave type", errorMessage(e)),
   });
+
+  const [name, setName] = useState("");
+  const [code, setCode] = useState("");
+  const [daysPerYear, setDaysPerYear] = useState("");
+  const [isPaid, setIsPaid] = useState(true);
+  const [requiresApproval, setRequiresApproval] = useState(true);
+
+  const create = useMutation({
+    mutationFn: () =>
+      leaveApi.createType({
+        name: name.trim(),
+        code: code.trim(),
+        days_per_year: Number(daysPerYear),
+        is_paid: isPaid,
+        requires_approval: requiresApproval,
+      }),
+    onSuccess: () => {
+      invalidate();
+      setName("");
+      setCode("");
+      setDaysPerYear("");
+      setIsPaid(true);
+      setRequiresApproval(true);
+      toast.success("Leave type added");
+    },
+    onError: (e) => toast.error("Couldn’t add leave type", errorMessage(e)),
+  });
+
+  const canCreate = name.trim() !== "" && code.trim() !== "" && daysPerYear !== "" && Number(daysPerYear) >= 0;
 
   return (
     <div className="card p-5">
       <h3 className="card-title mb-1">Leave types</h3>
-      <p className="mb-4 text-xs text-fg-subtle">Mark which types can be encashed or accrue automatically each month.</p>
+      <p className="mb-4 text-xs text-fg-subtle">
+        Mark which types can be encashed, carry forward, or accrue automatically each month.
+      </p>
       {loading ? (
         <div className="space-y-2">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-9" />)}</div>
       ) : types.filter((t) => !t.is_comp_off).length === 0 ? (
-        <p className="text-xs text-fg-subtle">No leave types configured yet.</p>
+        <p className="mb-4 text-xs text-fg-subtle">No leave types configured yet. Add one below.</p>
       ) : (
-        <table className="w-full text-[13px]">
+        <table className="mb-4 w-full text-[13px]">
           <thead>
             <tr className="text-left text-xs text-fg-subtle">
               <th className="pb-2 font-normal">Type</th>
               <th className="pb-2 font-normal text-center">Encashable</th>
               <th className="pb-2 font-normal text-center">Accrues monthly</th>
+              <th className="pb-2 font-normal text-center">Carry forward</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -204,7 +238,7 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
                     type="checkbox"
                     className="checkbox"
                     checked={t.encashable}
-                    onChange={(e) => toggle.mutate({ id: t.id, field: "encashable", value: e.target.checked })}
+                    onChange={(e) => patch.mutate({ id: t.id, body: { encashable: e.target.checked } })}
                     aria-label={`${t.name} encashable`}
                   />
                 </td>
@@ -213,15 +247,109 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
                     type="checkbox"
                     className="checkbox"
                     checked={t.accrual_enabled}
-                    onChange={(e) => toggle.mutate({ id: t.id, field: "accrual_enabled", value: e.target.checked })}
+                    onChange={(e) => patch.mutate({ id: t.id, body: { accrual_enabled: e.target.checked } })}
                     aria-label={`${t.name} accrues monthly`}
                   />
+                </td>
+                <td className="py-2">
+                  <div className="flex items-center justify-center gap-1.5">
+                    <input
+                      type="checkbox"
+                      className="checkbox"
+                      checked={t.carry_forward}
+                      onChange={(e) =>
+                        patch.mutate({
+                          id: t.id,
+                          body: {
+                            carry_forward: e.target.checked,
+                            ...(e.target.checked ? {} : { max_carry_forward_days: null }),
+                          },
+                        })
+                      }
+                      aria-label={`${t.name} carry forward`}
+                    />
+                    {t.carry_forward && (
+                      <input
+                        type="number"
+                        min={0}
+                        className="input w-16 px-2"
+                        placeholder="cap"
+                        defaultValue={t.max_carry_forward_days ?? ""}
+                        onBlur={(e) =>
+                          patch.mutate({
+                            id: t.id,
+                            body: { max_carry_forward_days: e.target.value === "" ? null : Number(e.target.value) },
+                          })
+                        }
+                        aria-label={`${t.name} max carry-forward days`}
+                        title="Max days to carry forward into next year (blank = uncapped)"
+                      />
+                    )}
+                  </div>
                 </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+      <form
+        className="flex flex-wrap items-end gap-2 border-t border-line pt-4"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (canCreate) create.mutate();
+        }}
+      >
+        <div>
+          <label className="label" htmlFor="lt-name">Name</label>
+          <input
+            id="lt-name"
+            className="input"
+            placeholder="e.g. Privilege Leave"
+            value={name}
+            onChange={(e) => setName(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="lt-code">Code</label>
+          <input
+            id="lt-code"
+            className="input w-20"
+            placeholder="PL"
+            maxLength={10}
+            value={code}
+            onChange={(e) => setCode(e.target.value)}
+          />
+        </div>
+        <div>
+          <label className="label" htmlFor="lt-days">Days / year</label>
+          <input
+            id="lt-days"
+            type="number"
+            min={0}
+            step="0.5"
+            className="input w-24"
+            placeholder="18"
+            value={daysPerYear}
+            onChange={(e) => setDaysPerYear(e.target.value)}
+          />
+        </div>
+        <label className="mb-2 flex items-center gap-1.5 text-xs text-fg-subtle">
+          <input type="checkbox" className="checkbox" checked={isPaid} onChange={(e) => setIsPaid(e.target.checked)} />
+          Paid
+        </label>
+        <label className="mb-2 flex items-center gap-1.5 text-xs text-fg-subtle">
+          <input
+            type="checkbox"
+            className="checkbox"
+            checked={requiresApproval}
+            onChange={(e) => setRequiresApproval(e.target.checked)}
+          />
+          Requires approval
+        </label>
+        <button className="btn-secondary btn-sm" type="submit" disabled={!canCreate || create.isPending}>
+          <Plus size={14} /> Add leave type
+        </button>
+      </form>
     </div>
   );
 }
@@ -518,6 +646,138 @@ function EncashmentCard({
   );
 }
 
+function AdjustBalanceCard({
+  employees,
+  types,
+}: {
+  employees: { id: string; label: string }[];
+  types: LeaveType[];
+}) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [empId, setEmpId] = useState("");
+  const [typeId, setTypeId] = useState("");
+  const [kind, setKind] = useState<"OPENING" | "ADJUSTMENT">("OPENING");
+  const [quantity, setQuantity] = useState("");
+  const [effectiveDate, setEffectiveDate] = useState("");
+  const [reason, setReason] = useState("");
+
+  const adjust = useMutation({
+    mutationFn: () =>
+      leaveApi.adjustBalance({
+        employment_id: empId,
+        leave_type_id: typeId,
+        quantity: Number(quantity),
+        effective_date: effectiveDate || undefined,
+        reason: reason.trim(),
+        kind,
+      }),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["leave-balances"] });
+      toast.success("Balance updated", `New balance: ${res.new_balance} days`);
+      setQuantity("");
+      setEffectiveDate("");
+      setReason("");
+    },
+    onError: (e) => toast.error("Couldn’t adjust balance", errorMessage(e)),
+  });
+
+  const valid = !!empId && !!typeId && Number(quantity) !== 0 && reason.trim().length > 0;
+
+  return (
+    <div className="card p-5">
+      <h3 className="card-title mb-1 flex items-center gap-2">
+        <PenLine size={15} /> Adjust balance
+      </h3>
+      <p className="mb-4 text-xs text-fg-subtle">
+        One-off credit or debit — seed an opening balance carried over from a previous system, or
+        correct a mistake. Not for routine accrual.
+      </p>
+      <form
+        className="space-y-3"
+        onSubmit={(e) => {
+          e.preventDefault();
+          if (valid) adjust.mutate();
+        }}
+      >
+        <div>
+          <label className="label" htmlFor="adj-emp">Employee</label>
+          <select id="adj-emp" className="input" value={empId} onChange={(e) => setEmpId(e.target.value)}>
+            <option value="">Select employee…</option>
+            {employees.map((e) => (
+              <option key={e.id} value={e.id}>{e.label}</option>
+            ))}
+          </select>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="adj-type">Leave type</label>
+            <select id="adj-type" className="input" value={typeId} onChange={(e) => setTypeId(e.target.value)}>
+              <option value="">Select…</option>
+              {types.map((t) => (
+                <option key={t.id} value={t.id}>{t.name}</option>
+              ))}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="adj-kind">Reason type</label>
+            <select
+              id="adj-kind"
+              className="input"
+              value={kind}
+              onChange={(e) => setKind(e.target.value as "OPENING" | "ADJUSTMENT")}
+            >
+              <option value="OPENING">Opening balance</option>
+              <option value="ADJUSTMENT">Correction</option>
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="adj-days">
+              Days <span className="font-normal text-fg-subtle">(negative to remove)</span>
+            </label>
+            <input
+              id="adj-days"
+              type="number"
+              step="0.5"
+              className="input"
+              placeholder="100"
+              value={quantity}
+              onChange={(e) => setQuantity(e.target.value)}
+            />
+          </div>
+          <div>
+            <label className="label" htmlFor="adj-date">
+              Effective date <span className="font-normal text-fg-subtle">(optional)</span>
+            </label>
+            <input
+              id="adj-date"
+              type="date"
+              className="input"
+              value={effectiveDate}
+              onChange={(e) => setEffectiveDate(e.target.value)}
+            />
+          </div>
+        </div>
+        <div>
+          <label className="label" htmlFor="adj-reason">Reason</label>
+          <input
+            id="adj-reason"
+            className="input"
+            placeholder="e.g. Carried over from previous HR system"
+            value={reason}
+            onChange={(e) => setReason(e.target.value)}
+          />
+        </div>
+        <button className="btn-primary btn-sm" type="submit" disabled={!valid || adjust.isPending}>
+          {adjust.isPending ? "Saving…" : "Apply adjustment"}
+        </button>
+      </form>
+    </div>
+  );
+}
+
 function AccrualCard() {
   const qc = useQueryClient();
   const toast = useToast();
@@ -560,6 +820,54 @@ function AccrualCard() {
         </div>
         <button className="btn-primary btn-sm" onClick={() => run.mutate()} disabled={run.isPending}>
           {run.isPending ? "Running…" : "Run accrual"}
+        </button>
+      </div>
+    </div>
+  );
+}
+
+function YearEndCloseCard() {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const currentFy = new Date().getFullYear();
+  const [fyYear, setFyYear] = useState(currentFy);
+
+  const run = useMutation({
+    mutationFn: () => leaveApi.yearEndClose(fyYear),
+    onSuccess: (res) => {
+      qc.invalidateQueries({ queryKey: ["leave-balances"] });
+      toast.success(
+        `FY${res.fy_year} closed`,
+        `${res.buckets_closed} balance(s) closed, ${res.days_lapsed} day(s) lapsed. The rest carried forward.`,
+      );
+    },
+    onError: (e) => toast.error("Year-end close failed", errorMessage(e)),
+  });
+
+  return (
+    <div className="card p-5">
+      <h3 className="card-title mb-1 flex items-center gap-2">
+        <CalendarCheck2 size={15} /> Year-end close
+      </h3>
+      <p className="mb-4 text-xs text-fg-subtle">
+        Caps each employee's closing balance at their leave type's carry-forward limit — the
+        excess lapses, the rest becomes next year's opening balance. Uses each legal entity's own
+        financial year (April by default). Safe to re-run — a balance is only ever closed once
+        per year.
+      </p>
+      <div className="flex flex-wrap items-end gap-2">
+        <div>
+          <label className="label" htmlFor="yec-fy">Financial year</label>
+          <input
+            id="yec-fy"
+            type="number"
+            className="input w-28"
+            value={fyYear}
+            onChange={(e) => setFyYear(Number(e.target.value))}
+          />
+        </div>
+        <button className="btn-primary btn-sm" onClick={() => run.mutate()} disabled={run.isPending}>
+          {run.isPending ? "Closing…" : "Close year"}
         </button>
       </div>
     </div>

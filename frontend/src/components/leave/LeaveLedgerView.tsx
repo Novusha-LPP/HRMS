@@ -130,14 +130,14 @@ export function LeaveLedgerView({
           )}
 
           <div>
-            <label htmlFor="ledger-bucket-select" className="label text-xs">Balance Bucket</label>
+            <label htmlFor="ledger-bucket-select" className="label text-xs">Leave Type</label>
             <select
               id="ledger-bucket-select"
               className="input text-xs"
               value={selectedBucketId}
               onChange={(e) => setSelectedBucketId(e.target.value)}
             >
-              <option value="">All Buckets</option>
+              <option value="">All Leave Types</option>
               {(buckets.data ?? []).map((b) => (
                 <option key={b.id} value={b.id}>
                   {b.name} ({b.code})
@@ -359,7 +359,7 @@ export function LeaveLedgerView({
                 <thead className="border-b border-line bg-muted/20 text-fg-subtle">
                   <tr>
                     <th className="px-4 py-3 font-medium">Effective Date</th>
-                    <th className="px-4 py-3 font-medium">Bucket</th>
+                    <th className="px-4 py-3 font-medium">Leave Type</th>
                     <th className="px-4 py-3 font-medium">Type</th>
                     <th className="px-4 py-3 text-right font-medium">Quantity</th>
                     <th className="px-4 py-3 text-center font-medium">Balance Transition</th>
