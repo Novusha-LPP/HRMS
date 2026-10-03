@@ -14,7 +14,7 @@ from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlmodel import select
 
@@ -71,7 +71,7 @@ class ReportDefResponse(BaseModel):
 class RunRequest(BaseModel):
     # Override filters at run time (e.g. set date range for this run)
     filters: list[FilterSpec] = []
-    limit: int = 1000
+    limit: int = Field(default=1000, ge=1, le=10000)
 
 
 class RunResponse(BaseModel):
@@ -81,6 +81,7 @@ class RunResponse(BaseModel):
     columns: list[dict]  # visible columns in order
     rows: list[dict]
     total_rows: int
+    truncated: bool = False
     generated_at: datetime
 
 
@@ -137,6 +138,11 @@ async def create_report(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> ReportDefResponse:
+    if body.module == "ATTENDANCE":
+        _attendance_filters([f.model_dump() for f in body.filters])
+        allowed = {c["field"] for c in AVAILABLE_COLUMNS["ATTENDANCE"]}
+        if not body.columns or any(c.field not in allowed for c in body.columns):
+            raise HTTPException(422, "Choose valid attendance columns")
     uid = uuid4()
     rd = ReportDefinition(
         tenant_id=tenant_id,
@@ -195,21 +201,15 @@ async def run_report(
     saved_columns = json.loads(rd.columns)
     saved_filters = json.loads(rd.filters)
 
-    # Merge run-time filter overrides
-    run_filters = saved_filters.copy()
-    for override in body.filters:
-        # Replace matching field+op or append
-        replaced = False
-        for i, sf in enumerate(run_filters):
-            if sf.get("field") == override.field and sf.get("op") == override.op:
-                run_filters[i] = override.model_dump()
-                replaced = True
-                break
-        if not replaced:
-            run_filters.append(override.model_dump())
+    # Replace each overridden field/operator group once, preserving repeated
+    # runtime constraints instead of overwriting an earlier override.
+    override_keys = {(f.field, f.op) for f in body.filters}
+    run_filters = [
+        f for f in saved_filters if (f.get("field"), f.get("op")) not in override_keys
+    ] + [f.model_dump() for f in body.filters]
 
     rows = await _execute_report(
-        session, tenant_id, rd.module, saved_columns, run_filters, body.limit, scope
+        session, tenant_id, rd.module, saved_columns, run_filters, body.limit + 1, scope
     )
     visible = [c for c in saved_columns if c.get("visible", True)]
 
@@ -218,8 +218,9 @@ async def run_report(
         name=rd.name,
         module=rd.module,
         columns=visible,
-        rows=rows,
-        total_rows=len(rows),
+        rows=rows[: body.limit],
+        total_rows=min(len(rows), body.limit),
+        truncated=len(rows) > body.limit,
         generated_at=datetime.now(UTC),
     )
 
@@ -251,32 +252,72 @@ async def _execute_report(
     return []
 
 
+def _attendance_filters(filters: list[dict]) -> tuple[list[str], dict]:
+    """Reject invalid constraints instead of silently returning a broader report."""
+    clauses: list[str] = []
+    params: dict = {}
+    metadata = {f["field"]: f for f in AVAILABLE_FILTERS["ATTENDANCE"]}
+    dates = []
+    for i, spec in enumerate(filters):
+        field, op, value = spec.get("field"), spec.get("op"), spec.get("value")
+        meta = metadata.get(field)
+        if not meta or op not in meta["ops"]:
+            raise HTTPException(422, "Unsupported attendance filter")
+        # Empty saved defaults are placeholders, not constraints.
+        if value is None or value == "":
+            continue
+        key = f"f{i}"
+        if field == "work_date":
+            values = value if op == "between" else [value]
+            try:
+                if not isinstance(values, list) or len(values) != (2 if op == "between" else 1):
+                    raise ValueError
+                parsed = [date.fromisoformat(str(v)) for v in values]
+                if op == "between" and parsed[0] > parsed[1]:
+                    raise ValueError
+            except (ValueError, TypeError):
+                raise HTTPException(422, "Supply valid ISO dates in chronological order") from None
+            if op == "between":
+                clauses.append(f"ad.work_date BETWEEN :{key}_0 AND :{key}_1")
+                params.update({f"{key}_{j}": d for j, d in enumerate(parsed)})
+                dates.extend([("gte", parsed[0]), ("lte", parsed[1])])
+            else:
+                operator = {"eq": "=", "gte": ">=", "lte": "<="}[op]
+                clauses.append(f"ad.work_date {operator} :{key}")
+                params[key] = parsed[0]
+                dates.append((op, parsed[0]))
+        elif field == "employment_id":
+            if not isinstance(value, str) or not value.startswith("emp_"):
+                raise HTTPException(422, "Supply a valid employee identifier")
+            params[key] = str(to_uuid(value))
+            clauses.append(f"e.id = CAST(:{key} AS uuid)")
+        else:
+            values = value if isinstance(value, list) else [value]
+            if not values or (op == "eq" and len(values) != 1):
+                raise HTTPException(422, "Supply a nonempty filter value")
+            if any(not isinstance(v, str) or not v.strip() for v in values):
+                raise HTTPException(422, "Supply nonempty text filter values")
+            if field == "status" and any(v not in meta["options"] for v in values):
+                raise HTTPException(422, "Unknown attendance status")
+            col = {"status": "ad.status", "department": "ou.name", "location": "l.name"}[field]
+            placeholders = ", ".join(f":{key}_{j}" for j in range(len(values)))
+            clauses.append(f"{col} IN ({placeholders})")
+            params.update({f"{key}_{j}": v for j, v in enumerate(values)})
+    lower = [d for op, d in dates if op in ("eq", "gte")]
+    upper = [d for op, d in dates if op in ("eq", "lte")]
+    if lower and upper and max(lower) > min(upper):
+        raise HTTPException(422, "Attendance date range is reversed or contradictory")
+    return clauses, params
+
+
 async def _run_attendance(session, tenant_id, columns, filters, limit, scope: Scope) -> list[dict]:
     entity_clause, entity_params = scope.employment_filter_sql("e")
     params: dict = {"tid": str(tenant_id), "limit": limit, **entity_params}
     where = ["ad.tenant_id = CAST(:tid AS uuid)"]
 
-    for i, f in enumerate(filters):
-        key = f"f{i}"
-        if f["field"] == "work_date" and f.get("value"):
-            # asyncpg's date codec needs a native date, not the ISO string the
-            # filter arrives as from the request body.
-            try:
-                value = date.fromisoformat(str(f["value"]))
-            except ValueError:
-                continue
-            if f["op"] == "gte":
-                where.append(f"ad.work_date >= CAST(:{key} AS date)")
-                params[key] = value
-            elif f["op"] == "lte":
-                where.append(f"ad.work_date <= CAST(:{key} AS date)")
-                params[key] = value
-        elif f["field"] == "status" and f.get("value"):
-            vals = f["value"] if isinstance(f["value"], list) else [f["value"]]
-            placeholders = ", ".join(f":{key}_{j}" for j in range(len(vals)))
-            where.append(f"ad.status IN ({placeholders})")
-            for j, v in enumerate(vals):
-                params[f"{key}_{j}"] = v
+    clauses, filter_params = _attendance_filters(filters)
+    where.extend(clauses)
+    params.update(filter_params)
 
     sql = f"""
         SELECT
@@ -294,14 +335,19 @@ async def _run_attendance(session, tenant_id, columns, filters, limit, scope: Sc
         FROM attendance_days ad
         JOIN employments e   ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
         JOIN persons p       ON p.tenant_id = e.tenant_id  AND p.id = e.person_id
-        LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
-            AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from
-            <= CURRENT_DATE
+        LEFT JOIN LATERAL (
+            SELECT assignment.* FROM assignments assignment
+            WHERE assignment.tenant_id = e.tenant_id AND assignment.employment_id = e.id
+              AND assignment.effective_from <= ad.work_date
+              AND (assignment.effective_to IS NULL OR assignment.effective_to > ad.work_date)
+            ORDER BY assignment.effective_from DESC, assignment.recorded_at DESC, assignment.id
+            LIMIT 1
+        ) a ON TRUE
         LEFT JOIN org_units ou  ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
         LEFT JOIN locations l   ON l.tenant_id = a.tenant_id  AND l.id = a.location_id
         WHERE {" AND ".join(where)}
           {entity_clause}
-        ORDER BY ad.work_date DESC, e.employee_number
+        ORDER BY ad.work_date DESC, e.employee_number, e.id, ad.id
         LIMIT :limit
     """
     result = await session.execute(text(sql), params)

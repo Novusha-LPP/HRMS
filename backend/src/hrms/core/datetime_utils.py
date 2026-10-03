@@ -20,6 +20,16 @@ def now_utc() -> datetime:
     return datetime.now(UTC)
 
 
+def business_today(tz_name: str | None = None) -> date:
+    """
+    Today's date where the business is (default: settings.default_timezone), never the
+    server's clock: a container on UTC would otherwise be a day behind India until 05:30.
+    """
+    from hrms.core.config import settings
+
+    return now_utc().astimezone(safe_tz(tz_name or settings.default_timezone)).date()
+
+
 def safe_tz(tz_name: str) -> ZoneInfo:
     """Return ZoneInfo for tz_name, falling back to UTC on unknown zone."""
     try:

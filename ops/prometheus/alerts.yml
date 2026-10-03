@@ -90,3 +90,20 @@ groups:
         annotations:
           summary: "{{ $value }} scheduled personnel action(s) could not be applied and were parked as FAILED"
           runbook_url: "docs/OBSERVABILITY.md#hrmsscheduledactionsfailing"
+
+      # hrms.jobs records every run in job_runs; /metrics exports each job's last success.
+      - alert: HrmsJobStale
+        expr: time() - hrms_job_last_success_timestamp_seconds > 26 * 3600
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "Scheduled job {{ $labels.job_name }} has not succeeded for over a day — leave balances or personnel changes are falling behind"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsjobstale"
+
+      - alert: HrmsJobNeverRan
+        expr: absent(hrms_job_last_success_timestamp_seconds)
+        for: 26h
+        labels: {severity: warning}
+        annotations:
+          summary: "No scheduled job has ever succeeded — is the jobs container running?"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsjobstale"

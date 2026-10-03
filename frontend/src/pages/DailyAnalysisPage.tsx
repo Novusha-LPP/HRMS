@@ -10,7 +10,8 @@ import {
 import { timeApi, type DailyEmployeeRecord, type DailyAnalysisResponse, type TodayStatus } from "../api/time";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatCard } from "../components/ui/StatCard";
-import { AreaChart, BarList, Donut, Legend, CHART, type AreaPoint } from "../components/ui/Charts";
+import { AreaChart, BarList, Donut, Legend, type AreaPoint } from "../components/ui/Charts";
+import { CHART } from "../components/ui/chartPalette";
 import { Avatar } from "../components/ui/Avatar";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { Tabs } from "../components/ui/Tabs";

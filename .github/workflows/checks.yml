@@ -34,6 +34,11 @@ jobs:
       - run: echo "$PWD/.venv/bin" >> "$GITHUB_PATH"
       - run: ruff check src tests
       - run: mypy src
+      # Known vulnerabilities in the locked production dependencies fail the build.
+      - name: Audit dependencies
+        run: |
+          uv export --frozen --no-dev --no-emit-project --no-hashes -o /tmp/requirements.txt
+          uvx pip-audit -r /tmp/requirements.txt --progress-spinner off
       - run: alembic upgrade head
       # Fails if a model field, table or constraint has no migration (and only then — see
       # src/hrms/alembic_hooks.py for what is deliberately not compared).
@@ -57,6 +62,17 @@ jobs:
           cache: npm
           cache-dependency-path: frontend/package-lock.json
       - run: npm ci
+      - run: npm audit --omit=dev --audit-level=high
       - run: npm run lint
       - run: npm test
       - run: npm run build
+
+  # The deployed stack (deploy/compose.yml) from freshly built images: health, hidden docs,
+  # metrics token, CORS, the app role's password, the jobs, the web config and a backup that
+  # restores. What testing and production run is exactly what this proves.
+  deploy-smoke:
+    needs: [backend, frontend]
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: deploy/smoke-test.sh

@@ -1,5 +1,5 @@
 /**
- * Error tracking (Sentry) for the web app. Off unless VITE_SENTRY_DSN is set at build time;
+ * Error tracking (Sentry) for the web app. Off unless a DSN is configured (runtimeConfig);
  * the SDK is only downloaded when it is, so builds without it carry none of its weight.
  *
  * What is reported: uncaught errors, unhandled promise rejections and React render crashes
@@ -10,6 +10,7 @@
  * query strings are dropped from URLs in events and breadcrumbs.
  */
 import { ApiError } from "../api/client";
+import { runtimeConfig } from "./runtimeConfig";
 
 type Sentry = typeof import("@sentry/react");
 
@@ -19,13 +20,13 @@ let pendingUser: { id: string; tenantId: string } | null = null;
 const stripQuery = (url: string) => url.split("?")[0];
 
 export async function initErrorTracking(): Promise<void> {
-  const dsn = import.meta.env.VITE_SENTRY_DSN as string | undefined;
+  const dsn = runtimeConfig.sentryDsn;
   if (!dsn) return;
   const lib = await import("@sentry/react");
   lib.init({
     dsn,
     release: `hrms@${__APP_VERSION__}`,
-    environment: (import.meta.env.VITE_SENTRY_ENVIRONMENT as string | undefined) ?? import.meta.env.MODE,
+    environment: runtimeConfig.sentryEnvironment,
     sendDefaultPii: false,
     beforeSend(event, hint) {
       if (hint.originalException instanceof ApiError) return null;

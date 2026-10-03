@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate } from "react-router-dom";
-import { ArrowRight, Loader2, ShieldAlert } from "lucide-react";
+import { ArrowRight, Loader2, ShieldAlert } from "../components/icons/ThemeIcons";
+import { AppearanceControls } from "../components/layout/AppearanceControls";
 import { usePlatformAuth } from "../context/PlatformAuthContext";
 
 export function PlatformLoginPage() {
@@ -77,6 +78,7 @@ export function PlatformLoginPage() {
             Forgot password?
           </Link>
         </form>
+        <AppearanceControls className="mt-5 border-t border-line pt-3" />
       </div>
     </div>
   );

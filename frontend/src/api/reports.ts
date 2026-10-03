@@ -43,6 +43,7 @@ export interface RunResult {
   columns: ColumnSpec[];
   rows: Record<string, unknown>[];
   total_rows: number;
+  truncated?: boolean;
   generated_at: string;
 }
 

@@ -17,7 +17,8 @@ from typing import Any
 from uuid import UUID
 
 import bcrypt
-from jose import JWTError, jwt
+import jwt
+from jwt import PyJWTError
 
 from hrms.core.config import settings
 
@@ -125,7 +126,7 @@ def create_access_token(
 def decode_access_token(token: str) -> dict[str, Any]:
     try:
         claims = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-    except JWTError as exc:
+    except PyJWTError as exc:
         raise TokenError(str(exc)) from exc
     if claims.get("typ") != TOKEN_TYPE:
         raise TokenError("Wrong token type")
@@ -147,7 +148,7 @@ def create_platform_token(*, admin_id: UUID, expires_minutes: int | None = None)
 def decode_platform_token(token: str) -> dict[str, Any]:
     try:
         claims = jwt.decode(token, settings.secret_key, algorithms=[settings.algorithm])
-    except JWTError as exc:
+    except PyJWTError as exc:
         raise TokenError(str(exc)) from exc
     if claims.get("typ") != PLATFORM_TOKEN_TYPE:
         raise TokenError("Wrong token type")

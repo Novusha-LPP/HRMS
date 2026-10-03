@@ -12,7 +12,6 @@ tenant's rows — Postgres itself refuses.
 import json
 import logging
 from collections.abc import AsyncGenerator
-from datetime import date
 from typing import Annotated
 
 from fastapi import Depends, HTTPException, Request, status
@@ -21,6 +20,7 @@ from sqlalchemy.sql import text
 
 from hrms.core.authn import CurrentUser
 from hrms.core.config import settings
+from hrms.core.datetime_utils import business_today
 from hrms.core.errors import CodedHTTPException
 from hrms.core.tenancy import TenantDep
 
@@ -77,7 +77,7 @@ async def get_session(
         #   flag to keep in sync.
         # - The caller's live role grants, for get_current_scope (session.info, below).
         # - Whether any scheduled personnel action is due, so the common "nothing due" case
-        #   costs no extra query. date.today() matches apply_due_actions exactly.
+        #   costs no extra query. business_today() matches apply_due_actions exactly.
         auth = (
             (
                 await session.execute(
@@ -109,7 +109,7 @@ async def get_session(
                     {
                         "tid": str(tenant_id),
                         "uid": str(principal.user_account_id),
-                        "today": date.today(),
+                        "today": business_today(),
                     },
                 )
             )

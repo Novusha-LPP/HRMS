@@ -1,0 +1,5186 @@
+[
+  {
+    "hours": 4,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 280,
+      "break_minutes": 0,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 4,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 4,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 340,
+      "break_minutes": 60,
+      "effective_minutes": 280,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 400,
+      "break_minutes": 0,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 360,
+      "break_minutes": 0,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 6,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 6,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 460,
+      "break_minutes": 60,
+      "effective_minutes": 400,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 420,
+      "break_minutes": 60,
+      "effective_minutes": 360,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 8,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 8,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 580,
+      "break_minutes": 0,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 540,
+      "break_minutes": 0,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 9,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 9,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 60,
+      "effective_minutes": 580,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 640,
+      "break_minutes": 0,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 10,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 10,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 700,
+      "break_minutes": 60,
+      "effective_minutes": 640,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 660,
+      "break_minutes": 60,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "none",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "none",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "configured_only",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 4,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 60,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "configured_only",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 760,
+      "break_minutes": 0,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 720,
+      "break_minutes": 0,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "auto",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "auto",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "explicit_60",
+    "grace_minutes": 0,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 16,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": false,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  },
+  {
+    "hours": 12,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": false,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": false
+  },
+  {
+    "hours": 12,
+    "break_mode": "explicit_60",
+    "grace_minutes": 15,
+    "overtime_enabled": true,
+    "approval_required": true,
+    "before": {
+      "gross_minutes": 820,
+      "break_minutes": 60,
+      "effective_minutes": 760,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "LATE"
+    },
+    "after": {
+      "gross_minutes": 780,
+      "break_minutes": 60,
+      "effective_minutes": 720,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches_storage": true,
+    "pending_unchanged": true
+  }
+]

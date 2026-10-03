@@ -173,4 +173,47 @@ async def metrics(request: Request) -> Response:
 
         registry = CollectorRegistry()
         multiprocess.MultiProcessCollector(registry)
-    return Response(generate_latest(registry), media_type=CONTENT_TYPE_LATEST)
+    jobs = CollectorRegistry()
+    jobs.register(_JobFreshness(await _last_job_successes()))
+    return Response(
+        generate_latest(registry) + generate_latest(jobs), media_type=CONTENT_TYPE_LATEST
+    )
+
+
+async def _last_job_successes() -> list[tuple[str, float]]:
+    """Each scheduled job's last success (hrms.jobs). A scrape must not fail with the database."""
+    from sqlalchemy import text
+
+    from hrms.core.database import AsyncSessionLocal
+
+    try:
+        async with AsyncSessionLocal() as session:
+            rows = await session.execute(
+                text("""
+                    SELECT job, EXTRACT(EPOCH FROM max(finished_at)) FROM job_runs
+                    WHERE status = 'SUCCEEDED' GROUP BY job
+                """)
+            )
+            return [(str(job), float(ts)) for job, ts in rows]
+    except Exception:
+        return []
+
+
+class _JobFreshness(Collector):
+    """
+    hrms_job_last_success_timestamp_seconds{job_name}: alerted on when it falls a day behind.
+    (Not `job`: Prometheus owns that label for the scrape target.)
+    """
+
+    def __init__(self, rows: list[tuple[str, float]]):
+        self.rows = rows
+
+    def collect(self):
+        family = GaugeMetricFamily(
+            "hrms_job_last_success_timestamp_seconds",
+            "Unix time of the last successful run of each scheduled job",
+            labels=["job_name"],
+        )
+        for job, ts in self.rows:
+            family.add_metric([job], ts)
+        yield family

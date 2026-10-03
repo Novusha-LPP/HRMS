@@ -174,3 +174,20 @@ async def test_list_query_count_does_not_grow_with_rows(api):
     small = await statements("/v1/leave/applications?limit=2")
     large = await statements("/v1/leave/applications?limit=200")
     assert 0 < small == large, (small, large)
+
+
+async def test_summary_can_focus_on_one_company(api):
+    client, engine = api
+    world = await _world(client, engine)
+    only_b = await ok(
+        client, "GET", f"/v1/leave/applications/summary?legal_entity_id={world['company_b']}"
+    )
+    assert only_b["by_status"] == {"DRAFT": 1, "PENDING_L1": 2}
+    # Company A's HR asking about company B: narrowed to nothing, never widened.
+    sneaky = await ok(
+        client,
+        "GET",
+        f"/v1/leave/applications/summary?legal_entity_id={world['company_b']}",
+        headers=world["hr_a"],
+    )
+    assert sneaky["by_status"] == {}

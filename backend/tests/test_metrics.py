@@ -50,6 +50,7 @@ def test_production_requires_a_scrape_token():
         secret_key="x" * 40,
         database_url="postgresql+asyncpg://owner:strong@db/hrms",
         app_database_url="postgresql+asyncpg://hrms_app:strong@db/hrms",
+        cors_origins="https://hrms.example.com",
     )
     with pytest.raises(ValidationError, match="HRMS_METRICS_TOKEN"):
         Settings(**production)

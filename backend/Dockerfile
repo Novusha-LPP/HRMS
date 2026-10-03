@@ -32,6 +32,13 @@ ENV HRMS_GIT_SHA=$GIT_SHA \
     HRMS_BUILD_TIME=$BUILD_TIME
 
 # Don't run as root. KYC uploads go to /app/storage (a volume in docker-compose).
+# UTC on purpose: business dates come from settings.default_timezone (business_today), never
+# the server clock. Several workers so one heavy request can't stall the rest; Prometheus then
+# aggregates their counters through PROMETHEUS_MULTIPROC_DIR (core/metrics.py).
+ENV TZ=UTC \
+    WEB_CONCURRENCY=2 \
+    PROMETHEUS_MULTIPROC_DIR=/tmp/prometheus
+
 RUN useradd --system --create-home --uid 10001 hrms \
     && mkdir -p /app/storage \
     && chown -R hrms:hrms /app/storage
@@ -43,4 +50,6 @@ HEALTHCHECK --interval=30s --timeout=5s --start-period=20s --retries=3 \
 
 # --proxy-headers so request.client is the real caller behind a reverse proxy (login throttling
 # counts per client address); only proxies in --forwarded-allow-ips (default: localhost) are trusted.
-CMD ["uvicorn", "hrms.main:app", "--host", "0.0.0.0", "--port", "8015", "--proxy-headers"]
+# uvicorn takes its worker count from WEB_CONCURRENCY. The metrics directory is per container
+# run, so it starts empty.
+CMD ["sh", "-c", "rm -rf \"$PROMETHEUS_MULTIPROC_DIR\" && mkdir -p \"$PROMETHEUS_MULTIPROC_DIR\" && exec uvicorn hrms.main:app --host 0.0.0.0 --port 8015 --proxy-headers"]

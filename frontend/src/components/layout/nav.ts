@@ -1,8 +1,9 @@
 import {
-  LayoutGrid, Users, Clock, Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck, BookOpen,
-} from "lucide-react";
+  LayoutGrid, NavigationUsers as Users, Clock, NavigationLeave as Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck, BookOpen,
+} from "../icons/ThemeIcons";
 import type { LucideIcon } from "lucide-react";
 import type { UserRole } from "../../context/AuthContext";
+import { API_DOCS_URL } from "../../lib/runtimeConfig";
 
 export interface NavItem {
   to: string;
@@ -54,7 +55,7 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Developers",
     items: [
-      { to: "https://hrmsapi.alvision.in/docs", label: "API Docs", icon: BookOpen, external: true },
+      { to: API_DOCS_URL, label: "API Docs", icon: BookOpen, external: true },
     ],
   },
 ];

@@ -1,4 +1,6 @@
-from pydantic import model_validator
+from typing import Literal
+
+from pydantic import field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -34,7 +36,14 @@ class Settings(BaseSettings):
     app_name: str = "HRMS Platform"
     # (The version is not a setting: see core/version.py.)
     debug: bool = False
-    environment: str = "development"
+    # Where this instance runs (docs/ENVIRONMENTS.md):
+    # - local:      a developer's machine; demo seeds, relaxed defaults, API docs on.
+    # - testing:    the shared test deployment (testinghrms.alvision.in). It holds REAL
+    #               employee data, so it gets every production safeguard.
+    # - production: the live deployment.
+    environment: Literal["local", "testing", "production"] = "local"
+    # Interactive API docs (/docs, /redoc, /openapi.json). Default: on for local only.
+    api_docs_enabled: bool | None = None
     # Adds Server-Timing / X-DB-Queries headers with each request's statement count and DB time
     # (core/perf.py). For development, staging and benchmarks; leave off in production.
     query_metrics: bool = False
@@ -57,8 +66,8 @@ class Settings(BaseSettings):
     # Bearer token the scraper must send. Required in production while metrics are enabled.
     metrics_token: str | None = None
 
-    # CORS — comma-separated origins
-    cors_origins: str = "http://localhost:3000,http://localhost:5173,https://testinghrms.alvision.in,http://testinghrms.alvision.in"
+    # CORS — comma-separated origins. Deployments set their own (https only).
+    cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
     # Storage
     storage_dir: str = "storage"
@@ -91,6 +100,24 @@ class Settings(BaseSettings):
     default_grace_early_minutes: int = 15
     default_financial_year_start_month: int = 4
 
+    # When `python -m hrms.jobs schedule` runs the daily jobs, in default_timezone.
+    jobs_daily_at: str = "00:30"
+
+    @field_validator("environment", mode="before")
+    @classmethod
+    def _legacy_environment(cls, value):
+        # "development" was the old name for local.
+        return "local" if value == "development" else value
+
+    @property
+    def is_deployed(self) -> bool:
+        """testing or production: shared, holds real data, every safeguard on."""
+        return self.environment != "local"
+
+    @property
+    def docs_enabled(self) -> bool:
+        return self.api_docs_enabled if self.api_docs_enabled is not None else not self.is_deployed
+
     @model_validator(mode="after")
     def production_configuration(self):
         valid_levels = {"DEBUG", "INFO", "WARNING", "ERROR", "CRITICAL"}
@@ -98,13 +125,14 @@ class Settings(BaseSettings):
             raise ValueError(f"log_level must be one of {valid_levels}, got '{self.log_level}'")
         self.log_level = self.log_level.upper()
 
-        if self.environment == "production":
+        if self.is_deployed:
+            where = self.environment.capitalize()
             if self.secret_key == "change-me-before-production" or len(self.secret_key) < 32:
                 raise ValueError(
-                    "Production requires a random signing secret of at least 32 characters"
+                    f"{where} requires a random signing secret of at least 32 characters"
                 )
             if not self.app_database_url:
-                raise ValueError("Production requires HRMS_APP_DATABASE_URL")
+                raise ValueError(f"{where} requires HRMS_APP_DATABASE_URL")
             if make_url(self.app_database_url).password == KNOWN_DEV_APP_ROLE_PASSWORD:
                 raise ValueError(
                     "HRMS_APP_DATABASE_URL still uses the published development password for "
@@ -113,15 +141,19 @@ class Settings(BaseSettings):
             if self.database_url and make_url(self.database_url).password == "hrms":
                 raise ValueError(
                     "HRMS_DATABASE_URL still uses the published development password — "
-                    "set a production HRMS_DATABASE_URL with a secure password"
+                    "set HRMS_DATABASE_URL with a secure password"
                 )
             if self.debug:
-                raise ValueError("Debug mode must be disabled in production")
+                # Debug responses carry tracebacks: never on a server people can reach.
+                raise ValueError(f"Debug mode must be disabled in {self.environment}")
             if self.metrics_enabled and not self.metrics_token:
                 raise ValueError(
-                    "Production serves /metrics only behind a scrape token: set "
+                    f"{where} serves /metrics only behind a scrape token: set "
                     "HRMS_METRICS_TOKEN (or HRMS_METRICS_ENABLED=false)"
                 )
+            insecure = [o for o in self.cors_origins_list if not o.startswith("https://")]
+            if insecure:
+                raise ValueError(f"{where} allows only https:// CORS origins, not {insecure}")
             # Default to JSON format in production unless explicitly specified otherwise
             if self.log_format == "console":
                 self.log_format = "json"
@@ -129,7 +161,7 @@ class Settings(BaseSettings):
 
     @property
     def cors_origins_list(self) -> list[str]:
-        return [o.strip() for o in self.cors_origins.split(",")]
+        return [o.strip() for o in self.cors_origins.split(",") if o.strip()]
 
     @property
     def log_exclude_paths_list(self) -> list[str]:

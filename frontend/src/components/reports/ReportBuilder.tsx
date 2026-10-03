@@ -22,7 +22,7 @@ const OP_LABEL: Record<string, string> = {
   in: "is any of", contains: "contains", between: "between",
 };
 
-function FilterRow({ filter, meta, onChange, onRemove }: {
+export function FilterRow({ filter, meta, onChange, onRemove }: {
   filter: FilterSpec;
   meta: FilterMeta[];
   onChange: (f: FilterSpec) => void;
@@ -31,14 +31,25 @@ function FilterRow({ filter, meta, onChange, onRemove }: {
   const fieldMeta = meta.find((m) => m.field === filter.field);
   return (
     <div className="flex flex-wrap items-center gap-2 sm:flex-nowrap">
-      <select className="input sm:w-44" value={filter.field} onChange={(e) => onChange({ ...filter, field: e.target.value, value: "" })} aria-label="Field">
+      <select className="input sm:w-44" value={filter.field} onChange={(e) => onChange({ field: e.target.value, op: meta.find((m) => m.field === e.target.value)?.ops[0] ?? "eq", value: "" })} aria-label="Field">
         <option value="">Choose field…</option>
         {meta.map((m) => <option key={m.field} value={m.field}>{m.label}</option>)}
       </select>
-      <select className="input sm:w-36" value={filter.op} onChange={(e) => onChange({ ...filter, op: e.target.value })} aria-label="Operator">
+      <select className="input sm:w-36" value={filter.op} onChange={(e) => onChange({ ...filter, op: e.target.value, value: "" })} aria-label="Operator">
         {(fieldMeta?.ops ?? ["eq"]).map((op) => <option key={op} value={op}>{OP_LABEL[op] ?? op}</option>)}
       </select>
-      {fieldMeta?.type === "enum" && fieldMeta.options ? (
+      {fieldMeta?.type === "date" && filter.op === "between" ? (
+        <div className="flex flex-1 gap-2">
+          {[0, 1].map((index) => <input key={index} className="input min-w-0" type="date"
+            aria-label={index === 0 ? "Start date" : "End date"}
+            value={Array.isArray(filter.value) ? String(filter.value[index] ?? "") : ""}
+            onChange={(e) => {
+              const values = Array.isArray(filter.value) ? [...filter.value] : ["", ""];
+              values[index] = e.target.value;
+              onChange({ ...filter, value: values });
+            }} />)}
+        </div>
+      ) : fieldMeta?.type === "enum" && fieldMeta.options ? (
         <select className="input flex-1" value={String(filter.value ?? "")} onChange={(e) => onChange({ ...filter, value: e.target.value })} aria-label="Value">
           <option value="">Choose value…</option>
           {fieldMeta.options.map((o) => <option key={o} value={o}>{o}</option>)}
@@ -114,7 +125,7 @@ export function ReportBuilder({ onSave }: { onSave?: () => void }) {
         filters: filters.filter((f) => f.field),
         owner_type: "HR",
       });
-      return reportsApi.run(saved.id, filters.filter((f) => f.field));
+      return reportsApi.run(saved.id);
     },
     onSuccess: (data) => {
       setResult(data);
@@ -134,6 +145,7 @@ export function ReportBuilder({ onSave }: { onSave?: () => void }) {
               return (
                 <button
                   key={m.value}
+                  disabled={runMutation.isPending}
                   onClick={() => changeModule(m.value)}
                   aria-pressed={active}
                   className={`flex items-start gap-3 rounded-xl border p-3 text-left transition-colors ${
@@ -208,7 +220,7 @@ export function ReportBuilder({ onSave }: { onSave?: () => void }) {
               onChange={(e) => setName(e.target.value)}
               aria-label="Report name"
             />
-            <button onClick={() => runMutation.mutate()} disabled={runMutation.isPending || selectedCols.size === 0} className="btn-primary">
+            <button onClick={() => runMutation.mutate()} disabled={runMutation.isPending || isLoading || isError || selectedCols.size === 0} className="btn-primary">
               <Play size={14} /> {runMutation.isPending ? "Running…" : "Save & run"}
             </button>
           </div>

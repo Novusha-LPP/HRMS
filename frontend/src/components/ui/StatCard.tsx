@@ -1,13 +1,14 @@
 import type { ReactNode } from "react";
 import type { LucideIcon } from "lucide-react";
-import { ArrowDownRight, ArrowUpRight } from "lucide-react";
+import { ArrowDownRight, ArrowUpRight } from "../icons/ThemeIcons";
 import { Sparkline } from "./Charts";
 import { Skeleton } from "./Feedback";
 
-export function StatCard({ label, value, icon: Icon, delta, deltaSuffix = "", hint, spark, invertDelta, loading }: {
+export function StatCard({ label, value, icon: Icon, iconTone = "blue", delta, deltaSuffix = "", hint, spark, invertDelta, loading }: {
   label: string;
   value: ReactNode;
   icon: LucideIcon;
+  iconTone?: "blue" | "green" | "red" | "purple" | "orange" | "teal";
   delta?: number;
   deltaSuffix?: string;
   hint?: ReactNode;
@@ -20,7 +21,7 @@ export function StatCard({ label, value, icon: Icon, delta, deltaSuffix = "", hi
     <div className="card flex flex-col p-5">
       <div className="flex items-center justify-between gap-3">
         <span className="text-[13px] font-medium text-fg-muted">{label}</span>
-        <span className="grid h-8 w-8 place-items-center rounded-lg border border-line bg-panel text-fg-subtle">
+        <span data-icon-tone={iconTone} className="stat-icon grid h-8 w-8 place-items-center rounded-lg border border-line bg-panel text-fg-subtle">
           <Icon size={15} />
         </span>
       </div>

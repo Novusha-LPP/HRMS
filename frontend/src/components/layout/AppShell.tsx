@@ -1,24 +1,31 @@
-import { useEffect, useRef, useState } from "react";
+import { createElement, useEffect, useRef, useState } from "react";
 import type { ReactNode } from "react";
 import { Link, NavLink, useLocation } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { format, formatDistanceToNow } from "date-fns";
 import {
-  Search, Bell, PanelLeft, ChevronRight, ChevronsUpDown, LogOut, Sun, Moon, Monitor,
+  Search, Bell, PanelLeft, ChevronRight, ChevronsUpDown, LogOut, Sun, Moon,
   Umbrella, FilePenLine, CheckCheck, CircleCheck, CircleX, UserCircle, ExternalLink, BookOpen,
-} from "lucide-react";
-import type { LucideIcon } from "lucide-react";
+  Palette,
+} from "../icons/ThemeIcons";
+import type { LucideIcon, LucideProps } from "lucide-react";
 import { useAuth } from "../../context/AuthContext";
+import { PreferencesSync, useChangeColorTheme } from "../../lib/preferences";
 import type { UserRole } from "../../context/AuthContext";
-import { useTheme } from "../../context/ThemeContext";
+import { COLOR_THEMES, useTheme } from "../../context/ThemeContext";
+import type { ColorTheme } from "../../context/ThemeContext";
+
+const colorThemeName = (id: ColorTheme) => COLOR_THEMES.find((t) => t.id === id)?.name ?? id;
 import { DECISION_STATUSES, leaveApi } from "../../api/leave";
 import { correctionsApi } from "../../api/corrections";
 import { Avatar } from "../ui/Avatar";
-import { Segmented } from "../ui/Tabs";
+import { AppearanceControls } from "./AppearanceControls";
 import { humanize } from "../ui/StatusBadge";
 import { usePopover } from "../ui/Popover";
 import { CommandPalette } from "./CommandPalette";
 import { navFor, findNav } from "./nav";
+import type { NavItem } from "./nav";
+import { API_DOCS_URL } from "../../lib/runtimeConfig";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   EMPLOYEE: "Employee",
@@ -33,6 +40,7 @@ const MOD_KEY = isMac ? "⌘" : "Ctrl";
 export function AppShell({ children }: { children: ReactNode }) {
   const location = useLocation();
   const scrollRef = useRef<HTMLElement>(null);
+  const { colorTheme } = useTheme();
   const [collapsed, setCollapsed] = useState(() => {
     try { return localStorage.getItem("hrms_sidebar") === "collapsed"; } catch { return false; }
   });
@@ -72,10 +80,14 @@ export function AppShell({ children }: { children: ReactNode }) {
 
   const openPalette = () => { setMobileOpen(false); setPaletteOpen(true); };
 
+  const isHrmsTheme = colorTheme === "midnight-blue";
+
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
+      <PreferencesSync />
       <aside
         className={`hidden shrink-0 flex-col transition-[width] duration-200 ease-out lg:flex ${collapsed ? "w-[68px]" : "w-60"}`}
+        style={isHrmsTheme ? { background: "var(--sidebar-bg, #0A1F4E)" } : undefined}
       >
         <SidebarContent collapsed={collapsed} onSearch={openPalette} />
       </aside>
@@ -83,7 +95,12 @@ export function AppShell({ children }: { children: ReactNode }) {
       {mobileOpen && (
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-zinc-950/30 backdrop-blur-[2px] animate-fade-in" onClick={() => setMobileOpen(false)} />
-          <aside className="absolute inset-y-0 left-0 flex w-64 flex-col border-r border-line bg-canvas shadow-pop animate-slide-in-left">
+          <aside
+            className={`absolute inset-y-0 left-0 flex w-64 flex-col border-r border-line bg-canvas shadow-pop animate-slide-in-left ${
+              isHrmsTheme ? "border-[#1C3A75]" : ""
+            }`}
+            style={isHrmsTheme ? { background: "var(--sidebar-bg, #0A1F4E)" } : undefined}
+          >
             <SidebarContent collapsed={false} onSearch={openPalette} onNavigate={() => setMobileOpen(false)} />
           </aside>
         </div>
@@ -104,29 +121,41 @@ export function AppShell({ children }: { children: ReactNode }) {
 }
 
 /* ── Sidebar ── */
+function ItemIcon({ item, ...props }: { item: NavItem } & LucideProps) {
+  return createElement(item.icon, props);
+}
+
 function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolean; onSearch: () => void; onNavigate?: () => void }) {
   const { user } = useAuth();
+  const { colorTheme } = useTheme();
   if (!user) return null;
+
+  const isHrmsTheme = colorTheme === "midnight-blue";
 
   return (
     <>
-      <div className={`flex h-14 shrink-0 items-center gap-2.5 ${collapsed ? "justify-center" : "px-4"}`}>
+      <div className={`flex shrink-0 items-center gap-2.5 h-14 ${collapsed ? "justify-center" : "px-4"}`}>
         <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-[15px] font-bold text-white shadow-xs ring-1 ring-inset ring-white/15">
           {user.tenantName.charAt(0).toUpperCase()}
         </div>
         {!collapsed && (
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-[13px] font-semibold text-fg">{user.tenantName}</p>
-            <p className="truncate text-[11px] text-fg-subtle">People Platform</p>
+            <p className={`truncate font-semibold ${isHrmsTheme ? "text-[13px] text-white" : "text-[13px] text-fg"}`}>{user.tenantName}</p>
+            <p className={`truncate text-[11px] ${isHrmsTheme ? "text-[#9FB3D9]" : "text-fg-subtle"}`}>People Platform</p>
           </div>
         )}
       </div>
 
-      <div className={collapsed ? "flex justify-center pb-2" : "px-3 pb-2"}>
+      {/* Both palettes share the same sidebar structure and search placement. */}
+      <div className={`${collapsed ? "flex justify-center pb-2" : "px-3 pb-2"}`}>
         <button
           onClick={onSearch}
           title={collapsed ? `Search (${MOD_KEY}+K)` : undefined}
-          className={`flex h-8 items-center gap-2 rounded-lg border border-line bg-surface text-[13px] text-fg-subtle shadow-xs transition-colors hover:border-line-strong hover:text-fg-muted ${
+          className={`flex h-8 items-center gap-2 rounded-lg border text-[13px] shadow-xs transition-colors ${
+            isHrmsTheme
+              ? "border-[#1C3A75] bg-white/5 text-[#9FB3D9] hover:border-blue-400 hover:text-white"
+              : "border border-line bg-surface text-fg-subtle hover:border-line-strong hover:text-fg-muted"
+          } ${
             collapsed ? "w-8 justify-center" : "w-full px-2.5"
           }`}
         >
@@ -144,9 +173,9 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
         {navFor(user).map((section, idx) => (
           <div key={section.label}>
             {collapsed ? (
-              idx > 0 && <div className="mx-2 mb-3 h-px bg-line" />
+              idx > 0 && <div className={`mx-2 mb-3 h-px ${isHrmsTheme ? "bg-[#1C3A75]" : "bg-line"}`} />
             ) : (
-              <p className="px-2 pb-1.5 text-[11px] font-medium text-fg-subtle">{section.label}</p>
+              <p className={`pb-1.5 text-[11px] font-medium ${isHrmsTheme ? "px-2 text-[#9FB3D9]" : "px-2 text-fg-subtle"}`}>{section.label}</p>
             )}
             <div className="space-y-0.5">
               {section.items.map((item) =>
@@ -158,14 +187,23 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
                     rel="noopener noreferrer"
                     onClick={onNavigate}
                     title={collapsed ? item.label : undefined}
-                    className={`group flex h-8 items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors ${
+                    className={`group flex items-center rounded-lg font-medium transition-colors h-8 gap-2.5 text-[13px] ${
                       collapsed ? "justify-center" : "px-2.5"
-                    } text-fg-muted hover:bg-fg/[0.045] hover:text-fg`}
+                    } ${
+                      isHrmsTheme
+                        ? "text-[#DCE5F5] hover:bg-white/10 hover:text-white"
+                        : "text-fg-muted hover:bg-fg/[0.045] hover:text-fg"
+                    }`}
                   >
-                    <item.icon
+                    <ItemIcon
+                      item={item}
                       size={16}
                       strokeWidth={1.9}
-                      className="text-fg-subtle transition-colors group-hover:text-fg-muted"
+                      className={`transition-colors ${
+                        isHrmsTheme
+                          ? "text-[#C7D4EE] group-hover:text-white"
+                          : "text-fg-subtle group-hover:text-fg-muted"
+                      }`}
                     />
                     {!collapsed && (
                       <span className="flex flex-1 items-center justify-between truncate">
@@ -181,21 +219,30 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
                     onClick={onNavigate}
                     title={collapsed ? item.label : undefined}
                     className={({ isActive }) =>
-                      `group flex h-8 items-center gap-2.5 rounded-lg text-[13px] font-medium transition-colors ${
+                      `group flex items-center rounded-lg font-medium transition-colors h-8 gap-2.5 text-[13px] ${
                         collapsed ? "justify-center" : "px-2.5"
                       } ${
-                        isActive
-                          ? "bg-surface text-fg shadow-xs ring-1 ring-line"
-                          : "text-fg-muted hover:bg-fg/[0.045] hover:text-fg"
+                        isHrmsTheme
+                          ? isActive
+                            ? "bg-[#1D68E8] text-white font-semibold shadow-[0_4px_12px_-2px_rgba(29,104,232,0.55)]"
+                            : "text-[#DCE5F5] hover:bg-white/10 hover:text-white"
+                          : isActive
+                            ? "bg-surface text-fg shadow-xs ring-1 ring-line"
+                            : "text-fg-muted hover:bg-fg/[0.045] hover:text-fg"
                       }`
                     }
                   >
                     {({ isActive }) => (
                       <>
-                        <item.icon
+                        <ItemIcon
+                          item={item}
                           size={16}
                           strokeWidth={isActive ? 2.2 : 1.9}
-                          className={isActive ? "text-accent" : "text-fg-subtle transition-colors group-hover:text-fg-muted"}
+                          className={
+                            isHrmsTheme
+                              ? isActive ? "text-white" : "text-[#C7D4EE] transition-colors group-hover:text-white"
+                              : isActive ? "text-accent" : "text-fg-subtle transition-colors group-hover:text-fg-muted"
+                          }
                         />
                         {!collapsed && <span className="truncate">{item.label}</span>}
                       </>
@@ -217,27 +264,31 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
 
 function UserMenu({ collapsed }: { collapsed: boolean }) {
   const { user, logout } = useAuth();
-  const { theme, setTheme } = useTheme();
+  const { colorTheme } = useTheme();
+  const changeColorTheme = useChangeColorTheme();
   const { open, setOpen, ref } = usePopover();
   if (!user) return null;
+  // Light text only where the menu sits on the navy sidebar.
+  const isHrmsTheme = colorTheme === "midnight-blue";
 
   return (
     <div ref={ref} className="relative">
       <button
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
-        className={`flex w-full items-center gap-2.5 rounded-lg text-left transition-colors hover:bg-fg/[0.045] ${
-          collapsed ? "justify-center p-1" : "p-1.5"
-        } ${open ? "bg-fg/[0.045]" : ""}`}
+        className={`flex w-full items-center gap-2.5 rounded-lg text-left transition-colors ${
+          isHrmsTheme ? "hover:bg-white/10" : "hover:bg-fg/[0.045]"
+        } ${collapsed ? "justify-center p-1" : "p-1.5"} ${open ? (isHrmsTheme ? "bg-white/10" : "bg-fg/[0.045]") : ""}`}
       >
         <Avatar name={user.name} size="md" />
         {!collapsed && (
           <>
+            {/* The HRMS theme's sidebar is navy, so its text is light; classic is unchanged. */}
             <span className="min-w-0 flex-1 leading-tight">
-              <span className="block truncate text-[13px] font-medium text-fg">{user.name}</span>
-              <span className="block truncate text-[11px] text-fg-subtle">{ROLE_LABEL[user.role]}</span>
+              <span className={`block truncate text-[13px] font-medium ${isHrmsTheme ? "text-white" : "text-fg"}`}>{user.name}</span>
+              <span className={`block truncate text-[11px] ${isHrmsTheme ? "text-[#B0BBD0]" : "text-fg-subtle"}`}>{ROLE_LABEL[user.role]}</span>
             </span>
-            <ChevronsUpDown size={14} className="text-fg-subtle" />
+            <ChevronsUpDown size={14} className={isHrmsTheme ? "text-[#B0BBD0]" : "text-fg-subtle"} />
           </>
         )}
       </button>
@@ -256,7 +307,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
             <UserCircle size={15} /> My profile
           </Link>
           <a
-            href="https://hrmsapi.alvision.in/docs"
+            href={API_DOCS_URL}
             target="_blank"
             rel="noopener noreferrer"
             onClick={() => setOpen(false)}
@@ -265,18 +316,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
             <BookOpen size={15} /> API Documentation
           </a>
           <div className="my-1 h-px bg-line" />
-          <div className="flex items-center justify-between gap-2 px-2.5 py-2">
-            <span className="text-[13px] text-fg-muted">Theme</span>
-            <Segmented
-              value={theme}
-              onChange={setTheme}
-              items={[
-                { value: "light", label: "", icon: Sun },
-                { value: "dark", label: "", icon: Moon },
-                { value: "system", label: "", icon: Monitor },
-              ]}
-            />
-          </div>
+          <AppearanceControls onColorThemeChange={changeColorTheme} />
           <div className="my-1 h-px bg-line" />
           <button onClick={logout} className="menu-item hover:text-danger">
             <LogOut size={15} /> Sign out
@@ -293,7 +333,8 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
 /* ── Top bar ── */
 function TopBar({ onToggleSidebar, onSearch }: { onToggleSidebar: () => void; onSearch: () => void }) {
   const { pathname } = useLocation();
-  const { resolved, setTheme } = useTheme();
+  const { resolved, setTheme, colorTheme } = useTheme();
+  const changeColorTheme = useChangeColorTheme();
   const match = findNav(pathname);
 
   return (
@@ -315,6 +356,14 @@ function TopBar({ onToggleSidebar, onSearch }: { onToggleSidebar: () => void; on
       <div className="ml-auto flex items-center gap-1">
         <button onClick={onSearch} className="btn-icon lg:hidden" aria-label="Search">
           <Search size={16} />
+        </button>
+        <button
+          onClick={() => changeColorTheme(colorTheme === "classic-teal" ? "midnight-blue" : "classic-teal")}
+          className="btn-icon"
+          aria-label="Switch Theme Palette"
+          title={`Colour theme: ${colorThemeName(colorTheme)} (click to switch)`}
+        >
+          <Palette size={16} />
         </button>
         <button
           onClick={() => setTheme(resolved === "dark" ? "light" : "dark")}

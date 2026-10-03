@@ -1,0 +1,3 @@
+# Real environment files hold secrets.
+*.env
+!*.env.example

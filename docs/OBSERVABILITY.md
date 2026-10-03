@@ -151,3 +151,17 @@ A scheduled personnel action (transfer, promotion, separation …) reached its d
 not be applied, so it was parked as FAILED. Its `failure_reason` is visible in
 `GET /v1/personnel-actions`. HR should correct and reschedule it, or cancel it. Until then the
 employee's record does not reflect the change.
+
+## HrmsJobStale
+
+A scheduled job (`hrms.jobs`: `accrual` or `scheduled-actions`) hasn't succeeded for over
+26 hours. `HrmsJobNeverRan` means no job has ever succeeded in this environment.
+
+1. Is the jobs container running? `docker compose … ps jobs`, then `docker compose … logs jobs`.
+2. Check the last runs:
+   `SELECT job, status, started_at, tenants_ok, tenants_failed, detail FROM job_runs ORDER BY started_at DESC LIMIT 10;`
+   - `detail` names the failing tenants and the error class.
+   - The full traceback is in the jobs log, under the same tenant id.
+3. Fix the cause, then run the job once by hand:
+   `docker compose … run --rm jobs python -m hrms.jobs run accrual`.
+   Accrual is idempotent per month, so running it again is safe.

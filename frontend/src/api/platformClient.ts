@@ -1,7 +1,8 @@
+import { runtimeConfig } from "../lib/runtimeConfig";
 import { logger } from "../lib/logger";
 import { generateRequestId } from "../lib/uuid";
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8015";
+const BASE = runtimeConfig.apiUrl;
 
 export class PlatformApiError extends Error {
   status: number;

@@ -12,7 +12,9 @@ autogenerate never proposes to undo something a migration deliberately did.
 from sqlalchemy import DateTime, ForeignKeyConstraint, UniqueConstraint
 from sqlmodel import SQLModel
 
+from hrms.jobs import models as jobs  # noqa: F401
 from hrms.modules.corrections import models as corrections  # noqa: F401
+from hrms.modules.dashboard import models as dashboard  # noqa: F401
 from hrms.modules.kernel import models as kernel  # noqa: F401
 from hrms.modules.kyc import models as kyc  # noqa: F401
 from hrms.modules.leave import models as leave  # noqa: F401
@@ -20,6 +22,7 @@ from hrms.modules.onboarding import models as onboarding  # noqa: F401
 from hrms.modules.org import models as org  # noqa: F401
 from hrms.modules.people import models as people  # noqa: F401
 from hrms.modules.policy import models as policy  # noqa: F401
+from hrms.modules.preferences import models as preferences  # noqa: F401
 from hrms.modules.reports import models as reports  # noqa: F401
 from hrms.modules.time import models as time  # noqa: F401
 
@@ -103,6 +106,8 @@ RELATIONS = {
         "leave_type_id": "leave_types",
     },
     "entity_change_log": {"changed_by": "user_accounts"},
+    "dashboard_layouts": {"user_account_id": "user_accounts"},
+    "user_preferences": {"user_account_id": "user_accounts"},
 }
 # Bookkeeping timestamps are `NOT NULL` in the Python models (they always carry a
 # default_factory) but nullable-with-a-server-default in the database. The
@@ -110,11 +115,14 @@ RELATIONS = {
 # (Tables whose migrations declare them NOT NULL are listed in _STRICT_TABLES.)
 _STRICT_TABLES = {
     "api_keys",
+    "job_runs",
     "import_batches",
     "auth_throttle",
     "kyc_access_log",
     "leave_balance_transactions",
     "entity_change_log",
+    "dashboard_layouts",
+    "user_preferences",
 }
 _NULLABLE_TIMESTAMPS = {
     "created_at",
@@ -179,6 +187,12 @@ for unique_table, unique_columns, unique_name in (
     ("platform_admins", ("email",), "platform_admins_email_key"),
     ("tenants", ("slug",), "tenants_slug_key"),
     ("leave_balance_buckets", ("tenant_id", "code"), "uq_leave_balance_bucket_code"),
+    (
+        "dashboard_layouts",
+        ("tenant_id", "user_account_id", "dashboard"),
+        "uq_dashboard_layout_user",
+    ),
+    ("user_preferences", ("tenant_id", "user_account_id"), "uq_user_preferences_user"),
     ("leave_type_bucket_mapping", ("tenant_id", "leave_type_id"), "uq_leave_type_bucket_mapping"),
     (
         "leave_bucket_policies",

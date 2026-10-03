@@ -504,3 +504,8 @@ def read_scope(scope: Scope, *permissions: str) -> Scope:
             )
         )
     return merge_scopes(grants, scope.own_employment_id)
+
+
+# Recorded as the actor (recorded_by, approved_by, …) on changes the platform makes by itself,
+# such as the scheduled leave accrual — the audit columns stay NOT NULL and every row says who.
+SYSTEM_ACTOR = UUID(int=0)

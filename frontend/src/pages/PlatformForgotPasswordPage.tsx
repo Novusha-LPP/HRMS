@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link } from "react-router-dom";
-import { ArrowLeft, ArrowRight, Loader2, ShieldAlert, TriangleAlert } from "lucide-react";
+import { ArrowLeft, ArrowRight, Loader2, ShieldAlert, TriangleAlert } from "../components/icons/ThemeIcons";
+import { AppearanceControls } from "../components/layout/AppearanceControls";
 import { platformTenantsApi } from "../api/platform";
 import { PlatformApiError } from "../api/platformClient";
 
@@ -74,6 +75,7 @@ export function PlatformForgotPasswordPage() {
             </form>
           </>
         )}
+        <AppearanceControls className="mt-5 border-t border-line pt-3" />
       </div>
     </div>
   );

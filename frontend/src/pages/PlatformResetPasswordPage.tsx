@@ -1,7 +1,8 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useNavigate, useSearchParams } from "react-router-dom";
-import { ArrowRight, CircleCheck, Loader2, ShieldAlert } from "lucide-react";
+import { ArrowRight, CircleCheck, Loader2, ShieldAlert } from "../components/icons/ThemeIcons";
+import { AppearanceControls } from "../components/layout/AppearanceControls";
 import { platformTenantsApi } from "../api/platform";
 import { PlatformApiError } from "../api/platformClient";
 
@@ -71,6 +72,7 @@ export function PlatformResetPasswordPage() {
         )}
 
         <Link to="/platform/login" className="mt-5 block text-center text-[13px] font-medium text-fg-subtle hover:text-fg-muted">Back to sign in</Link>
+        <AppearanceControls className="mt-5 border-t border-line pt-3" />
       </div>
     </div>
   );

@@ -1,0 +1,10 @@
+# Build context for deploy/web/Dockerfile (repository root). Everything is excluded except
+# what the web build needs — in particular data exports and credentials in the root.
+*
+!frontend/
+!deploy/web/
+frontend/node_modules
+frontend/dist
+frontend/.env
+frontend/.env.*
+!frontend/.env.example

@@ -1,6 +1,6 @@
 """One attendance event stream and recomputation path for punches and corrections."""
 
-from datetime import timedelta
+from datetime import UTC, timedelta
 from uuid import uuid4
 
 from fastapi import HTTPException
@@ -98,12 +98,16 @@ def event_minutes(events, rounding_minutes=0, rounding_direction="NONE"):
     break_start = None
     duration = 0
     breaks = 0
+    session_breaks = 0
     for event in events:
-        stamp = apply_punch_rounding(event.punched_at, rounding_minutes, rounding_direction)
+        stamp = apply_punch_rounding(
+            event.punched_at, rounding_minutes, rounding_direction
+        ).astimezone(UTC)
         if event.punch_type == "IN":
             if started is not None:
                 raise HTTPException(422, "Consecutive IN events need correction")
             started = stamp
+            session_breaks = 0
         elif event.punch_type == "BREAK_START":
             if started is None or break_start is not None:
                 raise HTTPException(422, "Break must start during an open session")
@@ -111,16 +115,19 @@ def event_minutes(events, rounding_minutes=0, rounding_direction="NONE"):
         elif event.punch_type == "BREAK_END":
             if break_start is None:
                 raise HTTPException(422, "No open break to end")
-            breaks += int((stamp - break_start).total_seconds() / 60)
+            session_breaks += int((stamp - break_start).total_seconds() / 60)
             break_start = None
         elif event.punch_type == "OUT":
             if started is None:
                 # An incomplete historical OUT can be repaired with a missing IN.
                 continue
             if break_start is not None:
-                breaks += int((stamp - break_start).total_seconds() / 60)
+                session_breaks += int((stamp - break_start).total_seconds() / 60)
                 break_start = None
-            duration += int((stamp - started).total_seconds() / 60)
+            session_duration = max(0, int((stamp - started).total_seconds() / 60))
+            duration += session_duration
+            breaks += min(session_duration, session_breaks)
+            session_breaks = 0
             started = None
     return max(0, duration), max(0, breaks), started is not None
 
@@ -159,7 +166,7 @@ async def recompute_day(session, tenant_id, employment_id, day, policy, ad=None)
         events, policy.punch_rounding_minutes, policy.punch_rounding_direction
     )
     ot = 0
-    if ins and outs and ad.last_punch_out > ad.first_punch_in:
+    if ins and outs and ad.last_punch_out >= ad.first_punch_in:
         result = compute_day(
             ad.first_punch_in,
             ad.last_punch_out,

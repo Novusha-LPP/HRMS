@@ -1,0 +1,114 @@
+# The deployed HRMS stack: one file for both deployed environments, one env file each.
+#
+#   docker compose --env-file deploy/env/testing.env    -f deploy/compose.yml up -d
+#   docker compose --env-file deploy/env/production.env -f deploy/compose.yml up -d
+#
+# Each runs as its own compose project (hrms-testing / hrms-production) with its own database,
+# volumes, network and ports, so both can share a host without touching each other. Images
+# are released ones (HRMS_VERSION), never the working tree. See docs/ENVIRONMENTS.md.
+name: hrms-${HRMS_ENVIRONMENT:?set HRMS_ENVIRONMENT to testing or production}
+
+x-api: &api
+  image: ${HRMS_API_IMAGE:-ghcr.io/novusha-lpp/hrms/api}:${HRMS_VERSION:?set HRMS_VERSION}
+  restart: unless-stopped
+  env_file: ${HRMS_ENV_FILE:?set HRMS_ENV_FILE to this env file's path}
+  environment: &api-env
+    HRMS_ENVIRONMENT: ${HRMS_ENVIRONMENT}
+    HRMS_DEBUG: "false"
+    HRMS_LOG_FORMAT: json
+    HRMS_DATABASE_URL: postgresql+asyncpg://hrms:${HRMS_DB_OWNER_PASSWORD:?}@db:5432/hrms
+    HRMS_APP_DATABASE_URL: postgresql+asyncpg://hrms_app:${HRMS_APP_ROLE_PASSWORD:?}@db:5432/hrms
+    HRMS_STORAGE_DIR: /app/storage
+  volumes:
+    - kyc-storage:/app/storage
+  networks: [backend]
+
+services:
+  db:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    environment:
+      POSTGRES_USER: hrms
+      POSTGRES_PASSWORD: ${HRMS_DB_OWNER_PASSWORD:?}
+      POSTGRES_DB: hrms
+      # Password authentication for every connection, including from inside the network.
+      POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    volumes:
+      - db-data:/var/lib/postgresql/data
+    healthcheck:
+      test: ["CMD-SHELL", "pg_isready -U hrms -d hrms"]
+      interval: 5s
+      timeout: 5s
+      retries: 20
+    networks: [backend]
+    # No published port: only the services on this project's network can reach it.
+
+  migrate:
+    <<: *api
+    restart: "no"
+    command: ["python", "-m", "hrms.deploy", "migrate"]
+    environment:
+      <<: *api-env
+      HRMS_APP_ROLE_PASSWORD: ${HRMS_APP_ROLE_PASSWORD:?}
+      PROMETHEUS_MULTIPROC_DIR: ""  # one process, not the API's worker pool
+    depends_on:
+      db: {condition: service_healthy}
+
+  api:
+    <<: *api
+    ports:
+      - "127.0.0.1:${HRMS_API_PORT:?}:8015"
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+  jobs:
+    <<: *api
+    command: ["python", "-m", "hrms.jobs", "schedule"]
+    environment:
+      <<: *api-env
+      PROMETHEUS_MULTIPROC_DIR: ""  # one process; its runs are reported through job_runs
+    healthcheck: {disable: true}
+    depends_on:
+      migrate: {condition: service_completed_successfully}
+
+  web:
+    image: ${HRMS_WEB_IMAGE:-ghcr.io/novusha-lpp/hrms/web}:${HRMS_VERSION}
+    restart: unless-stopped
+    environment:
+      HRMS_ENVIRONMENT: ${HRMS_ENVIRONMENT}
+      HRMS_WEB_API_URL: ${HRMS_WEB_API_URL:?}
+      HRMS_WEB_SENTRY_DSN: ${HRMS_WEB_SENTRY_DSN:-}
+    ports:
+      - "127.0.0.1:${HRMS_WEB_PORT:?}:8080"
+    networks: [frontend]
+
+  backup:
+    image: postgres:16-alpine
+    restart: unless-stopped
+    entrypoint: ["/bin/sh", "/backup/backup.sh", "--daemon"]
+    environment:
+      PGHOST: db
+      PGUSER: hrms
+      PGPASSWORD: ${HRMS_DB_OWNER_PASSWORD:?}
+      PGDATABASE: hrms
+      HRMS_ENVIRONMENT: ${HRMS_ENVIRONMENT}
+      BACKUP_AT: ${HRMS_BACKUP_AT:-01:30}
+      BACKUP_KEEP_DAYS: ${HRMS_BACKUP_KEEP_DAYS:-14}
+      TZ: ${HRMS_TIMEZONE:-Asia/Kolkata}
+    volumes:
+      - ./backup:/backup:ro
+      - kyc-storage:/kyc:ro
+      # Bind-mounted so the host (and its off-site copy job) can see the dumps.
+      - ${HRMS_BACKUP_DIR:?set HRMS_BACKUP_DIR to a host directory}:/backups
+    depends_on:
+      # After migrations, so the first dump is of the real schema, not an empty database.
+      migrate: {condition: service_completed_successfully}
+    networks: [backend]
+
+volumes:
+  db-data:
+  kyc-storage:
+
+networks:
+  backend:
+  frontend:

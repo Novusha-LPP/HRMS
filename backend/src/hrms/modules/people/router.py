@@ -35,6 +35,7 @@ from hrms.core.authz import (
     require_permission,
 )
 from hrms.core.database import SessionDep
+from hrms.core.datetime_utils import business_today
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.metrics import SCHEDULED_ACTIONS
@@ -671,7 +672,7 @@ async def create_personnel_action(
     # (checked above) — that permission check IS the approval, so every
     # action type applies immediately rather than sitting in a
     # PENDING_APPROVAL state nothing can ever move out of.
-    if pa.effective_date > date.today():
+    if pa.effective_date > business_today():
         pa.status = PersonnelActionStatus.SCHEDULED
     else:
         await _apply_personnel_action(session, tenant_id, pa, emp)
@@ -813,8 +814,8 @@ async def _current_assignment(session, tenant_id: UUID, employment_id: UUID) -> 
         select(Assignment)
         .where(Assignment.tenant_id == tenant_id)
         .where(Assignment.employment_id == employment_id)
-        .where(Assignment.effective_from <= date.today())
-        .where((Assignment.effective_to.is_(None)) | (Assignment.effective_to > date.today()))
+        .where(Assignment.effective_from <= business_today())
+        .where((Assignment.effective_to.is_(None)) | (Assignment.effective_to > business_today()))
     )
     return row.scalars().first()
 
@@ -825,10 +826,10 @@ async def _current_line_manager(session, tenant_id: UUID, assignment_id: UUID) -
         .where(AssignmentManager.tenant_id == tenant_id)
         .where(AssignmentManager.assignment_id == assignment_id)
         .where(AssignmentManager.manager_type == "LINE")
-        .where(AssignmentManager.effective_from <= date.today())
+        .where(AssignmentManager.effective_from <= business_today())
         .where(
             (AssignmentManager.effective_to.is_(None))
-            | (AssignmentManager.effective_to > date.today())
+            | (AssignmentManager.effective_to > business_today())
         )
     )
     am = row.scalars().first()
@@ -898,10 +899,10 @@ async def _place_assignment(
             select(AssignmentManager)
             .where(AssignmentManager.tenant_id == tenant_id)
             .where(AssignmentManager.assignment_id == current.id)
-            .where(AssignmentManager.effective_from <= date.today())
+            .where(AssignmentManager.effective_from <= business_today())
             .where(
                 (AssignmentManager.effective_to.is_(None))
-                | (AssignmentManager.effective_to > date.today())
+                | (AssignmentManager.effective_to > business_today())
             )
         )
         for am in mgr_rows.scalars():
@@ -1047,7 +1048,7 @@ async def apply_due_actions(session, tenant_id):
             select(PersonnelAction.id)
             .where(PersonnelAction.tenant_id == tenant_id)
             .where(PersonnelAction.status == PersonnelActionStatus.SCHEDULED)
-            .where(PersonnelAction.effective_date <= date.today())
+            .where(PersonnelAction.effective_date <= business_today())
             .limit(1)
         )
     ).first()
@@ -1060,7 +1061,7 @@ async def apply_due_actions(session, tenant_id):
                 select(PersonnelAction)
                 .where(PersonnelAction.tenant_id == tenant_id)
                 .where(PersonnelAction.status == PersonnelActionStatus.SCHEDULED)
-                .where(PersonnelAction.effective_date <= date.today())
+                .where(PersonnelAction.effective_date <= business_today())
                 .order_by(PersonnelAction.effective_date, PersonnelAction.submitted_at)
                 .with_for_update()
             )

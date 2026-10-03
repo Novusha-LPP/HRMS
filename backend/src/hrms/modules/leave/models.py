@@ -8,6 +8,8 @@ from sqlalchemy import Column
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
+from hrms.core.datetime_utils import now_utc
+
 
 class LeaveApplicationStatus(enum.StrEnum):
     DRAFT = "DRAFT"
@@ -141,7 +143,7 @@ class CompOffGrant(SQLModel, table=True):
     days_granted: float = Field()
     notes: str | None = Field(default=None, max_length=500)
     granted_by: UUID | None = Field(default=None)
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now())
+    recorded_at: datetime = Field(default_factory=now_utc)
 
 
 class LeaveEncashment(SQLModel, table=True):
@@ -162,7 +164,7 @@ class LeaveEncashment(SQLModel, table=True):
     effective_date: date = Field()
     notes: str | None = Field(default=None, max_length=500)
     processed_by: UUID | None = Field(default=None)
-    recorded_at: datetime = Field(default_factory=lambda: datetime.now())
+    recorded_at: datetime = Field(default_factory=now_utc)
 
 
 class LeaveApprovalAction(SQLModel, table=True):
