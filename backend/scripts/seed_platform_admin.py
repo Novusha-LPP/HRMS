@@ -50,7 +50,7 @@ async def main() -> int:
     generated = password is None
     if generated:
         password = secrets.token_urlsafe(16)
-    if len(password) < 12 and settings.environment == "production":
+    if len(password) < 12 and settings.is_deployed:
         print("Refusing a password shorter than 12 characters in production.")
         return 2
 

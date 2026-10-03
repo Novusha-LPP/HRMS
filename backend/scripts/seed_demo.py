@@ -18,6 +18,7 @@ Usage:
 """
 
 import argparse
+import os
 import asyncio
 import json
 import sys
@@ -831,8 +832,8 @@ def cli() -> int:
     parser = argparse.ArgumentParser(description="Seed the SFPL demo tenant (known password!)")
     parser.add_argument("--yes", action="store_true", help="Don't ask for confirmation")
     args = parser.parse_args()
-    if settings.environment == "production":
-        print("Refusing to seed demo accounts with a published password in production.")
+    if settings.is_deployed:
+        print(f"Refusing to seed demo accounts with a published password in {settings.environment}.")
         return 2
     if not args.yes:
         print(

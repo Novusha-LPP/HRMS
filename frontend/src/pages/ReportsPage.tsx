@@ -2,8 +2,8 @@ import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { Play, Trash2, FileBarChart, Plus, MoreHorizontal } from "lucide-react";
 import { reportsApi } from "../api/reports";
-import type { ReportDef, RunResult } from "../api/reports";
-import { ReportBuilder, MODULES } from "../components/reports/ReportBuilder";
+import type { ReportDef, RunResult, FilterSpec } from "../api/reports";
+import { ReportBuilder, MODULES, FilterRow } from "../components/reports/ReportBuilder";
 import { ResultTable } from "../components/reports/ResultTable";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
@@ -62,6 +62,13 @@ export function ReportsPage() {
   const [result, setResult] = useState<RunResult | null>(null);
   const [runningId, setRunningId] = useState<string | null>(null);
   const [deleting, setDeleting] = useState<ReportDef | null>(null);
+  const [configuring, setConfiguring] = useState<ReportDef | null>(null);
+  const [runFilters, setRunFilters] = useState<FilterSpec[]>([]);
+  const { data: runMeta } = useQuery({
+    queryKey: ["report-meta", configuring?.module],
+    queryFn: () => reportsApi.meta(configuring!.module),
+    enabled: !!configuring,
+  });
   const resultRef = useRef<HTMLDivElement>(null);
 
   const ownerType = user?.role === "EMPLOYEE" ? "EMPLOYEE" : "HR";
@@ -72,10 +79,10 @@ export function ReportsPage() {
     queryFn: () => reportsApi.list(ownerType),
   });
 
-  const run = async (r: ReportDef) => {
+  const run = async (r: ReportDef, filters: FilterSpec[]) => {
     setRunningId(r.id);
     try {
-      setResult(await reportsApi.run(r.id));
+      setResult(await reportsApi.run(r.id, filters.filter((f) => f.field)));
       requestAnimationFrame(() => resultRef.current?.scrollIntoView({ behavior: "smooth", block: "start" }));
     } catch (e) {
       toast.error("Couldn’t run report", errorMessage(e));
@@ -134,8 +141,23 @@ export function ReportsPage() {
           ) : (
             <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-3">
               {reports.map((r) => (
-                <ReportCard key={r.id} report={r} running={runningId === r.id} onRun={() => run(r)} onDelete={() => setDeleting(r)} />
+                <ReportCard key={r.id} report={r} running={runningId !== null} onRun={() => { setConfiguring(r); setRunFilters(r.filters); setResult(null); }} onDelete={() => setDeleting(r)} />
               ))}
+            </div>
+          )}
+          {configuring && (
+            <div className="card space-y-3 p-5">
+              <h3 className="card-title">Run {configuring.name}</h3>
+              <p className="card-desc">Choose filters for this run. Empty values leave the report unrestricted.</p>
+              {runFilters.map((filter, index) => <FilterRow key={index} filter={filter} meta={runMeta?.filters ?? []}
+                onChange={(updated) => setRunFilters((fs) => fs.map((f, i) => i === index ? updated : f))}
+                onRemove={() => setRunFilters((fs) => fs.filter((_, i) => i !== index))} />)}
+              <div className="flex gap-2">
+                <button className="btn-secondary btn-sm" disabled={!runMeta?.filters.length || runningId !== null}
+                  onClick={() => setRunFilters((fs) => [...fs, { field: "", op: "eq", value: "" }])}><Plus size={13} /> Add filter</button>
+                <button className="btn-primary btn-sm" disabled={!runMeta || runningId !== null}
+                  onClick={() => run(configuring, runFilters)}><Play size={13} /> {runningId ? "Running…" : "Run report"}</button>
+              </div>
             </div>
           )}
           <div ref={resultRef} className="scroll-mt-6">{result && <ResultTable result={result} />}</div>

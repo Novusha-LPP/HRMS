@@ -1,14 +1,7 @@
 import { useId, useRef, useState } from "react";
 import type { MouseEvent, ReactNode } from "react";
-
-export const CHART = {
-  present: "#10b981",
-  late: "#f59e0b",
-  absent: "#ef4444",
-  leave: "#3b82f6",
-  brand: "rgb(var(--brand-500))",
-  track: "rgb(var(--muted))",
-};
+import { useTheme } from "../../context/ThemeContext";
+import { CHART } from "./chartPalette";
 
 function svgId(raw: string) {
   return raw.replace(/[^a-zA-Z0-9_-]/g, "");
@@ -130,17 +123,27 @@ export function Donut({ segments, size = 152, thickness = 14, children }: {
   thickness?: number;
   children?: ReactNode;
 }) {
-  const r = (size - thickness) / 2;
+  const { colorTheme } = useTheme();
+  const midnight = colorTheme === "midnight-blue";
+  const id = svgId(useId());
+  const ringWidth = midnight ? Math.max(thickness, size * .1) : thickness;
+  const r = (size - ringWidth) / 2;
   const c = 2 * Math.PI * r;
   const total = segments.reduce((a, s) => a + s.value, 0);
   const visible = segments.filter((s) => s.value > 0);
-  const gap = visible.length > 1 ? 3 : 0;
+  const gap = !midnight && visible.length > 1 ? 3 : 0;
   let offset = 0;
   return (
     <div className="relative shrink-0" style={{ width: size, height: size }}>
       <svg width={size} height={size} viewBox={`0 0 ${size} ${size}`} className="-rotate-90" aria-hidden>
-        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={CHART.track} strokeWidth={thickness} />
-        {total > 0 && visible.map((s) => {
+        {midnight && <defs>{visible.map((s, i) => (
+          <radialGradient key={s.label} id={`${id}-${i}`}>
+            <stop offset="75%" stopColor={s.color} />
+            <stop offset="100%" stopColor={s.color} stopOpacity=".88" />
+          </radialGradient>
+        ))}</defs>}
+        <circle cx={size / 2} cy={size / 2} r={r} fill="none" stroke={CHART.track} strokeWidth={ringWidth} />
+        {total > 0 && visible.map((s, i) => {
           const len = (s.value / total) * c;
           const el = (
             <circle
@@ -149,8 +152,8 @@ export function Donut({ segments, size = 152, thickness = 14, children }: {
               cy={size / 2}
               r={r}
               fill="none"
-              stroke={s.color}
-              strokeWidth={thickness}
+              stroke={midnight ? `url(#${id}-${i})` : s.color}
+              strokeWidth={ringWidth}
               strokeDasharray={`${Math.max(len - gap, 0.5)} ${c}`}
               strokeDashoffset={-offset}
               className="transition-[stroke-dasharray] duration-500"
@@ -163,6 +166,70 @@ export function Donut({ segments, size = 152, thickness = 14, children }: {
       <div className="absolute inset-0 flex flex-col items-center justify-center text-center">{children}</div>
     </div>
   );
+}
+
+type BarItem = { label: string; value: number; color?: string };
+
+/** Reference-style columns; the dashboard's card order and grid spans stay shared. */
+export function DepartmentColumns({ items, height = 208 }: { items: BarItem[]; height?: number }) {
+  const id = svgId(useId());
+  const highest = Math.max(...items.map((item) => item.value), 1);
+  const magnitude = 10 ** Math.floor(Math.log10(highest));
+  const ceiling = Math.ceil(highest / magnitude) * magnitude;
+  const left = 32, top = 24, bottom = height - 35, plot = bottom - top;
+  const width = 600, cell = (width - left - 12) / Math.max(items.length, 1);
+  const barWidth = Math.min(30, cell * .45);
+  return (
+    <svg viewBox={`0 0 ${width} ${height}`} width="100%" height={height} role="img" aria-labelledby={`${id}-title ${id}-description`} className="department-columns">
+      <title id={`${id}-title`}>Headcount by department</title>
+      <desc id={`${id}-description`}>{items.map((item) => `${item.label}: ${item.value}`).join("; ")}</desc>
+      <defs>
+        <linearGradient id={`${id}-bar`} x1="0" y1="0" x2="0" y2="1">
+          <stop offset="0" stopColor="var(--chart-column-top, #4095ff)" />
+          <stop offset="1" stopColor="var(--chart-column-bottom, #2476ed)" />
+        </linearGradient>
+      </defs>
+      {[0, 1, 2, 3, 4].map((tick) => {
+        const y = top + tick * plot / 4;
+        return <g key={tick}>
+          <line x1={left} x2={width - 12} y1={y} y2={y} stroke="rgb(var(--line))" strokeWidth=".7" />
+          <text x={left - 8} y={y + 3} textAnchor="end" fill="rgb(var(--fg-subtle))" fontSize="10">{Number((ceiling * (1 - tick / 4)).toFixed(2))}</text>
+        </g>;
+      })}
+      {items.map((item, i) => {
+        const x = left + cell * (i + .5);
+        const barHeight = Math.max(0, item.value) / ceiling * plot;
+        return <g key={item.label}>
+          <title>{`${item.label}: ${item.value}`}</title>
+          <rect x={x - barWidth / 2} y={bottom - barHeight} width={barWidth} height={barHeight} rx="3" fill={`url(#${id}-bar)`} />
+          <text x={x} y={bottom - barHeight - 7} textAnchor="middle" fill="rgb(var(--fg))" fontWeight="600" fontSize="11">{item.value}</text>
+          <text x={x} y={bottom + 18} textAnchor="middle" fill="rgb(var(--fg-subtle))" fontSize="10">{item.label.length > Math.max(7, Math.floor(cell / 5)) ? `${item.label.slice(0, Math.max(6, Math.floor(cell / 5) - 1))}…` : item.label}</text>
+        </g>;
+      })}
+    </svg>
+  );
+}
+
+export function DepartmentChart({ items }: { items: BarItem[] }) {
+  const { colorTheme } = useTheme();
+  return colorTheme === "midnight-blue"
+    ? <DepartmentColumns items={items} height={Math.max(112, items.length * 38 - 6)} />
+    : <BarList items={items} />;
+}
+
+export function DepartmentProgress({ items, formatValue = String }: { items: BarItem[]; formatValue?: (value: number) => string }) {
+  const { colorTheme } = useTheme();
+  const max = Math.max(...items.map((item) => item.value), 1);
+  if (colorTheme !== "midnight-blue") return <BarList items={items} formatValue={formatValue} />;
+  return <ul className="space-y-1.5 department-progress">
+    {items.map((item) => <li key={item.label} className="flex h-8 items-center gap-3 text-xs">
+      <span className="w-[28%] shrink-0 truncate text-fg-muted" title={item.label}>{item.label}</span>
+      <span className="h-[5px] flex-1 overflow-hidden rounded-full bg-muted" aria-hidden="true">
+        <span className="block h-full rounded-full bg-brand-700" style={{ width: `${Math.max(0, item.value) / max * 100}%` }} />
+      </span>
+      <span className="w-12 shrink-0 text-right tabular-nums text-fg-muted">{formatValue(item.value)}</span>
+    </li>)}
+  </ul>;
 }
 
 export function BarList({ items, formatValue = (v) => String(v) }: {

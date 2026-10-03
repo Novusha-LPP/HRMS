@@ -61,6 +61,89 @@
     color-scheme: dark;
   }
 
+  /* ── Midnight Blue theme (leaves Classic Teal, the base tokens above, 100% untouched) ── */
+  [data-color-theme="midnight-blue"] {
+    --brand-50: 239 246 255;
+    --brand-100: 219 234 254;
+    --brand-200: 191 219 254;
+    --brand-300: 147 197 253;
+    --brand-400: 96 165 250;
+    /* Buttons use 700/800, so here they are the reference's bright royal blue. */
+    --brand-500: 59 130 246;
+    --brand-600: 37 112 240;
+    --brand-700: 29 104 232;
+    --brand-800: 24 84 200;
+    --brand-900: 23 58 138;
+    --brand-950: 15 23 42;
+
+    --canvas: 244 247 252;
+    --panel: 255 255 255;
+    --surface: 255 255 255;
+    --muted: 243 244 246;
+    --line: 230 235 243;
+    --line-strong: 209 213 219;
+
+    --fg: 17 24 39;
+    --fg-muted: 55 65 81;
+    --fg-subtle: 107 114 128;
+    --accent: 37 99 235;
+    --success: 22 157 61;
+    --warning: 243 139 28;
+    --danger: 238 48 57;
+    --info: 7 102 245;
+    --plum: 124 58 237;
+    --chart-present: #169d3d;
+    --chart-late: #ff9816;
+    --chart-absent: #f12c36;
+    --chart-leave: #0969f6;
+    --chart-column-top: #4095ff;
+    --chart-column-bottom: #2476ed;
+
+    --sidebar-bg: linear-gradient(180deg, #031d33 0%, #062849 100%);
+    --sidebar-bg-panel: #0E2A5E;
+    --sidebar-text: #DCE5F5;
+    --sidebar-text-hover: #FFFFFF;
+    --sidebar-active-bg: #1D68E8;
+    --sidebar-active-text: #FFFFFF;
+    --sidebar-divider: #1C3A75;
+    --sidebar-footer-bg: #123A85;
+    --sidebar-footer-text: #FFFFFF;
+  }
+
+  [data-color-theme="midnight-blue"].dark,
+  [data-color-theme="midnight-blue"] .dark {
+    --canvas: 11 17 32;
+    --panel: 19 30 54;
+    --surface: 19 30 54;
+    --muted: 25 40 71;
+    --line: 32 45 78;
+    --line-strong: 44 62 105;
+
+    --fg: 248 250 252;
+    --fg-muted: 226 232 240;
+    --fg-subtle: 148 163 184;
+    --accent: 59 130 246;
+    --success: 74 222 128;
+    --warning: 251 146 60;
+    --danger: 251 113 133;
+    --info: 96 165 250;
+    --plum: 167 139 250;
+    --chart-present: #22c55e;
+    --chart-late: #fb923c;
+    --chart-absent: #fb7185;
+    --chart-leave: #60a5fa;
+
+    --sidebar-bg: linear-gradient(180deg, #07142F 0%, #0A1E45 100%);
+    --sidebar-bg-panel: #0E1626;
+    --sidebar-text: #94A3B8;
+    --sidebar-text-hover: #FFFFFF;
+    --sidebar-active-bg: #2563EB;
+    --sidebar-active-text: #FFFFFF;
+    --sidebar-divider: #233355;
+    --sidebar-footer-bg: #2563EB;
+    --sidebar-footer-text: #FFFFFF;
+  }
+
   html { -webkit-text-size-adjust: 100%; }
 
   body {
@@ -96,6 +179,50 @@
 }
 
 @layer components {
+  /* Palette-only icon treatment: shared card dimensions and placement stay intact. */
+  [data-color-theme="midnight-blue"] .stat-icon {
+    --icon-color: var(--info);
+    color: rgb(var(--icon-color));
+    background-color: rgb(var(--icon-color) / 0.10);
+    border-color: transparent;
+  }
+  [data-color-theme="midnight-blue"] .stat-icon[data-icon-tone="green"] { --icon-color: var(--success); }
+  [data-color-theme="midnight-blue"] .stat-icon[data-icon-tone="red"] { --icon-color: var(--danger); }
+  [data-color-theme="midnight-blue"] .stat-icon[data-icon-tone="purple"] { --icon-color: var(--plum); }
+  [data-color-theme="midnight-blue"] .stat-icon[data-icon-tone="orange"] { --icon-color: var(--warning); }
+  [data-color-theme="midnight-blue"] .stat-icon[data-icon-tone="teal"] { --icon-color: 18 150 165; }
+  [data-color-theme="midnight-blue"].dark .stat-icon[data-icon-tone="teal"] { --icon-color: 45 212 191; }
+  [data-color-theme="midnight-blue"].dark .stat-icon[data-icon-tone="orange"] { --icon-color: var(--warning); }
+  [data-color-theme="midnight-blue"] .stat-icon svg { width: 22px; height: 22px; stroke-width: 1.8; }
+  [data-color-theme="midnight-blue"] [data-quick-actions] svg[data-icon-set] { color: rgb(var(--info)); transform: scale(1.35); stroke-width: 1.5; }
+  [data-color-theme="midnight-blue"] [data-quick-actions] svg[data-icon-name="Umbrella"] { color: rgb(var(--warning)); }
+  [data-color-theme="midnight-blue"] [data-quick-actions] svg:is([data-icon-name="ClipboardCheck"], [data-icon-name="Check"], [data-icon-name="CalendarCheck"], [data-icon-name="FileText"]) { color: rgb(var(--success)); }
+  [data-color-theme="midnight-blue"] [data-quick-actions] svg[data-icon-name="ShieldCheck"] { color: rgb(var(--plum)); }
+  [data-color-theme="midnight-blue"] [data-quick-actions] svg[data-icon-name="CalendarClock"] { color: rgb(var(--plum)); }
+  [data-color-theme="midnight-blue"] [data-quick-actions] .group:hover svg[data-icon-set] { color: inherit; }
+  [data-color-theme="midnight-blue"] .department-columns { display: block; font-family: inherit; }
+  @media (max-width: 640px) {
+    [data-color-theme="midnight-blue"] .department-columns text { font-size: 14px; }
+  }
+  [data-color-theme="midnight-blue"] [data-action] { --action-color: var(--warning); }
+  [data-color-theme="midnight-blue"] [data-action="failed_actions"],
+  [data-color-theme="midnight-blue"] [data-action="personnel_actions"] { --action-color: var(--danger); }
+  [data-color-theme="midnight-blue"] [data-action="leave_approvals"],
+  [data-color-theme="midnight-blue"] [data-action="kyc"],
+  [data-color-theme="midnight-blue"] [data-action="statutory"] { --action-color: var(--success); }
+  [data-color-theme="midnight-blue"] [data-action-icon] { color: rgb(var(--action-color)); background: transparent; }
+  [data-color-theme="midnight-blue"] [data-action-count] { color: rgb(var(--action-color)); background: transparent; box-shadow: inset 0 0 0 1px rgb(var(--action-color) / .4); }
+  [data-color-theme="midnight-blue"] .platform-sidebar { background: var(--sidebar-bg); }
+  [data-color-theme="midnight-blue"] .platform-sidebar [data-sidebar-heading] { color: white; }
+  [data-color-theme="midnight-blue"] .platform-sidebar [data-sidebar-detail] { color: #b0bbd0; }
+  [data-color-theme="midnight-blue"] .platform-divider { background: var(--sidebar-divider); }
+  [data-color-theme="midnight-blue"] .platform-nav-item { color: #dce5f5; }
+  [data-color-theme="midnight-blue"] .platform-nav-item svg { color: #c7d4ee; }
+  [data-color-theme="midnight-blue"] .platform-nav-item:hover { color: white; background: rgb(255 255 255 / .1); }
+  [data-color-theme="midnight-blue"] .platform-nav-item[data-active="true"] { color: white; background: var(--sidebar-active-bg); box-shadow: 0 4px 12px -2px rgb(29 104 232 / .55); }
+  [data-color-theme="midnight-blue"] .platform-nav-item[data-active="true"] svg,
+  [data-color-theme="midnight-blue"] .platform-nav-item:hover svg { color: white; }
+
   /* Surfaces */
   .card { @apply rounded-xl border border-line bg-surface shadow-card; }
   .card-header { @apply flex items-center justify-between gap-3 px-5 pb-3 pt-4; }

@@ -1,0 +1,28 @@
+# Copy to ops/alertmanager/alertmanager.yml (gitignored: it holds credentials) and fill in.
+# Critical alerts page immediately; warnings are batched. Every alert carries its
+# environment label, so testing and production are told apart in the message.
+route:
+  receiver: hrms-team
+  group_by: [alertname, environment]
+  group_wait: 30s
+  group_interval: 5m
+  repeat_interval: 4h
+  routes:
+    - matchers: [severity="critical"]
+      receiver: hrms-team
+      repeat_interval: 1h
+
+receivers:
+  - name: hrms-team
+    email_configs:
+      - to: ops@example.com
+        from: alerts@example.com
+        smarthost: smtp.example.com:587
+        auth_username: alerts@example.com
+        auth_password: CHANGE_ME
+        send_resolved: true
+    # Or Slack:
+    # slack_configs:
+    #   - api_url: https://hooks.slack.com/services/CHANGE/ME
+    #     channel: "#hrms-alerts"
+    #     send_resolved: true

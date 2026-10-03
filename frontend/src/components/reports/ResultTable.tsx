@@ -47,6 +47,7 @@ export function ResultTable({ result }: { result: RunResult }) {
           <Download size={13} /> Export CSV
         </button>
       </div>
+      {result.truncated && <p className="px-5 py-3 text-sm text-warning">Showing the first {result.total_rows} rows. Narrow the date range or filters for a complete report and CSV.</p>}
       {result.rows.length === 0 ? (
         <EmptyState icon={TableProperties} title="No matching rows" description="Try removing a filter or choosing a different module." />
       ) : (

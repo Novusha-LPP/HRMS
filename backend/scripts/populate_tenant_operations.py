@@ -274,8 +274,8 @@ async def main() -> int:
     )
     args = parser.parse_args()
 
-    if settings.environment == "production":
-        print("Refusing to fabricate HR data in production.")
+    if settings.is_deployed:
+        print(f"Refusing to fabricate HR data in {settings.environment}: it holds real records.")
         return 2
 
     engine = create_async_engine(settings.database_url)

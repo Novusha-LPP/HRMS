@@ -26,6 +26,8 @@ const DailyAnalysisPage = lazy(() => import("./pages/DailyAnalysisPage").then(m 
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage").then(m => ({ default: m.ChangePasswordPage })));
 
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
+import { API_DOCS_URL } from "./lib/runtimeConfig";
+import { EnvironmentBadge } from "./components/layout/EnvironmentBadge";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
@@ -65,9 +67,10 @@ export default function App() {
           <AuthProvider>
             <ToastProvider>
               <BrowserRouter>
+                <EnvironmentBadge />
                 <Suspense fallback={<p role="status" className="p-6">Loading…</p>}>
                 <Routes>
-                  <Route path="/docs" element={<ExternalRedirect to="https://hrmsapi.alvision.in/docs" />} />
+                  <Route path="/docs" element={<ExternalRedirect to={API_DOCS_URL} />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/register" element={<RegisterCompanyPage />} />
                   <Route path="/change-password" element={<RequireAuth allowPasswordChange><ChangePasswordPage /></RequireAuth>} />

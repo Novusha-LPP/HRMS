@@ -32,7 +32,7 @@ from hrms.core.authz import (
     resolve_acting_employment_id,
 )
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import calc_lateness, is_working_day, now_utc, to_tz
+from hrms.core.datetime_utils import business_today, calc_lateness, is_working_day, now_utc, to_tz
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
 from hrms.modules.policy.engine import PolicyResolver, resolve_policy
@@ -429,7 +429,7 @@ async def daily_analysis(
     search: str | None = Query(default=None, description="Search by employee name or number"),
 ) -> DailyAnalysisResponse:
     scope = scope.for_permission("people.read")
-    target_date = work_date if isinstance(work_date, date) else date.today()
+    target_date = work_date if isinstance(work_date, date) else business_today()
     start_ts = datetime.combine(target_date - timedelta(days=1), datetime.min.time(), tzinfo=UTC)
     end_ts = datetime.combine(target_date + timedelta(days=2), datetime.min.time(), tzinfo=UTC)
 

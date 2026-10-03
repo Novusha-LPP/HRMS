@@ -8,7 +8,7 @@ Cases:       POST     /v1/onboarding/cases          (start onboarding)
 Items:       PATCH    /v1/onboarding/items/{id}     (update status / upload doc)
 """
 
-from datetime import UTC, date, datetime, timedelta
+from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query
@@ -24,6 +24,7 @@ from hrms.core.authz import (
     visible_employment_ids,
 )
 from hrms.core.database import SessionDep
+from hrms.core.datetime_utils import business_today
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
@@ -437,10 +438,11 @@ def _case_response(case: OnboardingCase, items: list) -> CaseResponse:
 
     total = len(items)
     completed = sum(1 for i in items if i.status == IS.COMPLETED)
+    today = business_today()
     overdue = sum(
         1
         for i in items
-        if i.status not in (IS.COMPLETED, IS.SKIPPED) and i.due_date and i.due_date < date.today()
+        if i.status not in (IS.COMPLETED, IS.SKIPPED) and i.due_date and i.due_date < today
     )
     return CaseResponse(
         id=to_typed_id("onboarding_case", case.id),

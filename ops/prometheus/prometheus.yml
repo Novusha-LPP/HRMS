@@ -1,19 +1,39 @@
-# Prometheus configuration for the HRMS API.
-# Docs: docs/OBSERVABILITY.md
+# Scrapes each deployed HRMS environment's API (deploy/compose.yml binds it to 127.0.0.1) and
+# evaluates alerts.yml. The scrape tokens are each environment's HRMS_METRICS_TOKEN, kept in
+# ops/secrets/ (gitignored) — see docs/OBSERVABILITY.md.
 global:
-  scrape_interval: 15s
-  evaluation_interval: 15s
+  scrape_interval: 30s
+  evaluation_interval: 30s
 
 rule_files:
-  - alerts.yml
+  - /etc/prometheus/alerts.yml
+
+alerting:
+  alertmanagers:
+    - static_configs:
+        - targets: ["127.0.0.1:9093"]
 
 scrape_configs:
-  # Scrape the HRMS FastAPI backend metrics endpoint
   - job_name: hrms-api
     metrics_path: /metrics
-    # If HRMS_METRICS_TOKEN is set in backend/.env, uncomment and supply the token below:
-    # bearer_token: "your-secret-token"
+    authorization:
+      credentials_file: /etc/prometheus/secrets/testing-metrics-token
     static_configs:
-      - targets: ["127.0.0.1:8015"]
-        labels:
-          environment: production
+      - targets: ["127.0.0.1:8115"]
+        labels: {environment: testing}
+
+  - job_name: hrms-api-production
+    metrics_path: /metrics
+    authorization:
+      credentials_file: /etc/prometheus/secrets/production-metrics-token
+    static_configs:
+      - targets: ["127.0.0.1:8215"]
+        labels: {environment: production}
+    # alerts.yml selects job="hrms-api"; keep one job label for both environments.
+    relabel_configs:
+      - target_label: job
+        replacement: hrms-api
+
+  - job_name: prometheus
+    static_configs:
+      - targets: ["127.0.0.1:9090"]

@@ -61,6 +61,10 @@ than the database has. A database *ahead* of the code is normal during a rollout
 
 ## One-time setup
 
+- **Required — pick one:** release-please works by opening a pull request, which GitHub
+  forbids to Actions by default ("GitHub Actions is not permitted to create or approve pull
+  requests"). Either enable *Settings → Actions → General → Workflow permissions → Allow
+  GitHub Actions to create and approve pull requests*, or add the token below.
 - **Recommended:** add a repository secret `RELEASE_PLEASE_TOKEN` holding a fine-grained PAT
   or GitHub App token with *contents* and *pull requests* write access. Pull requests opened
   with the default `GITHUB_TOKEN` don't trigger other workflows, so without it the release

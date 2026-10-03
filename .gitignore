@@ -26,6 +26,8 @@ __pycache__/
 venv/
 ENV/
 env/
+# …but deploy/env holds the environment templates (its own .gitignore keeps the real files out).
+!deploy/env/
 
 # Distribution / packaging
 *.egg

@@ -3,13 +3,13 @@ import type { FormEvent } from "react";
 import { useNavigate } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import {
-  Building2, ClipboardList, LayoutGrid, LogOut, Plus, Search, ShieldAlert, ShieldCheck,
-  ShieldOff, Users, ChevronRight, ChevronLeft, TriangleAlert, Archive, ArchiveRestore, Sun, Moon, Monitor,
+  Building2, ClipboardList, LayoutGrid, Plus, Search, ShieldAlert, ShieldCheck,
+  ShieldOff, NavigationUsers as Users, ChevronRight, ChevronLeft, TriangleAlert, Archive, ArchiveRestore,
   BookOpen, ExternalLink,
-} from "lucide-react";
+} from "../components/icons/ThemeIcons";
 import { format } from "date-fns";
 import { usePlatformAuth } from "../context/PlatformAuthContext";
-import { useTheme } from "../context/ThemeContext";
+import { PlatformAccountMenu } from "../components/layout/PlatformAccountMenu";
 import { platformTenantsApi } from "../api/platform";
 import type { AuditLogEntry, CompanyMode, PlatformAdminSummary, PlatformRole, TenantDetail, TenantSummary } from "../api/platform";
 import { PlatformApiError } from "../api/platformClient";
@@ -18,7 +18,7 @@ import { PageHeader } from "../components/ui/PageHeader";
 import { Sheet } from "../components/ui/Overlay";
 import { EmptyState, Skeleton, Notice } from "../components/ui/Feedback";
 import { Avatar } from "../components/ui/Avatar";
-import { Segmented } from "../components/ui/Tabs";
+import { API_DOCS_URL } from "../lib/runtimeConfig";
 
 type Section = "overview" | "tenants" | "admins" | "audit";
 
@@ -33,21 +33,6 @@ function StatusBadge({ status }: { status: string }) {
 
 function RoleBadge({ role }: { role: PlatformRole }) {
   return <span className={`badge ${role === "ADMIN" ? "badge-brand" : "badge-neutral"}`}>{role}</span>;
-}
-
-function ThemeToggle() {
-  const { theme, setTheme } = useTheme();
-  return (
-    <Segmented
-      value={theme}
-      onChange={setTheme}
-      items={[
-        { value: "light", label: "", icon: Sun },
-        { value: "dark", label: "", icon: Moon },
-        { value: "system", label: "", icon: Monitor },
-      ]}
-    />
-  );
 }
 
 function useDebounced<T>(value: T, delayMs: number): T {
@@ -87,14 +72,14 @@ export function PlatformConsolePage() {
 
   return (
     <div className="flex h-screen overflow-hidden bg-canvas">
-      <aside className="flex w-60 shrink-0 flex-col">
+      <aside className="platform-sidebar flex w-60 shrink-0 flex-col">
         <div className="flex h-14 shrink-0 items-center gap-2.5 px-4">
           <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-white shadow-xs ring-1 ring-inset ring-white/15">
             <ShieldAlert size={16} />
           </span>
           <div className="min-w-0 leading-tight">
-            <p className="truncate text-[13px] font-semibold text-fg">Platform Console</p>
-            <p className="truncate text-[11px] text-fg-subtle">Cross-tenant admin</p>
+            <p data-sidebar-heading className="truncate text-[13px] font-semibold text-fg">Platform Console</p>
+            <p data-sidebar-detail className="truncate text-[11px] text-fg-subtle">Cross-tenant admin</p>
           </div>
         </div>
 
@@ -102,8 +87,9 @@ export function PlatformConsolePage() {
           {NAV.map((n) => (
             <button
               key={n.id}
+              data-active={section === n.id}
               onClick={() => setSection(n.id)}
-              className={`group flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium transition-colors ${
+              className={`platform-nav-item group flex h-8 w-full items-center gap-2.5 rounded-lg px-2.5 text-left text-[13px] font-medium transition-colors ${
                 section === n.id ? "bg-surface text-fg shadow-xs ring-1 ring-line" : "text-fg-muted hover:bg-fg/[0.045] hover:text-fg"
               }`}
             >
@@ -111,12 +97,12 @@ export function PlatformConsolePage() {
               {n.label}
             </button>
           ))}
-          <div className="my-2 h-px bg-line" />
+          <div className="platform-divider my-2 h-px bg-line" />
           <a
-            href="https://hrmsapi.alvision.in/docs"
+            href={API_DOCS_URL}
             target="_blank"
             rel="noopener noreferrer"
-            className="group flex h-8 w-full items-center justify-between rounded-lg px-2.5 text-left text-[13px] font-medium text-fg-muted transition-colors hover:bg-fg/[0.045] hover:text-fg"
+            className="platform-nav-item group flex h-8 w-full items-center justify-between rounded-lg px-2.5 text-left text-[13px] font-medium text-fg-muted transition-colors hover:bg-fg/[0.045] hover:text-fg"
           >
             <span className="flex items-center gap-2.5">
               <BookOpen size={16} strokeWidth={1.9} className="text-fg-subtle transition-colors group-hover:text-fg-muted" />
@@ -126,24 +112,8 @@ export function PlatformConsolePage() {
           </a>
         </nav>
 
-        <div className="shrink-0 border-t border-line p-3">
-          <div className="flex items-center gap-2.5 px-1 py-1.5">
-            <Avatar name={admin?.name ?? "?"} size="sm" />
-            <div className="min-w-0 flex-1 leading-tight">
-              <span className="flex items-center gap-1.5">
-                <span className="truncate text-[13px] font-medium text-fg">{admin?.name}</span>
-                {admin && <RoleBadge role={admin.role} />}
-              </span>
-              <p className="truncate text-[11px] text-fg-subtle">{admin?.email}</p>
-            </div>
-          </div>
-          <div className="mt-1 flex items-center justify-between gap-2 px-2.5 py-1.5">
-            <span className="text-[13px] text-fg-muted">Theme</span>
-            <ThemeToggle />
-          </div>
-          <button onClick={doLogout} className="mt-1 flex w-full items-center gap-2.5 rounded-lg px-2.5 py-2 text-left text-[13px] font-medium text-fg-muted transition-colors hover:bg-fg/[0.045] hover:text-fg">
-            <LogOut size={15} /> Sign out
-          </button>
+        <div className="shrink-0 p-3">
+          {admin && <PlatformAccountMenu name={admin.name} email={admin.email} role={admin.role} onSignOut={doLogout} />}
         </div>
       </aside>
 
@@ -196,10 +166,10 @@ function OverviewSection({ tenants, loading, onGoToTenants }: { tenants: TenantS
   }, [tenants]);
 
   const cards = [
-    { label: "Tenants", value: stats.totalTenants, icon: Building2, tone: "text-accent" },
-    { label: "Companies across all tenants", value: stats.totalCompanies, icon: LayoutGrid, tone: "text-info" },
-    { label: "Active", value: stats.active, icon: ShieldCheck, tone: "text-success" },
-    { label: "Suspended", value: stats.suspended, icon: ShieldOff, tone: "text-danger" },
+    { label: "Tenants", value: stats.totalTenants, icon: Building2, tone: "text-accent", iconTone: "blue" },
+    { label: "Companies across all tenants", value: stats.totalCompanies, icon: LayoutGrid, tone: "text-info", iconTone: "purple" },
+    { label: "Active", value: stats.active, icon: ShieldCheck, tone: "text-success", iconTone: "green" },
+    { label: "Suspended", value: stats.suspended, icon: ShieldOff, tone: "text-danger", iconTone: "red" },
   ];
 
   return (
@@ -211,7 +181,7 @@ function OverviewSection({ tenants, loading, onGoToTenants }: { tenants: TenantS
           ? [0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-[104px] rounded-xl" />)
           : cards.map((c) => (
               <div key={c.label} className="card p-4">
-                <span className={`grid h-9 w-9 place-items-center rounded-lg bg-muted ${c.tone}`}><c.icon size={16} /></span>
+                <span data-icon-tone={c.iconTone} className={`stat-icon grid h-9 w-9 place-items-center rounded-lg bg-muted ${c.tone}`}><c.icon size={16} /></span>
                 <p className="mt-3 text-2xl font-semibold tabular-nums text-fg">{c.value}</p>
                 <p className="mt-0.5 text-xs text-fg-subtle">{c.label}</p>
               </div>

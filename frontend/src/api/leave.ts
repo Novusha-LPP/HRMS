@@ -157,7 +157,10 @@ export const leaveApi = {
     return api.get<LeaveApplication[]>(`/v1/leave/applications?${params}`);
   },
   /** Counts by status and approved days by type for everyone in the caller's scope. */
-  applicationSummary: () => api.get<LeaveApplicationSummary>("/v1/leave/applications/summary"),
+  applicationSummary: (legalEntityId?: string) =>
+    api.get<LeaveApplicationSummary>(
+      `/v1/leave/applications/summary${legalEntityId ? `?legal_entity_id=${encodeURIComponent(legalEntityId)}` : ""}`,
+    ),
   createApplication: (employmentId: string, body: {
     leave_type_id: string;
     from_date: string;

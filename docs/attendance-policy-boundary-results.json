@@ -1,0 +1,1154 @@
+[
+  {
+    "break_mode": "configured_only",
+    "scenario": "zero",
+    "punch_in": "2026-07-01T09:30:00+05:30",
+    "punch_out": "2026-07-01T09:30:00+05:30",
+    "expected": {
+      "gross_minutes": 0,
+      "break_minutes": 0,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 525,
+      "ot_minutes": 0,
+      "status": "ABSENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "one_minute",
+    "punch_in": "2026-07-02T09:30:00+05:30",
+    "punch_out": "2026-07-02T09:31:00+05:30",
+    "expected": {
+      "gross_minutes": 1,
+      "break_minutes": 0,
+      "effective_minutes": 1,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 524,
+      "ot_minutes": 0,
+      "status": "HALF_DAY"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "below_half",
+    "punch_in": "2026-07-03T09:30:00+05:30",
+    "punch_out": "2026-07-03T13:29:00+05:30",
+    "expected": {
+      "gross_minutes": 239,
+      "break_minutes": 0,
+      "effective_minutes": 239,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 286,
+      "ot_minutes": 0,
+      "status": "HALF_DAY"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "at_half",
+    "punch_in": "2026-07-04T09:30:00+05:30",
+    "punch_out": "2026-07-04T13:30:00+05:30",
+    "expected": {
+      "gross_minutes": 240,
+      "break_minutes": 0,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 285,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "below_standard",
+    "punch_in": "2026-07-05T09:30:00+05:30",
+    "punch_out": "2026-07-05T17:29:00+05:30",
+    "expected": {
+      "gross_minutes": 479,
+      "break_minutes": 0,
+      "effective_minutes": 479,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 46,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "at_standard",
+    "punch_in": "2026-07-06T09:30:00+05:30",
+    "punch_out": "2026-07-06T17:30:00+05:30",
+    "expected": {
+      "gross_minutes": 480,
+      "break_minutes": 0,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 45,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "ot_below",
+    "punch_in": "2026-07-07T09:30:00+05:30",
+    "punch_out": "2026-07-07T18:09:00+05:30",
+    "expected": {
+      "gross_minutes": 519,
+      "break_minutes": 0,
+      "effective_minutes": 519,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 6,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "ot_exact",
+    "punch_in": "2026-07-08T09:30:00+05:30",
+    "punch_out": "2026-07-08T18:10:00+05:30",
+    "expected": {
+      "gross_minutes": 520,
+      "break_minutes": 0,
+      "effective_minutes": 520,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 5,
+      "ot_minutes": 40,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "ot_above",
+    "punch_in": "2026-07-09T09:30:00+05:30",
+    "punch_out": "2026-07-09T18:11:00+05:30",
+    "expected": {
+      "gross_minutes": 521,
+      "break_minutes": 0,
+      "effective_minutes": 521,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 4,
+      "ot_minutes": 41,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "late_14",
+    "punch_in": "2026-07-10T09:44:00+05:30",
+    "punch_out": "2026-07-10T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 526,
+      "break_minutes": 0,
+      "effective_minutes": 526,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 46,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "late_15",
+    "punch_in": "2026-07-11T09:45:00+05:30",
+    "punch_out": "2026-07-11T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 525,
+      "break_minutes": 0,
+      "effective_minutes": 525,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 45,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "late_15m59s",
+    "punch_in": "2026-07-12T09:45:59+05:30",
+    "punch_out": "2026-07-12T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 0,
+      "effective_minutes": 524,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 44,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "late_16",
+    "punch_in": "2026-07-13T09:46:00+05:30",
+    "punch_out": "2026-07-13T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 0,
+      "effective_minutes": 524,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 44,
+      "status": "LATE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "early_14",
+    "punch_in": "2026-07-14T09:30:00+05:30",
+    "punch_out": "2026-07-14T18:16:00+05:30",
+    "expected": {
+      "gross_minutes": 526,
+      "break_minutes": 0,
+      "effective_minutes": 526,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 46,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "early_15",
+    "punch_in": "2026-07-15T09:30:00+05:30",
+    "punch_out": "2026-07-15T18:15:00+05:30",
+    "expected": {
+      "gross_minutes": 525,
+      "break_minutes": 0,
+      "effective_minutes": 525,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 45,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "early_16",
+    "punch_in": "2026-07-16T09:30:00+05:30",
+    "punch_out": "2026-07-16T18:14:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 0,
+      "effective_minutes": 524,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 1,
+      "ot_minutes": 44,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "early_arrival",
+    "punch_in": "2026-07-17T08:30:00+05:30",
+    "punch_out": "2026-07-17T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 600,
+      "break_minutes": 0,
+      "effective_minutes": 600,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 120,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "configured_only",
+    "scenario": "missing_out",
+    "punch_in": "2026-07-18T09:30:00+05:30",
+    "punch_out": null,
+    "expected": {
+      "gross_minutes": 0,
+      "break_minutes": 0,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "zero",
+    "punch_in": "2026-07-19T09:30:00+05:30",
+    "punch_out": "2026-07-19T09:30:00+05:30",
+    "expected": {
+      "gross_minutes": 0,
+      "break_minutes": 0,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 525,
+      "ot_minutes": 0,
+      "status": "ABSENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "one_minute",
+    "punch_in": "2026-07-20T09:30:00+05:30",
+    "punch_out": "2026-07-20T09:31:00+05:30",
+    "expected": {
+      "gross_minutes": 1,
+      "break_minutes": 1,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 524,
+      "ot_minutes": 0,
+      "status": "ABSENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "below_half",
+    "punch_in": "2026-07-21T09:30:00+05:30",
+    "punch_out": "2026-07-21T14:29:00+05:30",
+    "expected": {
+      "gross_minutes": 299,
+      "break_minutes": 60,
+      "effective_minutes": 239,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 226,
+      "ot_minutes": 0,
+      "status": "HALF_DAY"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "at_half",
+    "punch_in": "2026-07-22T09:30:00+05:30",
+    "punch_out": "2026-07-22T14:30:00+05:30",
+    "expected": {
+      "gross_minutes": 300,
+      "break_minutes": 60,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 225,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "below_standard",
+    "punch_in": "2026-07-23T09:30:00+05:30",
+    "punch_out": "2026-07-23T18:29:00+05:30",
+    "expected": {
+      "gross_minutes": 539,
+      "break_minutes": 60,
+      "effective_minutes": 479,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "at_standard",
+    "punch_in": "2026-07-24T09:30:00+05:30",
+    "punch_out": "2026-07-24T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 540,
+      "break_minutes": 60,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "ot_below",
+    "punch_in": "2026-07-25T09:30:00+05:30",
+    "punch_out": "2026-07-25T19:09:00+05:30",
+    "expected": {
+      "gross_minutes": 579,
+      "break_minutes": 60,
+      "effective_minutes": 519,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "ot_exact",
+    "punch_in": "2026-07-26T09:30:00+05:30",
+    "punch_out": "2026-07-26T19:10:00+05:30",
+    "expected": {
+      "gross_minutes": 580,
+      "break_minutes": 60,
+      "effective_minutes": 520,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "ot_above",
+    "punch_in": "2026-07-27T09:30:00+05:30",
+    "punch_out": "2026-07-27T19:11:00+05:30",
+    "expected": {
+      "gross_minutes": 581,
+      "break_minutes": 60,
+      "effective_minutes": 521,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 41,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "late_14",
+    "punch_in": "2026-07-28T09:44:00+05:30",
+    "punch_out": "2026-07-28T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 526,
+      "break_minutes": 60,
+      "effective_minutes": 466,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "late_15",
+    "punch_in": "2026-07-29T09:45:00+05:30",
+    "punch_out": "2026-07-29T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 525,
+      "break_minutes": 60,
+      "effective_minutes": 465,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "late_15m59s",
+    "punch_in": "2026-07-30T09:45:59+05:30",
+    "punch_out": "2026-07-30T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 60,
+      "effective_minutes": 464,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "late_16",
+    "punch_in": "2026-07-31T09:46:00+05:30",
+    "punch_out": "2026-07-31T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 60,
+      "effective_minutes": 464,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "early_14",
+    "punch_in": "2026-08-01T09:30:00+05:30",
+    "punch_out": "2026-08-01T18:16:00+05:30",
+    "expected": {
+      "gross_minutes": 526,
+      "break_minutes": 60,
+      "effective_minutes": 466,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "early_15",
+    "punch_in": "2026-08-02T09:30:00+05:30",
+    "punch_out": "2026-08-02T18:15:00+05:30",
+    "expected": {
+      "gross_minutes": 525,
+      "break_minutes": 60,
+      "effective_minutes": 465,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "early_16",
+    "punch_in": "2026-08-03T09:30:00+05:30",
+    "punch_out": "2026-08-03T18:14:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 60,
+      "effective_minutes": 464,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 1,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "early_arrival",
+    "punch_in": "2026-08-04T08:30:00+05:30",
+    "punch_out": "2026-08-04T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 600,
+      "break_minutes": 60,
+      "effective_minutes": 540,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 60,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "auto",
+    "scenario": "missing_out",
+    "punch_in": "2026-08-05T09:30:00+05:30",
+    "punch_out": null,
+    "expected": {
+      "gross_minutes": 0,
+      "break_minutes": 0,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "zero",
+    "punch_in": "2026-08-06T09:30:00+05:30",
+    "punch_out": "2026-08-06T09:30:00+05:30",
+    "expected": {
+      "gross_minutes": 0,
+      "break_minutes": 0,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 525,
+      "ot_minutes": 0,
+      "status": "ABSENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "one_minute",
+    "punch_in": "2026-08-07T09:30:00+05:30",
+    "punch_out": "2026-08-07T09:31:00+05:30",
+    "expected": {
+      "gross_minutes": 1,
+      "break_minutes": 1,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 524,
+      "ot_minutes": 0,
+      "status": "ABSENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "below_half",
+    "punch_in": "2026-08-08T09:30:00+05:30",
+    "punch_out": "2026-08-08T13:59:00+05:30",
+    "expected": {
+      "gross_minutes": 269,
+      "break_minutes": 30,
+      "effective_minutes": 239,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 256,
+      "ot_minutes": 0,
+      "status": "HALF_DAY"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "at_half",
+    "punch_in": "2026-08-09T09:30:00+05:30",
+    "punch_out": "2026-08-09T14:00:00+05:30",
+    "expected": {
+      "gross_minutes": 270,
+      "break_minutes": 30,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 255,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "below_standard",
+    "punch_in": "2026-08-10T09:30:00+05:30",
+    "punch_out": "2026-08-10T17:59:00+05:30",
+    "expected": {
+      "gross_minutes": 509,
+      "break_minutes": 30,
+      "effective_minutes": 479,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 16,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "at_standard",
+    "punch_in": "2026-08-11T09:30:00+05:30",
+    "punch_out": "2026-08-11T18:00:00+05:30",
+    "expected": {
+      "gross_minutes": 510,
+      "break_minutes": 30,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 15,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "ot_below",
+    "punch_in": "2026-08-12T09:30:00+05:30",
+    "punch_out": "2026-08-12T18:39:00+05:30",
+    "expected": {
+      "gross_minutes": 549,
+      "break_minutes": 30,
+      "effective_minutes": 519,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "ot_exact",
+    "punch_in": "2026-08-13T09:30:00+05:30",
+    "punch_out": "2026-08-13T18:40:00+05:30",
+    "expected": {
+      "gross_minutes": 550,
+      "break_minutes": 30,
+      "effective_minutes": 520,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "ot_above",
+    "punch_in": "2026-08-14T09:30:00+05:30",
+    "punch_out": "2026-08-14T18:41:00+05:30",
+    "expected": {
+      "gross_minutes": 551,
+      "break_minutes": 30,
+      "effective_minutes": 521,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 41,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "late_14",
+    "punch_in": "2026-08-15T09:44:00+05:30",
+    "punch_out": "2026-08-15T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 526,
+      "break_minutes": 30,
+      "effective_minutes": 496,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "late_15",
+    "punch_in": "2026-08-16T09:45:00+05:30",
+    "punch_out": "2026-08-16T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 525,
+      "break_minutes": 30,
+      "effective_minutes": 495,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "late_15m59s",
+    "punch_in": "2026-08-17T09:45:59+05:30",
+    "punch_out": "2026-08-17T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 30,
+      "effective_minutes": 494,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "late_16",
+    "punch_in": "2026-08-18T09:46:00+05:30",
+    "punch_out": "2026-08-18T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 30,
+      "effective_minutes": 494,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "early_14",
+    "punch_in": "2026-08-19T09:30:00+05:30",
+    "punch_out": "2026-08-19T18:16:00+05:30",
+    "expected": {
+      "gross_minutes": 526,
+      "break_minutes": 30,
+      "effective_minutes": 496,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "early_15",
+    "punch_in": "2026-08-20T09:30:00+05:30",
+    "punch_out": "2026-08-20T18:15:00+05:30",
+    "expected": {
+      "gross_minutes": 525,
+      "break_minutes": 30,
+      "effective_minutes": 495,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "early_16",
+    "punch_in": "2026-08-21T09:30:00+05:30",
+    "punch_out": "2026-08-21T18:14:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 30,
+      "effective_minutes": 494,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 1,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "early_arrival",
+    "punch_in": "2026-08-22T08:30:00+05:30",
+    "punch_out": "2026-08-22T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 600,
+      "break_minutes": 30,
+      "effective_minutes": 570,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 90,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_30",
+    "scenario": "missing_out",
+    "punch_in": "2026-08-23T09:30:00+05:30",
+    "punch_out": null,
+    "expected": {
+      "gross_minutes": 0,
+      "break_minutes": 0,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "zero",
+    "punch_in": "2026-08-24T09:30:00+05:30",
+    "punch_out": "2026-08-24T09:30:00+05:30",
+    "expected": {
+      "gross_minutes": 0,
+      "break_minutes": 0,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 525,
+      "ot_minutes": 0,
+      "status": "ABSENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "one_minute",
+    "punch_in": "2026-08-25T09:30:00+05:30",
+    "punch_out": "2026-08-25T09:31:00+05:30",
+    "expected": {
+      "gross_minutes": 1,
+      "break_minutes": 1,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 524,
+      "ot_minutes": 0,
+      "status": "ABSENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "below_half",
+    "punch_in": "2026-08-26T09:30:00+05:30",
+    "punch_out": "2026-08-26T14:59:00+05:30",
+    "expected": {
+      "gross_minutes": 329,
+      "break_minutes": 90,
+      "effective_minutes": 239,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 196,
+      "ot_minutes": 0,
+      "status": "HALF_DAY"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "at_half",
+    "punch_in": "2026-08-27T09:30:00+05:30",
+    "punch_out": "2026-08-27T15:00:00+05:30",
+    "expected": {
+      "gross_minutes": 330,
+      "break_minutes": 90,
+      "effective_minutes": 240,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 195,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "below_standard",
+    "punch_in": "2026-08-28T09:30:00+05:30",
+    "punch_out": "2026-08-28T18:59:00+05:30",
+    "expected": {
+      "gross_minutes": 569,
+      "break_minutes": 90,
+      "effective_minutes": 479,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "at_standard",
+    "punch_in": "2026-08-29T09:30:00+05:30",
+    "punch_out": "2026-08-29T19:00:00+05:30",
+    "expected": {
+      "gross_minutes": 570,
+      "break_minutes": 90,
+      "effective_minutes": 480,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "ot_below",
+    "punch_in": "2026-08-30T09:30:00+05:30",
+    "punch_out": "2026-08-30T19:39:00+05:30",
+    "expected": {
+      "gross_minutes": 609,
+      "break_minutes": 90,
+      "effective_minutes": 519,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "ot_exact",
+    "punch_in": "2026-08-31T09:30:00+05:30",
+    "punch_out": "2026-08-31T19:40:00+05:30",
+    "expected": {
+      "gross_minutes": 610,
+      "break_minutes": 90,
+      "effective_minutes": 520,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 40,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "ot_above",
+    "punch_in": "2026-09-01T09:30:00+05:30",
+    "punch_out": "2026-09-01T19:41:00+05:30",
+    "expected": {
+      "gross_minutes": 611,
+      "break_minutes": 90,
+      "effective_minutes": 521,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 41,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "late_14",
+    "punch_in": "2026-09-02T09:44:00+05:30",
+    "punch_out": "2026-09-02T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 526,
+      "break_minutes": 90,
+      "effective_minutes": 436,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "late_15",
+    "punch_in": "2026-09-03T09:45:00+05:30",
+    "punch_out": "2026-09-03T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 525,
+      "break_minutes": 90,
+      "effective_minutes": 435,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "late_15m59s",
+    "punch_in": "2026-09-04T09:45:59+05:30",
+    "punch_out": "2026-09-04T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 90,
+      "effective_minutes": 434,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "late_16",
+    "punch_in": "2026-09-05T09:46:00+05:30",
+    "punch_out": "2026-09-05T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 90,
+      "effective_minutes": 434,
+      "late_by_minutes": 1,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "LATE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "early_14",
+    "punch_in": "2026-09-06T09:30:00+05:30",
+    "punch_out": "2026-09-06T18:16:00+05:30",
+    "expected": {
+      "gross_minutes": 526,
+      "break_minutes": 90,
+      "effective_minutes": 436,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "early_15",
+    "punch_in": "2026-09-07T09:30:00+05:30",
+    "punch_out": "2026-09-07T18:15:00+05:30",
+    "expected": {
+      "gross_minutes": 525,
+      "break_minutes": 90,
+      "effective_minutes": 435,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "early_16",
+    "punch_in": "2026-09-08T09:30:00+05:30",
+    "punch_out": "2026-09-08T18:14:00+05:30",
+    "expected": {
+      "gross_minutes": 524,
+      "break_minutes": 90,
+      "effective_minutes": 434,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 1,
+      "ot_minutes": 0,
+      "status": "EARLY_DEPARTURE"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "early_arrival",
+    "punch_in": "2026-09-09T08:30:00+05:30",
+    "punch_out": "2026-09-09T18:30:00+05:30",
+    "expected": {
+      "gross_minutes": 600,
+      "break_minutes": 90,
+      "effective_minutes": 510,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  },
+  {
+    "break_mode": "explicit_90",
+    "scenario": "missing_out",
+    "punch_in": "2026-09-10T09:30:00+05:30",
+    "punch_out": null,
+    "expected": {
+      "gross_minutes": 0,
+      "break_minutes": 0,
+      "effective_minutes": 0,
+      "late_by_minutes": 0,
+      "early_departure_minutes": 0,
+      "ot_minutes": 0,
+      "status": "PRESENT"
+    },
+    "report_matches": true
+  }
+]

@@ -41,7 +41,8 @@ from datetime import date, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlalchemy import and_, func, or_, text
+from sqlalchemy import Uuid, and_, func, or_, text
+from sqlalchemy.ext.asyncio import AsyncSession
 from sqlmodel import col, select
 
 from hrms.core.approvals import require_reviewer
@@ -535,6 +536,26 @@ async def run_accrual(
     scheduler (see RUNBOOK.md).
     """
     scope = scope.for_permission("leave.write")
+    clause, params = scope.employment_filter_sql("e")
+    return await accrue_period(
+        session, tenant_id, period, recorded_by=principal.user_account_id,
+        employment_clause=clause, employment_params=params,
+    )
+
+
+async def accrue_period(
+    session: AsyncSession,
+    tenant_id: UUID,
+    period: str | None,
+    *,
+    recorded_by: UUID,
+    employment_clause: str = "",
+    employment_params: dict | None = None,
+) -> AccrualRunResponse:
+    """
+    The accrual itself, shared by POST /accrual/run and the daily job (hrms.jobs), which runs
+    it for every employee as SYSTEM_ACTOR. Idempotent per period.
+    """
     if period is None:
         period = now_utc().strftime("%Y-%m")
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
@@ -559,7 +580,7 @@ async def run_accrual(
     if not leave_types:
         return AccrualRunResponse(period=period, balances_credited=0, days_credited_total=0.0)
 
-    clause, params = scope.employment_filter_sql("e")
+    clause, params = employment_clause, employment_params or {}
     emp_rows = await session.execute(
         text(f"""
             SELECT e.id, e.hire_date, e.employment_state FROM employments e
@@ -637,7 +658,7 @@ async def run_accrual(
             credits=credits,
             effective_date=as_of,
             reference_type="ACCRUAL_RUN",
-            recorded_by=principal.user_account_id,
+            recorded_by=recorded_by,
         )
 
     await session.flush()
@@ -833,6 +854,9 @@ async def application_summary(
     scope: ScopeDep,
     tenant_id: TenantDep,
     session: SessionDep,
+    legal_entity_id: str | None = Query(
+        default=None, description="Narrow to one company within the caller's scope"
+    ),
 ) -> LeaveApplicationSummary:
     """Application counts by status and approved days by leave type, across the caller's scope."""
     scope = read_scope(scope, "leave.read", "leave.approve")
@@ -843,6 +867,17 @@ async def application_summary(
     if not scope.is_all:
         base.append(
             col(LeaveApplication.employment_id).in_(visible_employments_select(tenant_id, scope))
+        )
+    if legal_entity_id:  # an extra AND: narrows the scope above, never widens it
+        base.append(
+            col(LeaveApplication.employment_id).in_(
+                text(
+                    "SELECT id FROM employments WHERE tenant_id = :focus_tid"
+                    " AND legal_entity_id = :focus_le"
+                )
+                .bindparams(focus_tid=tenant_id, focus_le=to_uuid(legal_entity_id))
+                .columns(id=Uuid)
+            )
         )
     by_status = await session.execute(
         select(LeaveApplication.status, func.count()).where(*base).group_by(LeaveApplication.status)

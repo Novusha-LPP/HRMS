@@ -1,7 +1,8 @@
+import { runtimeConfig } from "../lib/runtimeConfig";
 import { logger } from "../lib/logger";
 import { generateRequestId } from "../lib/uuid";
 
-const BASE = import.meta.env.VITE_API_URL ?? "http://localhost:8015";
+const BASE = runtimeConfig.apiUrl;
 
 export class ApiError extends Error {
   status: number;
@@ -100,5 +101,7 @@ export const api = {
     request<T>(path, { method: "POST", body: formData }),
   patch:    <T>(path: string, body: unknown) =>
     request<T>(path, { method: "PATCH", body: JSON.stringify(body) }),
-  delete:   (path: string) => request<void>(path, { method: "DELETE" }),
+  put:      <T>(path: string, body: unknown) =>
+    request<T>(path, { method: "PUT", body: JSON.stringify(body) }),
+  delete:   <T = void>(path: string) => request<T>(path, { method: "DELETE" }),
 };

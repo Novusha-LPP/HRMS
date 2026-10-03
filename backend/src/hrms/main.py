@@ -36,6 +36,7 @@ from hrms.modules.org.router import router as org_router
 from hrms.modules.people.router import router as people_router
 from hrms.modules.platform.router import router as platform_router
 from hrms.modules.policy.router import router as policy_router
+from hrms.modules.preferences.router import router as preferences_router
 from hrms.modules.reports.router import router as reports_router
 from hrms.modules.time.router import router as time_router
 
@@ -46,7 +47,7 @@ init_error_tracking()
 
 @asynccontextmanager
 async def lifespan(app):
-    if settings.environment == "production":
+    if settings.is_deployed:
         async with engine.connect() as conn:
             role = (
                 await conn.execute(
@@ -65,9 +66,11 @@ app = FastAPI(
     description=(
         "Multi-tenant HRMS platform API. All endpoints require a tenant-scoped access token."
     ),
-    openapi_url="/openapi.json",
-    docs_url="/docs",
-    redoc_url="/redoc",
+    # Off on deployed environments unless HRMS_API_DOCS_ENABLED says otherwise: the schema is a
+    # map of every endpoint, which the public internet doesn't need.
+    openapi_url="/openapi.json" if settings.docs_enabled else None,
+    docs_url="/docs" if settings.docs_enabled else None,
+    redoc_url="/redoc" if settings.docs_enabled else None,
 )
 
 # ─── Middleware ───────────────────────────────────────────────────────────────
@@ -107,6 +110,7 @@ app.include_router(policy_router)
 app.include_router(leave_router)
 app.include_router(corrections_router)
 app.include_router(kyc_router)
+app.include_router(preferences_router)
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────
