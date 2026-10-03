@@ -41,8 +41,21 @@ def upgrade() -> None:
 
 
 def downgrade() -> None:
-    # Only possible while the values are still plain (before encrypt-pii, or after
-    # `python -m hrms.deploy decrypt-pii`): an encrypted token doesn't fit the old lengths.
+    # Only possible while the values are plain (before encrypt-pii, or after
+    # `python -m hrms.deploy decrypt-pii`): an encrypted token doesn't fit the old lengths,
+    # and truncating one would destroy it. Refuse clearly instead.
+    checks = [f"{c} LIKE 'enc:v1:%'" for c in RECORD_COLUMNS]
+    encrypted = op.get_bind().execute(
+        sa.text(
+            f"SELECT (SELECT count(*) FROM employee_kyc_records WHERE {' OR '.join(checks)})"
+            " + (SELECT count(*) FROM employee_kyc_documents WHERE document_number LIKE 'enc:v1:%')"
+        )
+    ).scalar()
+    if encrypted:
+        raise RuntimeError(
+            f"{encrypted} row(s) hold encrypted identifiers: run `python -m hrms.deploy "
+            "decrypt-pii` before downgrading below 0030"
+        )
     for column, length in RECORD_COLUMNS.items():
         op.alter_column("employee_kyc_records", column, type_=sa.String(length))
     op.alter_column("employee_kyc_documents", "document_number", type_=sa.String(100))

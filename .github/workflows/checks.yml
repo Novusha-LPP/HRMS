@@ -43,13 +43,15 @@ jobs:
       # Fails if a model field, table or constraint has no migration (and only then — see
       # src/hrms/alembic_hooks.py for what is deliberately not compared).
       - run: alembic check
-      # Coverage below [tool.coverage.report] fail_under fails the build.
-      - run: pytest -q --cov --cov-report=term
+      # On the fresh schema, before the tests fill it: a downgrade is checked for being
+      # reversible, not for coping with data (0030 needs decrypt-pii first, by design).
       - name: Verify the recent migrations roll back and reapply
         run: |
           alembic downgrade 0016
           alembic upgrade head
           alembic check
+      # Coverage below [tool.coverage.report] fail_under fails the build.
+      - run: pytest -q --cov --cov-report=term
   frontend:
     runs-on: ubuntu-latest
     defaults:
