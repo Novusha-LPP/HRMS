@@ -36,7 +36,7 @@ import json
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, status
+from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import text
 
 from hrms.core.authn import CurrentUser
@@ -100,7 +100,7 @@ def _user_select(*, role_join: str = "JOIN", extra_where: str = "") -> str:
     LEFT JOIN employments e ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
     LEFT JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
     WHERE ua.tenant_id = CAST(:tid AS uuid) {extra_where}
-    ORDER BY ua.email, r.name
+    ORDER BY ua.email, r.name, ua.id, ra.id
 """
 
 
@@ -131,26 +131,39 @@ def _user_row_response(r) -> UserResponse:
     dependencies=[require_permission("iam.read")],
 )
 async def list_users(
-    tenant_id: TenantDep, session: SessionDep, scope: ScopeDep
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+    limit: int = Query(default=200, ge=1, le=200),
+    offset: int = Query(default=0, ge=0, le=1_000_000),
 ) -> list[UserResponse]:
     scope = scope.for_permission("iam.read")
-    rows = (await session.execute(text(_user_select()), {"tid": str(tenant_id)})).mappings().all()
-    if scope.is_all:
-        return [_user_row_response(r) for r in rows]
-
-    out: list[UserResponse] = []
-    for r in rows:
-        if r["scope_type"] == "ALL":
-            continue  # a company-scoped viewer can't see who has group-wide access
-        if r["scope_type"] == "LEGAL_ENTITY":
-            if decode_scope_ids(r["scope_value"]) & scope.legal_entity_ids:
-                out.append(_user_row_response(r))
-        elif (
-            r["scope_type"] in ("SELF", "DIRECT_REPORTS", "ALL_REPORTS")
-            and r["employment_legal_entity_id"] in scope.legal_entity_ids
-        ):
-            out.append(_user_row_response(r))
-    return out
+    where = ""
+    params: dict = {"tid": str(tenant_id), "limit": limit, "offset": offset}
+    if not scope.is_all:
+        # Old imports may contain malformed JSON. Parse only valid arrays, and
+        # apply visibility BEFORE LIMIT so sparse company scopes paginate correctly.
+        parsed = (
+            "CASE WHEN pg_input_is_valid(ra.scope_value,'jsonb') "
+            "THEN CAST(ra.scope_value AS jsonb) ELSE '[]'::jsonb END"
+        )
+        array = f"CASE WHEN jsonb_typeof({parsed})='array' THEN {parsed} ELSE '[]'::jsonb END"
+        where = f"""AND ((ra.scope_type='LEGAL_ENTITY' AND
+            ({array}) ?| CAST(:entity_tokens AS text[])) OR
+            (ra.scope_type IN ('SELF','DIRECT_REPORTS','ALL_REPORTS') AND
+             e.legal_entity_id = ANY(CAST(:entity_ids AS uuid[]))))"""
+        params["entity_ids"] = list(scope.legal_entity_ids)
+        params["entity_tokens"] = [
+            token
+            for eid in scope.legal_entity_ids
+            for token in (str(eid), to_typed_id("legal_entity", eid))
+        ]
+    rows = (
+        await session.execute(
+            text(_user_select(extra_where=where) + " LIMIT :limit OFFSET :offset"), params
+        )
+    ).mappings()
+    return [_user_row_response(row) for row in rows]
 
 
 @router.post(

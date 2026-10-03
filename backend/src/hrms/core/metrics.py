@@ -29,6 +29,7 @@ prometheus_client aggregates across workers (the pool gauges then describe only 
 process that answered the scrape).
 """
 
+import asyncio
 import hmac
 import os
 import time
@@ -173,6 +174,7 @@ async def metrics(request: Request) -> Response:
 
         registry = CollectorRegistry()
         multiprocess.MultiProcessCollector(registry)
+        registry.register(_PoolCollector())
     jobs = CollectorRegistry()
     jobs.register(_JobFreshness(await _last_job_successes()))
     return Response(
@@ -187,7 +189,7 @@ async def _last_job_successes() -> list[tuple[str, float]]:
     from hrms.core.database import AsyncSessionLocal
 
     try:
-        async with AsyncSessionLocal() as session:
+        async with asyncio.timeout(2), AsyncSessionLocal() as session:
             rows = await session.execute(
                 text("""
                     SELECT job, EXTRACT(EPOCH FROM max(finished_at)) FROM job_runs
@@ -214,6 +216,10 @@ class _JobFreshness(Collector):
             "Unix time of the last successful run of each scheduled job",
             labels=["job_name"],
         )
-        for job, ts in self.rows:
-            family.add_metric([job], ts)
+        values = dict(self.rows)
+        expected = {"accrual", "scheduled-actions"}
+        if settings.mail_backend == "ses":
+            expected.add("mail-delivery")
+        for job in sorted(expected | values.keys()):
+            family.add_metric([job], values.get(job, 0.0))
         yield family

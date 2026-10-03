@@ -148,6 +148,7 @@ class HourlyArrivalStat(BaseModel):
 
 
 class DailyAnalysisResponse(BaseModel):
+    total_filtered: int = 0
     work_date: date
     metrics: DailyMetrics
     department_stats: list[DepartmentAttendanceStat]

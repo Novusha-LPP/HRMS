@@ -41,14 +41,15 @@ async def get_platform_admin_context(
     row = (
         (
             await session.execute(
-                text("SELECT name, email, role, status FROM platform_admins WHERE id = :id"),
+                text("SELECT name, email, role, status, token_epoch "
+                     "FROM platform_admins WHERE id = :id"),
                 {"id": str(principal.admin_id)},
             )
         )
         .mappings()
         .first()
     )
-    if not row or row["status"] != "ACTIVE":
+    if not row or row["status"] != "ACTIVE" or row["token_epoch"] != principal.token_epoch:
         raise HTTPException(
             status.HTTP_401_UNAUTHORIZED,
             "This account is no longer active",

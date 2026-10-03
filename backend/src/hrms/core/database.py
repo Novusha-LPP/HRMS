@@ -39,6 +39,8 @@ engine = create_async_engine(
     settings.app_database_url or settings.database_url,
     pool_size=settings.database_pool_size,
     max_overflow=settings.database_max_overflow,
+    pool_pre_ping=True,
+    pool_timeout=settings.database_pool_timeout_seconds,
     echo=settings.debug,
     future=True,
 )
@@ -145,12 +147,20 @@ async def get_session(
         try:
             if auth["actions_due"]:
                 await _apply_scheduled_actions(session, tenant_id)
+                state = (await session.execute(text("""
+                    SELECT ua.status, e.employment_state
+                    FROM user_accounts ua LEFT JOIN employments e
+                      ON e.tenant_id=ua.tenant_id AND e.id=ua.employment_id
+                    WHERE ua.tenant_id=:tid AND ua.id=:uid
+                """), {"tid": tenant_id, "uid": principal.user_account_id})).first()
+                if not state or state.status != "ACTIVE" or state.employment_state == "SEPARATED":
+                    raise HTTPException(401, "This account is no longer active; sign in again")
             yield session
             await session.commit()
-            _finish_files(session, committed=True)
+            await _finish_files(session, committed=True)
         except Exception:
             await session.rollback()
-            _finish_files(session, committed=False)
+            await _finish_files(session, committed=False)
             raise
 
 
@@ -166,7 +176,8 @@ async def _apply_scheduled_actions(session: AsyncSession, tenant_id) -> None:
     from hrms.modules.people.router import apply_due_actions
 
     try:
-        await apply_due_actions(session, tenant_id)
+        async with session.begin_nested():
+            await apply_due_actions(session, tenant_id)
     except Exception:
         logger.exception("Applying scheduled personnel actions failed for tenant %s", tenant_id)
 
@@ -187,24 +198,26 @@ async def get_anonymous_session() -> AsyncGenerator[AsyncSession, None]:
         try:
             yield session
             await session.commit()
-            _finish_files(session, committed=True)
+            await _finish_files(session, committed=True)
         except Exception:
             await session.rollback()
-            _finish_files(session, committed=False)
+            await _finish_files(session, committed=False)
             raise
 
 
 AnonymousSessionDep = Annotated[AsyncSession, Depends(get_anonymous_session, scope="function")]
 
 
-def _finish_files(session, committed):
+async def _finish_files(session, committed):
     import logging
+
+    from starlette.concurrency import run_in_threadpool
 
     from hrms.core import document_store
 
     for ref in session.info.pop("delete_files" if committed else "created_files", []):
         try:
-            document_store.remove(str(ref))
+            await run_in_threadpool(document_store.remove, str(ref))
         except Exception:
             logging.getLogger(__name__).exception("Could not remove document file")
     session.info.pop("created_files" if committed else "delete_files", None)

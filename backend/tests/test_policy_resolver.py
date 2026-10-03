@@ -192,3 +192,46 @@ async def test_without_any_template_the_deployment_fallback_applies(api):
         await session.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tid)})
         policy = await resolve_policy(to_uuid(emp["id"]), WORK_DAY, session, tid)
     assert policy == default_policy()
+
+
+async def test_resolver_query_count_is_constant_across_many_departments(api):
+    from uuid import uuid4
+
+    from sqlalchemy import event, text
+
+    client, _ = api
+    admin = await tenant(client)
+    tid = to_uuid(admin["user"]["tenant_id"])
+    company = admin["user"]["legal_entities"][0]["id"]
+    units = []
+    for index in range(20):
+        unit = await ok(
+            client,
+            "POST",
+            "/v1/org/org-units",
+            json={
+                "name": f"Budget department {index}",
+                "type": "DEPARTMENT",
+                "legal_entity_id": company,
+                "effective_from": "2020-01-01",
+            },
+        )
+        units.append(to_uuid(unit["id"]))
+    async with database.AsyncSessionLocal() as session:
+        await session.execute(
+            text("SELECT set_config('app.tenant_id', :tid, true)"), {"tid": str(tid)}
+        )
+        counted = []
+
+        def observe(*args, **kwargs):
+            counted.append(1)
+
+        target = session.get_bind()
+        event.listen(target, "before_cursor_execute", observe)
+        try:
+            resolver = PolicyResolver(session, tid, WORK_DAY)
+            for unit in units:
+                await resolver.resolve(uuid4(), org_unit_id=unit, legal_entity_id=to_uuid(company))
+            assert len(counted) == 3
+        finally:
+            event.remove(target, "before_cursor_execute", observe)

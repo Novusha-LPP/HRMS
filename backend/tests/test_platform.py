@@ -112,8 +112,13 @@ async def test_platform_sign_in_is_throttled_and_does_not_share_counters_with_te
         assert r.status_code == 200
 
 
-async def test_forgot_password_is_rate_limited_and_never_reveals_accounts(api):
+async def test_forgot_password_is_rate_limited_and_never_reveals_accounts(api, monkeypatch):
     client, engine = api
+    from hrms.core.config import settings
+
+    # Exercise the enabled delivery path without calling a provider (outbox only).
+    monkeypatch.setattr(settings, "mail_backend", "ses")
+    monkeypatch.setattr(settings, "platform_reset_base_url", "https://hrms.example.com")
     known = await _platform_admin(engine)
     async with client_from("10.66.0.1") as anon:
         replies = set()

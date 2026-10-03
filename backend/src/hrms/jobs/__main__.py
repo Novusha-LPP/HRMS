@@ -31,21 +31,31 @@ def _seconds_until(hh_mm: str) -> float:
 
 async def _schedule() -> None:
     while True:
+        ok = False
         try:
-            await run_all()
-        except Exception:  # the database being down must not kill the scheduler
-            logger.exception("scheduled run failed; retrying at the next slot")
-        wait = _seconds_until(settings.jobs_daily_at)
+            ok = await run_all()
+        except Exception:
+            logger.exception("scheduled run failed")
+        wait = _seconds_until(settings.jobs_daily_at) if ok else settings.jobs_retry_seconds
         logger.info(
             "next run in %.0f s (%s %s)", wait, settings.jobs_daily_at, settings.default_timezone
         )
         await asyncio.sleep(wait)
 
 
+async def _schedulers() -> None:
+    if settings.mail_backend == "ses":
+        from hrms.core.mail import schedule_delivery
+
+        await asyncio.gather(_schedule(), schedule_delivery())
+    else:
+        await _schedule()
+
+
 def main(argv: list[str]) -> int:
     setup_logging(log_level=settings.log_level, log_format=settings.log_format)
     if len(argv) >= 1 and argv[0] == "schedule":
-        asyncio.run(_schedule())
+        asyncio.run(_schedulers())
         return 0
     if len(argv) == 2 and argv[0] == "run" and (argv[1] == "all" or argv[1] in JOBS):
         ok = asyncio.run(run_all() if argv[1] == "all" else run_job(argv[1]))

@@ -15,8 +15,9 @@ the caller's own employment and is checked against their scope if they ask
 for someone else's (a manager checking a direct report's history, say).
 """
 
+from dataclasses import asdict, dataclass
 from datetime import UTC, date, datetime, timedelta
-from uuid import uuid4
+from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import text
@@ -428,6 +429,30 @@ async def review_overtime(
     return _attendance_day_response(ad)
 
 
+@dataclass(slots=True, kw_only=True)
+class _DailyRecord:
+    employment_id: UUID
+    employee_number: str
+    name: str
+    email: str | None = None
+    department: str | None = None
+    designation: str | None = None
+    location: str | None = None
+    status: str
+    first_punch_in: datetime | None = None
+    last_punch_out: datetime | None = None
+    effective_minutes: int = 0
+    gross_minutes: int = 0
+    break_minutes: int = 0
+    late_by_minutes: int = 0
+    early_departure_minutes: int = 0
+    overtime_minutes: int = 0
+    overtime_status: OvertimeStatus = OvertimeStatus.NONE
+    leave_type: str | None = None
+    punches_count: int = 0
+    is_currently_in: bool = False
+
+
 @router.get(
     "/daily-analysis",
     response_model=DailyAnalysisResponse,
@@ -445,6 +470,8 @@ async def daily_analysis(
     department: str | None = Query(default=None, description="Filter by department name"),
     status: str | None = Query(default=None, description="Filter by attendance status"),
     search: str | None = Query(default=None, description="Search by employee name or number"),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0, le=1_000_000),
 ) -> DailyAnalysisResponse:
     scope = scope.for_permission("people.read")
     target_date = work_date if isinstance(work_date, date) else business_today()
@@ -552,8 +579,10 @@ async def daily_analysis(
         SELECT p.id, p.original_punch_id, p.work_date, p.employment_id, p.punch_type, p.punched_at
         FROM punches p
         WHERE p.tenant_id = CAST(:tid AS uuid)
-          AND p.punched_at >= CAST(:start_ts AS timestamptz)
-          AND p.punched_at <= CAST(:end_ts AS timestamptz)
+          AND (p.work_date = CAST(:target_date AS date)
+               OR (p.work_date IS NULL
+                   AND p.punched_at >= CAST(:start_ts AS timestamptz)
+                   AND p.punched_at <= CAST(:end_ts AS timestamptz)))
           AND p.employment_id = ANY(CAST(:ids AS uuid[]))
         ORDER BY p.punched_at ASC
     """)
@@ -565,6 +594,7 @@ async def daily_analysis(
                     "tid": str(tenant_id),
                     "start_ts": start_ts,
                     "end_ts": end_ts,
+                    "target_date": target_date,
                     "ids": emp_ids,
                 },
             )
@@ -577,7 +607,7 @@ async def daily_analysis(
     for p in punch_rows:
         punches_by_emp.setdefault(str(p["employment_id"]), []).append(p)
 
-    records: list[DailyEmployeeRecord] = []
+    records: list[_DailyRecord] = []
     hourly_counter: dict[str, int] = {f"{h:02d}:00": 0 for h in range(7, 20)}
 
     policies = PolicyResolver(session, tenant_id, target_date)
@@ -660,8 +690,8 @@ async def daily_analysis(
         overtime = ad["ot_minutes"] if ad else 0
         overtime_status = ad["ot_status"] if ad else OvertimeStatus.NONE
 
-        record = DailyEmployeeRecord(
-            employment_id=to_typed_id("employment", emp["id"]),
+        record = _DailyRecord(
+            employment_id=emp["id"],
             employee_number=emp["employee_number"],
             name=emp["name"],
             email=emp["email"],
@@ -686,7 +716,7 @@ async def daily_analysis(
 
     # Calculate overall metrics. Each record lands in exactly one presence bucket
     # (see time/presence.py), so present + on_leave + absent never exceeds the headcount.
-    def bucket(r: DailyEmployeeRecord) -> str:
+    def bucket(r: _DailyRecord) -> str:
         return classify(r.status, r.first_punch_in, on_leave=r.leave_type is not None)
 
     total_headcount = len(records)
@@ -783,7 +813,16 @@ async def daily_analysis(
         ),
         department_stats=department_stats,
         hourly_arrivals=hourly_arrivals,
-        employees=filtered_records,
+        total_filtered=len(filtered_records),
+        employees=[
+            DailyEmployeeRecord(
+                **{
+                    **asdict(record),
+                    "employment_id": to_typed_id("employment", record.employment_id),
+                }
+            )
+            for record in filtered_records[offset : offset + limit]
+        ],
     )
 
 

@@ -87,3 +87,15 @@ async def test_suspended_tenant_and_disabled_account_still_cut_off(api):
             {"e": login["user"]["email"]},
         )
     assert (await client.get("/v1/leave/types", headers=headers)).status_code == 401
+
+
+async def test_directory_and_daily_analysis_query_budgets(api):
+    client, _ = api
+    admin = await tenant(client)
+    await employee(client, admin["user"]["legal_entities"][0]["id"])
+    headers = {"Authorization": "Bearer " + admin["access_token"]}
+    perf.instrument_engine(database.AsyncSessionLocal.kw["bind"])
+    directory = await _statements(client, "/v1/users?limit=1", headers)
+    daily = await _statements(client, "/v1/time/daily-analysis?limit=1", headers)
+    assert directory.count <= 3, directory.statements
+    assert daily.count <= 12, daily.statements
