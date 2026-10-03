@@ -10,6 +10,15 @@ import sqlalchemy as sa
 from sqlmodel import Field, SQLModel
 
 
+class TenantJobCheckpoint(SQLModel, table=True):
+    __tablename__ = "tenant_job_checkpoints"
+
+    tenant_id: UUID = Field(primary_key=True)
+    job: str = Field(primary_key=True, max_length=60)
+    period: str = Field(max_length=7)
+    completed_at: datetime = Field(sa_column=sa.Column(sa.DateTime(timezone=True), nullable=False))
+
+
 class JobRun(SQLModel, table=True):
     __tablename__ = "job_runs"
 

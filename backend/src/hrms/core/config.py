@@ -24,6 +24,7 @@ class Settings(BaseSettings):
     app_database_url: str | None = None
     database_pool_size: int = 10
     database_max_overflow: int = 20
+    database_pool_timeout_seconds: int = 10
 
     # Security
     secret_key: str = "change-me-before-production"
@@ -118,6 +119,16 @@ class Settings(BaseSettings):
 
     # When `python -m hrms.jobs schedule` runs the daily jobs, in default_timezone.
     jobs_daily_at: str = "00:30"
+    jobs_retry_seconds: int = 300
+    # First automated accrual period. Leave unset to start in the current tenant month.
+    jobs_accrual_start_period: str | None = None
+    mail_backend: Literal["disabled", "ses"] = "disabled"
+    mail_from: str | None = None
+    mail_region: str | None = None
+    platform_reset_base_url: str | None = None
+    platform_token_expire_minutes: int = 60
+    document_timeout_seconds: int = 15
+
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -140,6 +151,12 @@ class Settings(BaseSettings):
         if self.log_level.upper() not in valid_levels:
             raise ValueError(f"log_level must be one of {valid_levels}, got '{self.log_level}'")
         self.log_level = self.log_level.upper()
+
+        if self.mail_backend == "ses":
+            if not self.mail_from or not self.platform_reset_base_url:
+                raise ValueError("SES requires HRMS_MAIL_FROM and HRMS_PLATFORM_RESET_BASE_URL")
+            if not self.platform_reset_base_url.startswith("https://"):
+                raise ValueError("Reset links require an HTTPS base URL")
 
         if self.is_deployed:
             where = self.environment.capitalize()

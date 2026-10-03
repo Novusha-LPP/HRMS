@@ -301,53 +301,94 @@ async def resolve_policy(
 
 
 class PolicyResolver:
-    """
-    resolve_policy() for many employees on one date, without the per-employee
-    query storm. Employees with no personal assignment resolve purely from
-    their (department, company), so those answers are computed once per pair
-    and shared; the few employees who do have a personal assignment go through
-    resolve_policy() unchanged. Returns exactly what resolve_policy() would.
-    """
+    """Resolve one date with three tenant-scoped reads, independent of employee/unit count."""
 
     def __init__(self, session, tenant_id: UUID, work_date: date) -> None:
         self._session = session
         self._tenant_id = tenant_id
         self._work_date = work_date
-        self._personal: set[UUID] | None = None
+        self._loaded = False
+        self._personal: dict[UUID, EmployeePolicyAssignment] = {}
+        self._departments: dict[UUID, EmployeePolicyAssignment] = {}
+        self._entities: dict[UUID, EmployeePolicyAssignment] = {}
+        self._parents: dict[UUID, UUID | None] = {}
+        self._templates: dict[UUID, PolicyTemplate] = {}
+        self._default = default_policy()
         self._shared: dict[tuple[UUID | None, UUID | None], ResolvedPolicy] = {}
 
-    async def _employees_with_personal_assignment(self) -> set[UUID]:
-        if self._personal is None:
-            rows = await self._session.execute(
-                text("""
-                    SELECT DISTINCT employment_id FROM employee_policy_assignments
-                    WHERE tenant_id = CAST(:tid AS uuid) AND employment_id IS NOT NULL
-                      AND effective_from <= CAST(:d AS date)
-                      AND (effective_to IS NULL OR effective_to >= CAST(:d AS date))
-                      AND archived_at IS NULL
-                """),
-                {"tid": str(self._tenant_id), "d": self._work_date},
+    async def _load(self) -> None:
+        if self._loaded:
+            return
+        assignments = (
+            await self._session.execute(
+                select(EmployeePolicyAssignment)
+                .where(EmployeePolicyAssignment.tenant_id == self._tenant_id)
+                .where(EmployeePolicyAssignment.effective_from <= self._work_date)
+                .where(
+                    (EmployeePolicyAssignment.effective_to == None)  # noqa: E711
+                    | (EmployeePolicyAssignment.effective_to >= self._work_date)
+                )
+                .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
+                .order_by(
+                    EmployeePolicyAssignment.effective_from.desc(), EmployeePolicyAssignment.id
+                )
             )
-            self._personal = {r[0] for r in rows}
-        return self._personal
+        ).scalars()
+        for assignment in assignments:
+            for attr, mapping in (
+                ("employment_id", self._personal),
+                ("org_unit_id", self._departments),
+                ("legal_entity_id", self._entities),
+            ):
+                target = getattr(assignment, attr)
+                if target is not None:
+                    mapping.setdefault(target, assignment)
+        templates = (
+            await self._session.execute(
+                select(PolicyTemplate).where(PolicyTemplate.tenant_id == self._tenant_id)
+            )
+        ).scalars()
+        for template in templates:
+            self._templates[template.id] = template
+            if template.is_default and template.archived_at is None:
+                self._default = _merge(template, None)
+        self._parents = dict(
+            (
+                await self._session.execute(
+                    text("SELECT id,parent_id FROM org_units WHERE tenant_id=:tid"),
+                    {"tid": self._tenant_id},
+                )
+            ).all()
+        )
+        self._loaded = True
+
+    def _resolved(self, assignment: EmployeePolicyAssignment | None) -> ResolvedPolicy:
+        if assignment is None:
+            return self._default
+        template = self._templates.get(assignment.policy_template_id)
+        return default_policy() if template is None else _merge(template, assignment)
 
     async def resolve(
         self, employment_id: UUID, *, org_unit_id: UUID | None, legal_entity_id: UUID | None
     ) -> ResolvedPolicy:
-        if employment_id in await self._employees_with_personal_assignment():
-            return await resolve_policy(
-                employment_id, self._work_date, self._session, self._tenant_id
-            )
+        await self._load()
+        personal = self._personal.get(employment_id)
+        if personal is not None:
+            return self._resolved(personal)
         key = (org_unit_id, legal_entity_id)
         if key not in self._shared:
             assignment = None
-            if org_unit_id is not None:
-                assignment = await _department_assignment_for_unit(
-                    self._session, self._tenant_id, org_unit_id, self._work_date
-                )
+            unit = org_unit_id
+            visited: set[UUID] = set()
+            while unit is not None:
+                if unit in visited:
+                    raise ValueError("Organization hierarchy contains a cycle")
+                visited.add(unit)
+                assignment = self._departments.get(unit)
+                if assignment is not None:
+                    break
+                unit = self._parents.get(unit)
             if assignment is None and legal_entity_id is not None:
-                assignment = await _entity_assignment(
-                    self._session, self._tenant_id, legal_entity_id, self._work_date
-                )
-            self._shared[key] = await _policy_for(self._session, self._tenant_id, assignment)
+                assignment = self._entities.get(legal_entity_id)
+            self._shared[key] = self._resolved(assignment)
         return self._shared[key]

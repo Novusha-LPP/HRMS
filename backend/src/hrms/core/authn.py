@@ -83,6 +83,7 @@ CurrentUser = Annotated[Principal, Depends(get_current_principal)]
 @dataclass(frozen=True)
 class PlatformPrincipal:
     admin_id: UUID
+    token_epoch: int = 0
 
 
 async def get_current_platform_principal(request: Request) -> PlatformPrincipal:
@@ -108,11 +109,12 @@ async def get_current_platform_principal(request: Request) -> PlatformPrincipal:
 
     try:
         admin_id = UUID(claims["sub"])
+        token_epoch = int(claims.get("ep") or 0)
     except (KeyError, ValueError, TypeError) as exc:
         raise _unauthorized("Malformed token") from exc
 
     set_current_user_id(str(admin_id))
-    return PlatformPrincipal(admin_id=admin_id)
+    return PlatformPrincipal(admin_id=admin_id, token_epoch=token_epoch)
 
 
 CurrentPlatformAdmin = Annotated[PlatformPrincipal, Depends(get_current_platform_principal)]

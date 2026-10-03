@@ -18,6 +18,7 @@ from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, sta
 from fastapi.responses import Response
 from sqlalchemy import text
 from sqlmodel import select
+from starlette.concurrency import run_in_threadpool
 
 from hrms.core import document_store
 from hrms.core.authn import CurrentUser
@@ -880,7 +881,7 @@ async def _serve_doc_file(
         )
 
     try:
-        content = document_store.load(doc.storage_path)
+        content = await run_in_threadpool(document_store.load, doc.storage_path)
     except document_store.DocumentMissing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="File content not found on server"
@@ -933,7 +934,9 @@ async def _save_uploaded_doc(
     file_size = len(content)
     # Encrypted before it is stored (core/document_store.py); removed again if the
     # transaction rolls back (database._finish_files).
-    ref = document_store.save(f"kyc/{tenant_id}/{doc_id}_{clean_name}", content)
+    ref = await run_in_threadpool(
+        document_store.save, f"kyc/{tenant_id}/{doc_id}_{clean_name}", content
+    )
     session.info.setdefault("created_files", []).append(ref)
 
     doc = EmployeeKycDocument(

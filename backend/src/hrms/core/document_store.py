@@ -110,9 +110,17 @@ class LocalBackend:
 class S3Backend:
     def __init__(self, bucket: str, prefix: str = "", **client_kwargs):
         import boto3  # only needed when HRMS_DOCUMENT_STORAGE=s3
+        from botocore.config import Config
+
+        from hrms.core.config import settings
 
         self.bucket, self.prefix = bucket, prefix.strip("/")
-        self.client = boto3.client("s3", **{k: v for k, v in client_kwargs.items() if v})
+        self.client = boto3.client(
+            "s3",
+            config=Config(connect_timeout=5, read_timeout=settings.document_timeout_seconds,
+                          retries={"mode": "standard", "total_max_attempts": 3}),
+            **{k: v for k, v in client_kwargs.items() if v},
+        )
 
     def _key(self, key: str) -> str:
         return f"{self.prefix}/{key}" if self.prefix else key

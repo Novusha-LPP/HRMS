@@ -12,6 +12,7 @@ so one tenant's failure is logged and counted without stopping the others; the r
 from __future__ import annotations
 
 import logging
+import re
 from collections.abc import Awaitable, Callable
 from uuid import UUID
 
@@ -31,10 +32,25 @@ TenantJob = Callable[..., Awaitable[str]]
 async def _accrual(session, tenant_id: UUID) -> str:
     from hrms.modules.leave.router import accrue_period
 
-    # The month as the tenant sees it: at 00:30 IST on the 1st it is still last month in UTC.
-    period = now_utc().astimezone(safe_tz(settings.default_timezone)).strftime("%Y-%m")
-    result = await accrue_period(session, tenant_id, period, recorded_by=SYSTEM_ACTOR)
-    return f"{period}: {result.balances_credited} credited"
+    timezone = (await session.execute(
+        text("SELECT timezone FROM tenants WHERE id=:tid"), {"tid": tenant_id}
+    )).scalar_one()
+    period = now_utc().astimezone(safe_tz(timezone)).strftime("%Y-%m")
+    checkpoint = (await session.execute(text(
+        "SELECT period FROM tenant_job_checkpoints WHERE tenant_id=:tid AND job='accrual'"
+    ), {"tid": tenant_id})).scalar()
+    start = checkpoint or settings.jobs_accrual_start_period or period
+    credited = 0
+    for due in _periods(start, period):
+        result = await accrue_period(session, tenant_id, due, recorded_by=SYSTEM_ACTOR,
+                                    current_period=period)
+        credited += result.balances_credited
+    await session.execute(text("""
+        INSERT INTO tenant_job_checkpoints (tenant_id,job,period,completed_at)
+        VALUES (:tid,'accrual',:period,now()) ON CONFLICT (tenant_id,job)
+        DO UPDATE SET period=EXCLUDED.period, completed_at=EXCLUDED.completed_at
+    """), {"tid": tenant_id, "period": period})
+    return f"{start}..{period}: {credited} credited"
 
 
 async def _scheduled_actions(session, tenant_id: UUID) -> str:
@@ -57,7 +73,7 @@ async def _active_tenants() -> list[UUID]:
         return [UUID(str(r)) for r in rows.scalars()]
 
 
-async def run_job(name: str) -> bool:
+async def _run_job(name: str) -> bool:
     """Run one job for every active tenant and record the run. True when every tenant succeeded."""
     job = JOBS[name]
     run = JobRun(job=name, status="RUNNING", started_at=now_utc())
@@ -92,3 +108,38 @@ async def run_job(name: str) -> bool:
 async def run_all() -> bool:
     results = [await run_job(name) for name in JOBS]
     return all(results)
+
+
+def _periods(start: str, end: str) -> list[str]:
+    """Resume the last period too: new hires can become eligible within that month."""
+    if not all(re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", p) for p in (start, end)):
+        raise ValueError("Accrual checkpoints must be YYYY-MM")
+    if start > end:
+        raise ValueError("Accrual checkpoint is ahead of the tenant's current month")
+    periods = []
+    year, month = map(int, start.split("-"))
+    while f"{year:04d}-{month:02d}" <= end:
+        periods.append(f"{year:04d}-{month:02d}")
+        month += 1
+        if month == 13:
+            year, month = year + 1, 1
+    return periods
+
+
+async def run_job(name: str) -> bool:
+    # Keep one checked-out connection in AUTOCOMMIT for the session lock. No idle
+    # transaction spans tenant processing, and the same connection unlocks it.
+    async with database.AsyncSessionLocal() as lease:
+        conn = await lease.connection(execution_options={"isolation_level": "AUTOCOMMIT"})
+        key = f"hrms-scheduler:{name}"
+        acquired = (await conn.execute(
+            text("SELECT pg_try_advisory_lock(hashtextextended(:key,0))"), {"key": key}
+        )).scalar()
+        if not acquired:
+            logger.info("job %s already running; leaving it to the lock owner", name)
+            return True
+        try:
+            return await _run_job(name)
+        finally:
+            await conn.execute(text("SELECT pg_advisory_unlock(hashtextextended(:key,0))"),
+                               {"key": key})

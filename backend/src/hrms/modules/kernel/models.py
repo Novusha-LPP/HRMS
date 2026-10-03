@@ -10,7 +10,7 @@ from datetime import UTC, datetime
 from typing import Any
 from uuid import UUID
 
-from sqlalchemy import BigInteger, Column, ForeignKey, Index, text
+from sqlalchemy import BigInteger, Column, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, SQLModel
@@ -24,6 +24,7 @@ class Tenant(SQLModel, table=True):
     display_name: str = Field(max_length=255)
     industry: str | None = Field(default=None, max_length=100)
     country_code: str = Field(max_length=2, default="IN")
+    timezone: str = Field(default="Asia/Kolkata", max_length=100)
     status: str = Field(default="ACTIVE", max_length=50)
     plan: str = Field(default="STARTER", max_length=50)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
@@ -155,6 +156,7 @@ class PlatformAdmin(SQLModel, table=True):
     email: str = Field(max_length=320, unique=True, index=True)
     name: str = Field(max_length=255)
     password_hash: str = Field(max_length=255)
+    token_epoch: int = Field(default=0)
     # ADMIN = full read/write. VIEWER = read-only support tier — can see
     # every tenant/admin but every mutating endpoint rejects it.
     role: str = Field(default="ADMIN", max_length=50)
@@ -192,6 +194,11 @@ class PlatformPasswordResetToken(SQLModel, table=True):
     id: UUID = Field(primary_key=True)
     admin_id: UUID = Field(foreign_key="platform_admins.id")
     token_hash: str = Field(max_length=64, unique=True)
+    # Explicitly sealed by core.mail; erased after delivery/use/expiry. Never logged.
+    delivery_payload: str | None = Field(default=None, sa_column=Column(Text))
+    delivery_attempts: int = Field(default=0)
+    delivery_next_at: datetime | None = Field(default=None)
+    delivered_at: datetime | None = Field(default=None)
     expires_at: datetime = Field()
     used_at: datetime | None = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

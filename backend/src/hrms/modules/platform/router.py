@@ -90,7 +90,8 @@ async def platform_login(
         (
             await session.execute(
                 text(
-                    "SELECT id, name, role, password_hash, status FROM platform_admins "
+                    "SELECT id, name, role, password_hash, status, token_epoch "
+                    "FROM platform_admins "
                     "WHERE lower(email) = lower(:email)"
                 ),
                 {"email": body.email},
@@ -117,10 +118,10 @@ async def platform_login(
         {"now": datetime.now(UTC), "id": str(admin_id)},
     )
 
-    token = create_platform_token(admin_id=admin_id)
+    token = create_platform_token(admin_id=admin_id, token_epoch=row["token_epoch"])
     return PlatformLoginResponse(
         access_token=token,
-        expires_in=settings.access_token_expire_minutes * 60,
+        expires_in=settings.platform_token_expire_minutes * 60,
         name=row["name"],
         email=body.email,
         role=row["role"],
@@ -155,10 +156,11 @@ async def forgot_password(
     """
     Always returns the same generic message regardless of whether the email
     exists, so this can't be used to enumerate platform admin accounts.
-    There's no email provider wired up anywhere in this codebase, so in
-    HRMS_DEBUG mode the reset link is returned directly in the response —
-    production deployment needs a real mailer here instead.
+    SES delivery is queued transactionally and retried by the jobs worker.
+    Local debug mode can return the link directly; disabled recovery returns 503.
     """
+    if settings.mail_backend == "disabled" and not settings.debug:
+        raise HTTPException(503, "Password recovery is not configured; contact an administrator")
     # Anonymous, and each real request writes a token row — cap it per address.
     await throttle.rate_limit("platform-forgot:ip", throttle.client_ip(request), max_per_hour=10)
     generic = ForgotPasswordResponse(
@@ -179,15 +181,20 @@ async def forgot_password(
         return generic
 
     token = generate_reset_token()
+    from hrms.core.mail import reset_payload
+
+    delivery = reset_payload(body.email, token) if settings.mail_backend == "ses" else None
     await session.execute(
         text("""
-            INSERT INTO platform_password_reset_tokens (id, admin_id, token_hash, expires_at)
-            VALUES (:id, :admin_id, :hash, :expires)
+            INSERT INTO platform_password_reset_tokens
+                (id, admin_id, token_hash, expires_at, delivery_payload)
+            VALUES (:id, :admin_id, :hash, :expires, :delivery)
         """),
         {
             "id": str(uuid4()),
             "admin_id": str(row["id"]),
             "hash": hash_reset_token(token),
+            "delivery": delivery,
             "expires": datetime.now(UTC) + timedelta(minutes=RESET_TOKEN_TTL_MINUTES),
         },
     )
@@ -219,7 +226,25 @@ async def reset_password(
     invalid = HTTPException(
         status.HTTP_400_BAD_REQUEST, "This reset link is invalid or has expired"
     )
-    if not row or row["used_at"] is not None:
+    if not row:
+        raise invalid
+    # Serialize all reset links for one administrator before locking a token row.
+    # This prevents two different links changing credentials concurrently/deadlocking.
+    await session.execute(
+        text("SELECT id FROM platform_admins WHERE id=:id FOR UPDATE"), {"id": row["admin_id"]}
+    )
+    row = (
+        (
+            await session.execute(
+                text("""SELECT id, admin_id, expires_at, used_at
+        FROM platform_password_reset_tokens WHERE token_hash=:hash FOR UPDATE"""),
+                {"hash": token_hash},
+            )
+        )
+        .mappings()
+        .one()
+    )
+    if row["used_at"] is not None:
         raise invalid
     expires_at = row["expires_at"]
     if expires_at.tzinfo is None:
@@ -228,12 +253,18 @@ async def reset_password(
         raise invalid
 
     await session.execute(
-        text("UPDATE platform_admins SET password_hash = :pw WHERE id = :id"),
+        text(
+            "UPDATE platform_admins SET password_hash = :pw, "
+            "token_epoch = token_epoch + 1 WHERE id = :id"
+        ),
         {"pw": await ahash_password(body.new_password), "id": str(row["admin_id"])},
     )
     await session.execute(
-        text("UPDATE platform_password_reset_tokens SET used_at = :now WHERE id = :id"),
-        {"now": datetime.now(UTC), "id": str(row["id"])},
+        text(
+            "UPDATE platform_password_reset_tokens SET used_at = :now, "
+            "delivery_payload=NULL WHERE admin_id = :id AND used_at IS NULL"
+        ),
+        {"now": datetime.now(UTC), "id": str(row["admin_id"])},
     )
     return {"message": "Password updated — you can sign in now."}
 
@@ -633,7 +664,10 @@ async def update_admin(
     new_status, new_role = row["status"], row["role"]
     if body.status is not None and body.status != row["status"]:
         await session.execute(
-            text("UPDATE platform_admins SET status = :s WHERE id = :id"),
+            text(
+                "UPDATE platform_admins SET status = :s, "
+                "token_epoch = token_epoch + 1 WHERE id = :id"
+            ),
             {"s": body.status, "id": str(target_id)},
         )
         await record_audit(

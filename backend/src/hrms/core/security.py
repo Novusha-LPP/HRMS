@@ -133,11 +133,14 @@ def decode_access_token(token: str) -> dict[str, Any]:
     return claims
 
 
-def create_platform_token(*, admin_id: UUID, expires_minutes: int | None = None) -> str:
+def create_platform_token(
+    *, admin_id: UUID, expires_minutes: int | None = None, token_epoch: int = 0
+) -> str:
     now = datetime.now(UTC)
-    expires_minutes = expires_minutes or settings.access_token_expire_minutes
+    expires_minutes = expires_minutes or settings.platform_token_expire_minutes
     claims: dict[str, Any] = {
         "typ": PLATFORM_TOKEN_TYPE,
+        "ep": token_epoch,
         "sub": str(admin_id),
         "iat": int(now.timestamp()),
         "exp": now + timedelta(minutes=expires_minutes),

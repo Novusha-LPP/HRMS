@@ -64,7 +64,22 @@ async def api(monkeypatch, tmp_path):
     monkeypatch.setattr(settings, "register_max_per_hour", 10_000)
     async with admin_engine.begin() as conn:
         await conn.execute(text("DELETE FROM auth_throttle"))
-    async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
-        yield client, admin_engine
-    await runtime.dispose()
-    await admin_engine.dispose()
+        existing_documents = set((await conn.execute(
+            text("SELECT id FROM employee_kyc_documents")
+        )).scalars())
+    try:
+        async with AsyncClient(transport=ASGITransport(app=app), base_url="http://test") as client:
+            yield client, admin_engine
+    finally:
+        # Each fixture owns a temporary document directory. Remove only the rows it
+        # created before that directory disappears; otherwise global encryption audits
+        # correctly report dangling references left by earlier tests.
+        async with admin_engine.begin() as conn:
+            documents = set((await conn.execute(
+                text("SELECT id FROM employee_kyc_documents")
+            )).scalars()) - existing_documents
+            for document_id in documents:
+                await conn.execute(text("DELETE FROM employee_kyc_documents WHERE id=:id"),
+                                   {"id": document_id})
+        await runtime.dispose()
+        await admin_engine.dispose()

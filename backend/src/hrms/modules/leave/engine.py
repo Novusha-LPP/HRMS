@@ -48,8 +48,30 @@ async def lock_leave_bucket(
     employment_id: UUID,
     bucket_id: UUID,
 ) -> None:
-    """Acquire transaction-level PostgreSQL advisory lock per (employment, bucket)."""
+    """Individual writers share the tenant gate; bulk writers hold it exclusively."""
+    transaction = _ledger_transaction(session)
+    bulk = session.info.get("leave_bulk_transactions", {})
+    if transaction is not None and bulk.get(tenant_id) is transaction:
+        return  # This exact transaction already holds the exclusive tenant gate.
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock_shared(hashtextextended(:key,0))"),
+        {"key": f"{tenant_id}:leave-ledger"},
+    )
     await lock_resource(session, tenant_id, f"leave:{employment_id}:{bucket_id}")
+
+
+def _ledger_transaction(session: AsyncSession):
+    # Savepoint rollback releases its advisory locks; never cache their ownership on
+    # the outer transaction. A new transaction must acquire its own gate too.
+    return session.sync_session.get_nested_transaction() or session.sync_session.get_transaction()
+
+
+async def lock_bulk_ledger(session: AsyncSession, tenant_id: UUID) -> None:
+    await session.execute(
+        text("SELECT pg_advisory_xact_lock(hashtextextended(:key,0))"),
+        {"key": f"{tenant_id}:leave-ledger"},
+    )
+    session.info.setdefault("leave_bulk_transactions", {})[tenant_id] = _ledger_transaction(session)
 
 
 async def recalculate_closing_and_cascade(
@@ -321,7 +343,7 @@ async def record_accruals(
 ) -> None:
     """
     record_transaction(ACCRUAL) for many employees in one bucket, with the same result:
-    the same advisory locks, the same ledger rows and closing arithmetic, the same journal
+    the same writer exclusion, the same ledger rows and closing arithmetic, the same journal
     rows. `credits` is (employment_id, quantity, fy_start_month), in the order to lock.
 
     The set-based path covers every employee with no ledger row after the target month
@@ -336,13 +358,7 @@ async def record_accruals(
         return
     year, month = effective_date.year, effective_date.month
     tid = str(tenant_id)
-    await session.execute(
-        text(
-            "SELECT pg_advisory_xact_lock(hashtextextended(k, 0))"
-            " FROM unnest(CAST(:keys AS text[])) k"
-        ),
-        {"keys": [f"{tenant_id}:leave:{emp}:{bucket_id}" for emp, _, _ in credits]},
-    )
+    await lock_bulk_ledger(session, tenant_id)
     ids = [str(emp) for emp, _, _ in credits]
     later = {
         UUID(str(r[0]))

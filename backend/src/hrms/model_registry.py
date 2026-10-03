@@ -31,7 +31,14 @@ metadata = SQLModel.metadata
 
 # References include tenant_id, so a UUID belonging to another tenant cannot be linked.
 RELATIONS = {
-    "approval_flows": {"org_unit_id": "org_units", "updated_by": "user_accounts"},
+    "approval_flows": {
+        "org_unit_id": "org_units",
+        "employment_id": "employments",
+        "owner_employment_id": "employments",
+        "legal_entity_id": "legal_entities",
+        "updated_by": "user_accounts",
+    },
+    "employee_approval_flows": {"employment_id": "employments", "updated_by": "user_accounts"},
     "approval_instances": {"flow_id": "approval_flows", "employment_id": "employments"},
     "approval_delegations": {
         "flow_id": "approval_flows",
@@ -140,6 +147,7 @@ RELATIONS = {
 _STRICT_TABLES = {
     "approval_flows",
     "approval_instances",
+    "employee_approval_flows",
     "approval_delegations",
     "approval_events",
     "api_keys",
@@ -236,3 +244,13 @@ for unique_table, unique_columns, unique_name in (
     metadata.tables[unique_table].append_constraint(
         UniqueConstraint(*unique_columns, name=unique_name)
     )
+
+metadata.tables["approval_flows"].append_constraint(
+    UniqueConstraint("tenant_id", "id", "request_type", name="uq_approval_flow_kind")
+)
+metadata.tables["employee_approval_flows"].append_constraint(
+    ForeignKeyConstraint(
+        ["tenant_id", "flow_id", "request_type"],
+        ["approval_flows.tenant_id", "approval_flows.id", "approval_flows.request_type"],
+    )
+)

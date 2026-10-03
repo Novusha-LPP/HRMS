@@ -137,6 +137,10 @@ async def _rewrite_pii(*, check: bool, decrypt: bool = False) -> int:
                                         changes[column] = c.decrypt(stored, column)
                                 elif c.needs_rewrite(stored):
                                     changes[column] = c.encrypt(c.decrypt(stored, column), column)
+                                else:
+                                    # The active key id alone doesn't prove the key material
+                                    # or the ciphertext is intact: decrypt every value.
+                                    c.decrypt(stored, column)
                             except FieldCryptoError:
                                 # Ids only, never values. Usually a key removed too early.
                                 unreadable.append(f"{table}.{column} id={row['id']}")
@@ -198,8 +202,13 @@ async def _rewrite_documents(engine, tenants, *, check: bool, errors: list[str])
                     try:
                         blob = store.backend().get(key)
                     except store.DocumentMissing:
+                        errors.append(f"employee_kyc_documents missing file id={doc_id}")
                         continue
                     if store.sealed_key_id(blob) == active:
+                        try:
+                            store.unseal(blob, key)
+                        except FieldCryptoError:
+                            errors.append(f"employee_kyc_documents corrupt file id={doc_id}")
                         continue
                     pending += 1
                     if not check:
@@ -209,6 +218,7 @@ async def _rewrite_documents(engine, tenants, *, check: bool, errors: list[str])
                             errors.append(f"employee_kyc_documents file id={doc_id}")
                     continue
                 if not Path(ref).exists():
+                    errors.append(f"employee_kyc_documents missing legacy file id={doc_id}")
                     continue
                 pending += 1
                 if check:
