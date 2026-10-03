@@ -215,7 +215,9 @@ export const kycApi = {
     const token = getAuthToken();
     const headers: Record<string, string> = {};
     if (token) headers["Authorization"] = `Bearer ${token}`;
-    const res = await fetch(`${API_BASE_URL}${relativeUrl}`, { headers });
+    const res = await fetch(`${API_BASE_URL}${relativeUrl}`, {
+      headers, signal: AbortSignal.timeout(30_000),
+    });
     if (!res.ok) throw new Error("Failed to load document");
     const blob = await res.blob();
     const url = URL.createObjectURL(blob);

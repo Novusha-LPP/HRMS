@@ -1,3 +1,4 @@
+import { withRequestDeadline } from "../lib/requestDeadline";
 import { runtimeConfig } from "../lib/runtimeConfig";
 import { logger } from "../lib/logger";
 import { generateRequestId } from "../lib/uuid";
@@ -36,7 +37,8 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   headers["X-Request-ID"] = clientRequestId;
 
   const requestToken = platformToken;
-  const res = await fetch(`${BASE}${path}`, { ...options, headers });
+  return withRequestDeadline(async (signal) => {
+  const res = await fetch(`${BASE}${path}`, { ...options, headers, signal });
   if (requestToken !== platformToken) throw new Error("Session changed");
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));
@@ -58,6 +60,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const data = await res.json();
   if (requestToken !== platformToken) throw new Error("Session changed");
   return data;
+  }, options.signal);
 }
 
 export const platformApi = {

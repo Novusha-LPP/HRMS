@@ -16,6 +16,7 @@ import { Avatar } from "../components/ui/Avatar";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { Tabs } from "../components/ui/Tabs";
 import { Sheet } from "../components/ui/Overlay";
+import { useToast, errorMessage } from "../components/ui/Toast";
 import { Skeleton, EmptyState, Notice } from "../components/ui/Feedback";
 
 type StatusTab = "ALL" | "PRESENT" | "LATE" | "ABSENT" | "ON_LEAVE" | "HALF_DAY";
@@ -136,6 +137,8 @@ export function DailyAnalysisPage() {
   // Pagination state
   const [page, setPage] = useState<number>(1);
   const perPage = 10;
+  const [exporting, setExporting] = useState(false);
+  const toast = useToast();
 
   // Inspection Drawer
   const [inspectEmployee, setInspectEmployee] = useState<DailyEmployeeRecord | null>(null);
@@ -156,10 +159,11 @@ export function DailyAnalysisPage() {
 
   // Fetch Daily Analysis from backend API
   const { data, isPending, isError, refetch } = useQuery<DailyAnalysisResponse>({
-    queryKey: ["daily-analysis", selectedDate, deptFilter, statusFilter, searchQuery],
+    queryKey: ["daily-analysis", selectedDate, deptFilter, statusFilter, searchQuery, page],
     queryFn: () =>
       timeApi.dailyAnalysis({
         work_date: selectedDate,
+        limit: perPage, offset: (page - 1) * perPage,
         department: deptFilter || undefined,
         status: statusFilter === "ALL" ? undefined : statusFilter,
         search: searchQuery.trim() || undefined,
@@ -220,8 +224,24 @@ export function DailyAnalysisPage() {
   ).sort();
 
   // Client pagination
-  const totalPages = Math.max(Math.ceil(employees.length / perPage), 1);
-  const paginatedEmployees = employees.slice((page - 1) * perPage, page * perPage);
+  const totalEmployees = data?.total_filtered ?? employees.length;
+  const totalPages = Math.max(Math.ceil(totalEmployees / perPage), 1);
+  const paginatedEmployees = employees;
+  const exportAll = async () => {
+    setExporting(true);
+    try {
+      const records: DailyEmployeeRecord[] = [];
+      for (let offset = 0; ; offset += 500) {
+        const result = await timeApi.dailyAnalysis({ work_date: selectedDate,
+          department: deptFilter || undefined, status: statusFilter === "ALL" ? undefined : statusFilter,
+          search: searchQuery.trim() || undefined, limit: 500, offset });
+        records.push(...result.employees);
+        if (records.length >= result.total_filtered || result.employees.length === 0) break;
+      }
+      exportDailyAnalysisCsv(selectedDate, records);
+    } catch (e) { toast.error("Couldn’t export attendance", errorMessage(e)); }
+    finally { setExporting(false); }
+  };
 
   const clearFilters = () => {
     setStatusFilter("ALL");
@@ -286,8 +306,8 @@ export function DailyAnalysisPage() {
             <button
               type="button"
               className="btn-secondary btn-sm gap-1.5"
-              onClick={() => exportDailyAnalysisCsv(selectedDate, employees)}
-              disabled={employees.length === 0}
+              onClick={() => { void exportAll(); }}
+              disabled={totalEmployees === 0 || exporting}
             >
               <Download size={13} />
               <span>Export CSV</span>
@@ -509,7 +529,7 @@ export function DailyAnalysisPage() {
             <p className="card-desc">Individual check-in, check-out and duration logs</p>
           </div>
           <span className="text-xs text-fg-subtle">
-            {employees.length} {employees.length === 1 ? "record" : "records"}
+            {totalEmployees} {totalEmployees === 1 ? "record" : "records"}
           </span>
         </div>
 
@@ -575,7 +595,7 @@ export function DailyAnalysisPage() {
           )}
 
           <span className="text-xs text-fg-subtle sm:ml-auto">
-            Showing {paginatedEmployees.length} of {employees.length} employees
+            Showing {paginatedEmployees.length} of {totalEmployees} employees
           </span>
         </div>
 
@@ -749,7 +769,7 @@ export function DailyAnalysisPage() {
         {!isPending && employees.length > 0 && (
           <div className="flex items-center justify-between border-t border-line px-5 py-3 text-xs text-fg-subtle">
             <span>
-              Showing {(page - 1) * perPage + 1}–{Math.min(page * perPage, employees.length)} of {employees.length} employees
+              Showing {(page - 1) * perPage + 1}–{Math.min(page * perPage, totalEmployees)} of {totalEmployees} employees
             </span>
             <div className="flex items-center gap-1">
               <button
