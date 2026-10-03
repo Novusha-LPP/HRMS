@@ -69,6 +69,22 @@ class Settings(BaseSettings):
     # CORS — comma-separated origins. Deployments set their own (https only).
     cors_origins: str = "http://localhost:3000,http://localhost:5173"
 
+    # Encryption at rest for Aadhaar, PAN, bank account and the other identifiers
+    # (core/field_crypto.py): "<id>:<base64url 32-byte key>", comma-separated, first = the
+    # active key, older ones kept to read what they wrote. Generate a key with
+    #   python -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())"
+    # Unset = the published local development key, which deployed environments refuse.
+    field_encryption_keys: str | None = None
+
+    # Uploaded documents (core/document_store.py), always encrypted with the keys above.
+    # "local": under storage_dir. "s3": an S3 (or S3-compatible) bucket — recommended for
+    # production: durable, versioned, and not tied to one server's disk.
+    document_storage: Literal["local", "s3"] = "local"
+    document_s3_bucket: str | None = None
+    document_s3_prefix: str = ""
+    document_s3_region: str | None = None
+    document_s3_endpoint_url: str | None = None  # for S3-compatible stores (MinIO, R2, …)
+
     # Storage
     storage_dir: str = "storage"
     max_upload_bytes: int = 10 * 1024 * 1024
@@ -151,6 +167,23 @@ class Settings(BaseSettings):
                     f"{where} serves /metrics only behind a scrape token: set "
                     "HRMS_METRICS_TOKEN (or HRMS_METRICS_ENABLED=false)"
                 )
+            from hrms.core.field_crypto import DEV_KEY_ID, FieldCryptoError, parse_keys
+
+            if not self.field_encryption_keys:
+                raise ValueError(
+                    f"{where} requires HRMS_FIELD_ENCRYPTION_KEYS: personal identifiers are "
+                    "encrypted at rest"
+                )
+            try:
+                key_ids = parse_keys(self.field_encryption_keys)
+            except FieldCryptoError as exc:
+                raise ValueError(f"HRMS_FIELD_ENCRYPTION_KEYS: {exc}") from exc
+            if DEV_KEY_ID in key_ids:
+                raise ValueError(
+                    "HRMS_FIELD_ENCRYPTION_KEYS uses the published development key id 'dev'"
+                )
+            if self.document_storage == "s3" and not self.document_s3_bucket:
+                raise ValueError("HRMS_DOCUMENT_STORAGE=s3 needs HRMS_DOCUMENT_S3_BUCKET")
             insecure = [o for o in self.cors_origins_list if not o.startswith("https://")]
             if insecure:
                 raise ValueError(f"{where} allows only https:// CORS origins, not {insecure}")

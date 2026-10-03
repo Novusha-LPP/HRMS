@@ -38,6 +38,7 @@ HRMS_DB_OWNER_PASSWORD=$(secret)
 HRMS_APP_ROLE_PASSWORD=$(secret)
 HRMS_SECRET_KEY=$(secret)$(secret)
 HRMS_METRICS_TOKEN=$token
+HRMS_FIELD_ENCRYPTION_KEYS=smoke:$(python3 -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())")
 HRMS_API_PORT=$api_port
 HRMS_WEB_PORT=$web_port
 HRMS_WEB_API_URL=http://127.0.0.1:$api_port
@@ -62,6 +63,13 @@ curl -s -X OPTIONS "$api/v1/auth/login" -H "Origin: https://evil.example.com" \
 docker exec "$project-db-1" sh -c \
   "PGPASSWORD=hrms_app_dev_password psql -h db -U hrms_app -d hrms -c 'select 1'" >/dev/null 2>&1 \
   && fail "the published hrms_app password still works"
+
+compose run --rm --no-deps -T jobs python -m hrms.deploy encrypt-pii --check >/dev/null \
+  || fail "identifiers left unencrypted after migrate"
+compose logs migrate | grep -q "encrypt-pii:" || fail "migrate did not run encrypt-pii"
+[ "$(docker exec "$project-db-1" psql -U hrms -d hrms -tAc \
+  "select array_to_string(setconfig, ',') from pg_db_role_setting s join pg_roles r on r.oid = s.setrole where r.rolname = 'hrms_app'" \
+  | grep -c statement_timeout)" = 1 ] || fail "the app role has no statement timeout"
 
 for _ in $(seq 1 20); do
   curl -s -H "Authorization: Bearer $token" "$api/metrics" \
@@ -96,4 +104,4 @@ tables=$(docker exec "$project-db-1" psql -U hrms -d restore_drill -tAc \
   "select count(*) from information_schema.tables where table_schema = 'public'")
 [ "$tables" -gt 40 ] || fail "restored backup has only $tables tables"
 
-echo "SMOKE OK: health, hidden docs, metrics token, CORS, db password, jobs, web config, private backup + restore ($tables tables)"
+echo "SMOKE OK: health, hidden docs, metrics token, CORS, db password, PII encrypted, db timeouts, jobs, web config, private backup + restore ($tables tables)"

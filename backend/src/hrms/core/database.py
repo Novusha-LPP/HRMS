@@ -200,9 +200,11 @@ AnonymousSessionDep = Annotated[AsyncSession, Depends(get_anonymous_session, sco
 def _finish_files(session, committed):
     import logging
 
-    for path in session.info.pop("delete_files" if committed else "created_files", []):
+    from hrms.core import document_store
+
+    for ref in session.info.pop("delete_files" if committed else "created_files", []):
         try:
-            path.unlink(missing_ok=True)
-        except OSError:
+            document_store.remove(str(ref))
+        except Exception:
             logging.getLogger(__name__).exception("Could not remove document file")
     session.info.pop("created_files" if committed else "delete_files", None)

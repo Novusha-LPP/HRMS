@@ -29,6 +29,11 @@ except ImportError:
 
 
 _PREFIX_MAP: dict[str, str] = {
+    "approval_flow": "afl",
+    "approval_instance": "ain",
+    "approval_step": "ast",
+    "approval_delegation": "adg",
+    "approval_event": "aev",
     "tenant": "ten",
     "legal_entity": "le",
     "location": "loc",

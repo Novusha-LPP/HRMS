@@ -19,6 +19,7 @@ from hrms.core.datetime_utils import (
     to_tz,
 )
 from hrms.core.locking import lock_resource
+from hrms.modules.approvals import service as approval_flow
 from hrms.modules.time.models import AttendanceDay, Punch, apply_overtime
 
 
@@ -218,7 +219,27 @@ async def recompute_day(session, tenant_id, employment_id, day, policy, ad=None)
                 policy.ot_qualifying_minutes,
                 policy.ot_daily_cap_minutes,
             ).ot_minutes
+    previous_ot = ad.ot_minutes
     apply_overtime(ad, ot)
     session.add(ad)
     await session.flush()
+    if previous_ot != ot:
+        await approval_flow.finish(
+            session, tenant_id, "OVERTIME", ad.id, "SUPERSEDED" if ot else "CANCELLED"
+        )
+        if ot:
+            await approval_flow.start(
+                session,
+                tenant_id,
+                "OVERTIME",
+                ad.id,
+                employment_id,
+                request_snapshot=dict(
+                    work_date=day.isoformat(),
+                    first_punch_in=ad.first_punch_in.isoformat() if ad.first_punch_in else None,
+                    last_punch_out=ad.last_punch_out.isoformat() if ad.last_punch_out else None,
+                    effective_minutes=ad.effective_minutes,
+                    ot_minutes=ad.ot_minutes,
+                ),
+            )
     return ad

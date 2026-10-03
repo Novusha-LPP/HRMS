@@ -12,14 +12,14 @@ document it is recorded in the append-only kyc_access_log.
 
 import re
 from datetime import UTC, datetime
-from pathlib import Path
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
-from fastapi.responses import FileResponse
+from fastapi.responses import Response
 from sqlalchemy import text
 from sqlmodel import select
 
+from hrms.core import document_store
 from hrms.core.authn import CurrentUser
 from hrms.core.authz import ScopeDep, authorize_employment
 from hrms.core.config import settings
@@ -46,12 +46,6 @@ from hrms.modules.kyc.schemas import (
 )
 
 router = APIRouter(prefix="/v1/kyc", tags=["Employee KYC"])
-
-
-def _storage_dir_for_tenant(tenant_id: UUID) -> Path:
-    base = Path(settings.storage_dir) / "kyc" / str(tenant_id)
-    base.mkdir(parents=True, exist_ok=True)
-    return base
 
 
 def _clean_filename(filename: str) -> str:
@@ -370,7 +364,7 @@ async def upload_my_document(
     file: UploadFile = File(...),
     document_type: str = Form(...),
     document_title: str = Form(...),
-    document_number: str | None = Form(None),
+    document_number: str | None = Form(None, max_length=100),
 ) -> KycDocumentResponse:
     if not user.employment_id:
         raise HTTPException(
@@ -656,7 +650,7 @@ async def upload_employee_document(
     file: UploadFile = File(...),
     document_type: str = Form(...),
     document_title: str = Form(...),
-    document_number: str | None = Form(None),
+    document_number: str | None = Form(None, max_length=100),
 ) -> KycDocumentResponse:
     emp_uuid = to_uuid(employment_id)
     scope = scope.for_permission("kyc.write")
@@ -812,7 +806,7 @@ async def delete_document(
             )
 
     # Delete only after commit, so rollback cannot leave metadata pointing at a removed file.
-    session.info.setdefault("delete_files", []).append(Path(doc.storage_path))
+    session.info.setdefault("delete_files", []).append(doc.storage_path)
     rec = await _get_or_create_record(session, tenant_id, doc.employment_id)
     _invalidate_verification(rec)
     session.add(rec)
@@ -885,18 +879,19 @@ async def _serve_doc_file(
             unmasked=True,
         )
 
-    file_path = Path(doc.storage_path)
-    if not file_path.exists():
+    try:
+        content = document_store.load(doc.storage_path)
+    except document_store.DocumentMissing:
         raise HTTPException(
             status_code=status.HTTP_404_NOT_FOUND, detail="File content not found on server"
-        )
+        ) from None
 
     disp = "inline" if inline else "attachment"
-    return FileResponse(
-        path=str(file_path),
+    return Response(
+        content=content,
         media_type=doc.mime_type or "application/octet-stream",
-        filename=doc.file_name,
         headers={
+            "Cache-Control": "private, no-store",
             "Content-Disposition": f'{disp}; filename="{doc.file_name}"',
             "X-Content-Type-Options": "nosniff",
             "Content-Security-Policy": "sandbox",
@@ -917,10 +912,8 @@ async def _save_uploaded_doc(
     document_title: str,
     document_number: str | None,
 ) -> KycDocumentResponse:
-    storage_dir = _storage_dir_for_tenant(tenant_id)
     doc_id = uuid4()
     clean_name = _clean_filename(file.filename or f"doc_{doc_id}")
-    dest_path = storage_dir / f"{doc_id}_{clean_name}"
 
     from hrms.modules.kyc.models import DocumentType
 
@@ -938,9 +931,10 @@ async def _save_uploaded_doc(
     else:
         raise HTTPException(415, "Only PDF, PNG and JPEG documents are supported")
     file_size = len(content)
-    session.info.setdefault("created_files", []).append(dest_path)
-    with open(dest_path, "xb") as f:
-        f.write(content)
+    # Encrypted before it is stored (core/document_store.py); removed again if the
+    # transaction rolls back (database._finish_files).
+    ref = document_store.save(f"kyc/{tenant_id}/{doc_id}_{clean_name}", content)
+    session.info.setdefault("created_files", []).append(ref)
 
     doc = EmployeeKycDocument(
         tenant_id=tenant_id,
@@ -952,7 +946,7 @@ async def _save_uploaded_doc(
         file_name=clean_name,
         file_size=file_size,
         mime_type=mime,
-        storage_path=str(dest_path),
+        storage_path=ref,
         status=DocumentStatus.PENDING,
         uploaded_by=uploaded_by,
         uploaded_at=datetime.now(UTC),

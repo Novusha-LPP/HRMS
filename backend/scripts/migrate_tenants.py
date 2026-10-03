@@ -616,7 +616,18 @@ async def _email_owner(ctx: Context, email: str) -> UUID | None:
 
 async def _upsert_kyc(ctx: Context, rec: ImportRecord, employment_id: UUID, person_id: UUID) -> int:
     """Create the KYC record, or fill its blanks. Returns how many rows changed."""
-    values = {k: v for k, v in rec.kyc.items() if v}
+    # Raw SQL bypasses the models' EncryptedString columns: encrypt those values here, or the
+    # imported identifiers would land in plain text (core/field_crypto.py).
+    from hrms.core.field_crypto import write_cipher
+    from hrms.deploy import ENCRYPTED_COLUMNS
+
+    protected = ENCRYPTED_COLUMNS["employee_kyc_records"]
+    c = write_cipher()
+    values = {
+        k: (c.encrypt(str(v), k) if c and k in protected else v)
+        for k, v in rec.kyc.items()
+        if v
+    }
     if not values:
         return 0
     tid, eid = str(ctx.tenant_id), str(employment_id)

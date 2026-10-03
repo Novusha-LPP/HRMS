@@ -26,23 +26,26 @@ const HR_ROLES: UserRole[] = ["HR", "SUPER_ADMIN"];
 export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Overview",
-    items: [{ to: "/dashboard", label: "Dashboard", icon: LayoutGrid }],
+    items: [
+      { to: "/dashboard", label: "Dashboard", icon: LayoutGrid },
+      { to: "/daily-analysis", label: "Daily Analysis", icon: UserCheck, roles: [...HR_ROLES, "MANAGER"] },
+      { to: "/reports", label: "Reports", icon: BarChart3 },
+    ],
   },
   {
     label: "Workforce",
     items: [
       { to: "/employees", label: "Employees", icon: Users, roles: [...HR_ROLES, "MANAGER"] },
-      { to: "/daily-analysis", label: "Daily Analysis", icon: UserCheck, roles: [...HR_ROLES, "MANAGER"] },
       { to: "/attendance", label: "Attendance", icon: Clock },
       { to: "/leave", label: "Leave", icon: Umbrella },
       { to: "/corrections", label: "Corrections", icon: FilePenLine },
+      { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
     ],
   },
   {
     label: "Talent",
     items: [
       { to: "/onboarding", label: "Onboarding", icon: ClipboardCheck, permission: "onboarding.read" },
-      { to: "/reports", label: "Reports", icon: BarChart3 },
     ],
   },
   {
@@ -50,6 +53,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/organization", label: "Organization", icon: Building2, permission: "org.write" },
       { to: "/policy", label: "Policies", icon: ShieldCheck, roles: HR_ROLES },
+      { to: "/approval-flows", label: "Approval flows", icon: ClipboardCheck, permission: "approvals.manage" },
     ],
   },
   {

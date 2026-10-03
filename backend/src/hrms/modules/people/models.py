@@ -9,8 +9,8 @@ Key design points (from the architecture):
   prevents overlapping slices per employment.
 - PersonnelAction is the only write path for employment changes; HR never
   PATCHes an assignment directly.
-- sensitive identifiers (PAN, Aadhaar, UAN) are stored in a separate
-  Identifier table with field-level encryption — not in Person.
+- sensitive identifiers (PAN, Aadhaar, UAN, bank account, …) are not in Person: they live
+  in the KYC record (modules/kyc/models.py), encrypted at rest (core/field_crypto.py).
 """
 
 import enum
@@ -63,7 +63,7 @@ class Person(SQLModel, table=True):
     """
     The person record — created once; survives across employments and rehires.
     Contains only non-sensitive personal information.
-    Sensitive identifiers (PAN, Aadhaar, UAN, bank account) are in PersonIdentifier.
+    Sensitive identifiers (PAN, Aadhaar, UAN, bank account) are in the encrypted KYC record.
     """
 
     __tablename__ = "persons"

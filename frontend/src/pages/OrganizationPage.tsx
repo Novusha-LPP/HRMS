@@ -560,7 +560,7 @@ function DepartmentsTab() {
           {entities.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
         </select>
         <button className="btn-primary" onClick={() => setAdding(true)} disabled={!entities.data?.length}>
-          <Plus size={15} /> Add department
+          <Plus size={15} /> Add department / team
         </button>
       </div>
       {units.isError ? (
@@ -579,11 +579,11 @@ function DepartmentsTab() {
       ) : (
         <div className="card overflow-hidden">
           <table className="tbl">
-            <thead><tr><th>Department</th><th>Company</th><th className="hidden sm:table-cell">Code</th><th>Since</th><th className="w-20" /></tr></thead>
+            <thead><tr><th>Department / team</th><th>Company</th><th className="hidden sm:table-cell">Code</th><th>Since</th><th className="w-20" /></tr></thead>
             <tbody>
               {departments.map((d) => (
                 <tr key={d.id}>
-                  <td className="font-medium text-fg">{d.name}</td>
+                  <td className="font-medium text-fg">{d.name}{d.type === "TEAM" && <p className="mt-1 text-xs font-normal text-fg-subtle">Team{d.parent_id ? ` · ${units.data?.find((u) => u.id === d.parent_id)?.name ?? "Parent department"}` : ""}</p>}</td>
                   <td>{d.legal_entity_id ? entityName.get(d.legal_entity_id) ?? "—" : "—"}</td>
                   <td className="hidden font-mono text-xs sm:table-cell">{d.code ?? "—"}</td>
                   <td className="tabular-nums">{format(new Date(d.effective_from), "d MMM yyyy")}</td>
@@ -617,8 +617,9 @@ function DepartmentSheet({ open, onClose, entities, departments, initial }: {
   const qc = useQueryClient();
   const toast = useToast();
   const isEdit = !!initial;
-  const empty = { name: initial?.name ?? "", code: initial?.code ?? "", entity: initial?.legal_entity_id ?? entities[0]?.id ?? "", parent: initial?.parent_id ?? "" };
+  const empty = { name: initial?.name ?? "", code: initial?.code ?? "", entity: initial?.legal_entity_id ?? entities[0]?.id ?? "", parent: initial?.parent_id ?? "", type: initial?.type ?? "DEPARTMENT" };
   const [form, setForm] = useState(empty);
+  const unitLabel = form.type === "TEAM" ? "team" : "department";
   const entityId = form.entity || entities[0]?.id || "";
   const parentOptions = departments.filter((d) => d.legal_entity_id === entityId && d.id !== initial?.id);
 
@@ -627,33 +628,33 @@ function DepartmentSheet({ open, onClose, entities, departments, initial }: {
       isEdit
         ? orgApi.updateOrgUnit(initial!.id, { name: form.name.trim(), code: form.code.trim() || undefined })
         : orgApi.createOrgUnit({
-            name: form.name.trim(), type: "DEPARTMENT", code: form.code.trim() || undefined,
+            name: form.name.trim(), type: form.type, code: form.code.trim() || undefined,
             legal_entity_id: entityId, parent_id: form.parent || undefined,
             effective_from: format(new Date(), "yyyy-MM-dd"),
           }),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["org-units"] });
-      toast.success(isEdit ? "Department updated" : "Department added", d.name);
+      toast.success(`${form.type === "TEAM" ? "Team" : "Department"} ${isEdit ? "updated" : "added"}`, d.name);
       setForm(empty);
       onClose();
     },
-    onError: (e) => toast.error(isEdit ? "Couldn’t update department" : "Couldn’t add department", errorMessage(e)),
+    onError: (e) => toast.error(`Couldn’t ${isEdit ? "update" : "add"} ${unitLabel}`, errorMessage(e)),
   });
 
-  const valid = form.name.trim().length > 0 && !!entityId;
+  const valid = form.name.trim().length > 0 && !!entityId && (form.type !== "TEAM" || !!form.parent || isEdit);
   const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
 
   return (
     <Sheet
       open={open}
       onClose={onClose}
-      title={isEdit ? "Edit department" : "Add department"}
+      title={`${isEdit ? "Edit" : "Add"} ${unitLabel}`}
       description={isEdit ? "Moving to a different company or parent isn't supported here — create a new department and reassign employees instead." : undefined}
       footer={
         <>
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
           <button className="btn-primary" type="submit" form="dept-form" disabled={!valid || save.isPending}>
-            {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add department"}
+            {save.isPending ? "Saving…" : isEdit ? "Save changes" : `Add ${unitLabel}`}
           </button>
         </>
       }
@@ -666,8 +667,15 @@ function DepartmentSheet({ open, onClose, entities, departments, initial }: {
           </select>
         </div>
         <div>
-          <label className="label" htmlFor="dp-name">Department name</label>
+          <label className="label" htmlFor="dp-name">Department / team name</label>
           <input id="dp-name" className="input" placeholder="e.g. Finance" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+        </div>
+        <div>
+          <label className="label" htmlFor="dp-type">Unit type</label>
+          <select id="dp-type" className="input" disabled={isEdit} value={form.type}
+            onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
+            <option value="DEPARTMENT">Department</option><option value="TEAM">Team</option>
+          </select>
         </div>
         <div>
           <label className="label" htmlFor="dp-code">Code <span className="font-normal text-fg-subtle">(optional)</span></label>
@@ -675,8 +683,8 @@ function DepartmentSheet({ open, onClose, entities, departments, initial }: {
         </div>
         {!isEdit && parentOptions.length > 0 && (
           <div>
-            <label className="label" htmlFor="dp-parent">Parent department <span className="font-normal text-fg-subtle">(optional)</span></label>
-            <select id="dp-parent" className="input" value={form.parent} onChange={(e) => setForm((f) => ({ ...f, parent: e.target.value }))}>
+            <label className="label" htmlFor="dp-parent">Parent department {form.type !== "TEAM" && <span className="font-normal text-fg-subtle">(optional)</span>}</label>
+            <select id="dp-parent" className="input" required={form.type === "TEAM"} value={form.parent} onChange={(e) => setForm((f) => ({ ...f, parent: e.target.value }))}>
               <option value="">None — top level</option>
               {parentOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
             </select>

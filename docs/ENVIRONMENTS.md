@@ -158,6 +158,31 @@ docker exec hrms-testing-db-1 psql -U hrms -d restore_drill -c "select version_n
 docker exec hrms-testing-db-1 dropdb -U hrms restore_drill
 ```
 
+## Encryption at rest
+
+These are stored encrypted with AES-256-GCM, in every environment:
+- **Identifiers:** Aadhaar, PAN, UAN, PF, ESI, passport, driving licence, voter ID and bank
+  account numbers, plus the number on each uploaded document (`core/field_crypto.py`).
+- **Uploaded files:** every KYC scan (`core/document_store.py`).
+
+The API decrypts them only for the people allowed to see them. A database dump, a backup
+or the storage volume on its own reveals nothing.
+
+- **Keys:** `HRMS_FIELD_ENCRYPTION_KEYS`, as `<id>:<32 bytes base64url>`. Testing and
+  production each need their own key; they refuse to start without one, or with the local
+  development key.
+- **Losing the key loses the data.** Keep each environment's key in the password manager,
+  separately from the backups. A backup is only restorable together with its key.
+- **Rotation:** put a new key first, keep the old one after it, then deploy. The `migrate`
+  step re-encrypts every value and file with the new key. Remove the old key only after
+  `docker compose … run --rm jobs python -m hrms.deploy encrypt-pii --check` reports 0.
+- **Existing data** (rows and files from before encryption) is still readable as it is.
+  The `migrate` step encrypts it on the first deploy, which covers the testing cut-over.
+- **Uploaded files** can live on local disk (`HRMS_DOCUMENT_STORAGE=local`, the default) or
+  in S3 (`HRMS_DOCUMENT_STORAGE=s3` with `HRMS_DOCUMENT_S3_BUCKET`, plus
+  `HRMS_DOCUMENT_S3_ENDPOINT_URL` for S3-compatible stores). Use S3 for production, with a
+  versioned bucket that blocks public access.
+
 ## Scheduled jobs
 
 `python -m hrms.jobs` records every run in `job_runs`. `/metrics` exports
@@ -190,9 +215,8 @@ Until production is deployed, comment out the `hrms-api-production` scrape job. 
 These are tracked in the stability plan. They aren't environment work, but they decide
 whether testing and production are safe to run:
 
-- **Encrypt Aadhaar, PAN, UAN, passport and bank numbers at rest.** Today they are plain
-  text, in testing too.
-- **KYC files to object storage** (S3 or another encrypted, versioned store) instead of a
-  Docker volume.
+- **Encryption is built:** identifiers and files (see "Encryption at rest"). The testing
+  data gets encrypted at the cut-over.
+- **Production KYC files on S3:** the backend is built; it needs a bucket and credentials.
 - **Off-site backup copy and the backup-age check**, set up on the host (see Backups).
 - Router test coverage for attendance, leave and onboarding, and end-to-end UI tests.

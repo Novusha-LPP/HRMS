@@ -25,6 +25,7 @@ from hrms.core.metrics import router as metrics_router
 from hrms.core.middleware import RequestLoggingMiddleware
 from hrms.core.perf import QueryMetricsMiddleware, instrument_engine
 from hrms.core.version import APP_VERSION
+from hrms.modules.approvals.router import router as approvals_router
 from hrms.modules.corrections.router import router as corrections_router
 from hrms.modules.dashboard.router import router as dashboard_router
 from hrms.modules.kernel.auth.router import router as auth_router
@@ -109,6 +110,7 @@ app.include_router(dashboard_router)
 app.include_router(policy_router)
 app.include_router(leave_router)
 app.include_router(corrections_router)
+app.include_router(approvals_router)
 app.include_router(kyc_router)
 app.include_router(preferences_router)
 

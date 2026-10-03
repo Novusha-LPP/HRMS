@@ -15,6 +15,7 @@ DEPLOYED = dict(
     app_database_url="postgresql+asyncpg://hrms_app:strong@db/hrms",
     metrics_token="scrape",
     cors_origins="https://testinghrms.example.com",
+    field_encryption_keys="t1:MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
 )
 
 
@@ -34,6 +35,7 @@ def test_deployed_environments_get_every_safeguard(environment):
         ({"secret_key": "change-me-before-production"}, "signing secret"),
         ({"metrics_token": None}, "HRMS_METRICS_TOKEN"),
         ({"cors_origins": "http://testinghrms.example.com"}, "https://"),
+        ({"field_encryption_keys": None}, "HRMS_FIELD_ENCRYPTION_KEYS"),
         (
             {"app_database_url": "postgresql+asyncpg://hrms_app:hrms_app_dev_password@db/h"},
             "hrms_app",

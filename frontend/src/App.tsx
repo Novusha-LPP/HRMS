@@ -16,6 +16,7 @@ const DashboardPage = lazy(() => import("./pages/DashboardPage").then(m => ({ de
 const EmployeePage = lazy(() => import("./pages/EmployeePage").then(m => ({ default: m.EmployeePage })));
 const AttendancePage = lazy(() => import("./pages/AttendancePage").then(m => ({ default: m.AttendancePage })));
 const LeavePage = lazy(() => import("./pages/LeavePage").then(m => ({ default: m.LeavePage })));
+const ApprovalsPage = lazy(() => import("./pages/ApprovalsPage").then(m => ({ default: m.ApprovalsPage })));
 const CorrectionsPage = lazy(() => import("./pages/CorrectionsPage").then(m => ({ default: m.CorrectionsPage })));
 const PolicyPage = lazy(() => import("./pages/PolicyPage").then(m => ({ default: m.PolicyPage })));
 const OnboardingPage = lazy(() => import("./pages/OnboardingPage").then(m => ({ default: m.OnboardingPage })));
@@ -104,6 +105,8 @@ export default function App() {
                               <Route path="/attendance" element={<AttendancePage />} />
                               <Route path="/leave" element={<LeavePage />} />
                               <Route path="/corrections" element={<CorrectionsPage />} />
+                              <Route path="/approvals" element={<ApprovalsPage />} />
+                              <Route path="/approval-flows" element={<ApprovalsPage key="flows" view="flows" />} />
                               <Route path="/organization" element={<OrganizationPage />} />
                               <Route path="/profile" element={<ProfilePage />} />
                               <Route path="/policy" element={<PolicyPage />} />

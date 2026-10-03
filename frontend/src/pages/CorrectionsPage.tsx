@@ -1,21 +1,18 @@
 import { useState } from "react";
 import type { FormEvent } from "react";
-import { useSearchParams } from "react-router-dom";
+import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
-import { Plus, CheckCheck, ChevronRight, FilePenLine, Clock, CloudOff } from "lucide-react";
+import { Plus, ChevronRight, FilePenLine, Clock, CloudOff } from "lucide-react";
 import type { AttendanceCorrection } from "../api/corrections";
 import { correctionsApi } from "../api/corrections";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
-import { Tabs } from "../components/ui/Tabs";
 import { StatusBadge } from "../components/ui/StatusBadge";
-import { Avatar } from "../components/ui/Avatar";
 import { Sheet } from "../components/ui/Overlay";
 import { ApprovalTimeline } from "../components/ui/Timeline";
 import { EmptyState, Notice, NoEmployeeRecord, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
-import { usePeopleDirectory } from "../lib/usePeopleDirectory";
 
 const CORRECTION_TYPES = [
   { value: "PUNCH_IN", label: "Correct check-in time" },
@@ -29,7 +26,7 @@ const CORRECTION_TYPES = [
 ];
 const typeLabel = (v: string) => CORRECTION_TYPES.find((t) => t.value === v)?.label ?? v;
 
-const PENDING = ["PENDING_L1", "PENDING_L2", "PENDING_L3"];
+const PENDING = ["PENDING_L1", "PENDING_L2", "PENDING_L3", "PENDING"];
 const NEEDS_IN = new Set(["PUNCH_IN", "MISSED_PUNCH", "REGULARIZE", "MARK_PRESENT"]);
 const NEEDS_OUT = new Set(["PUNCH_OUT", "MISSED_PUNCH", "REGULARIZE", "MARK_PRESENT"]);
 
@@ -48,7 +45,6 @@ export function CorrectionsPage() {
   const [params, setParams] = useSearchParams();
   const isApprover = !!user && (user.permissions.includes("*") || user.permissions.includes("corrections.approve"));
 
-  const tab = params.get("tab") === "approvals" && isApprover ? "approvals" : "all";
   const newOpen = params.get("new") === "1";
   const [openId, setOpenId] = useState<string | null>(null);
 
@@ -57,42 +53,40 @@ export function CorrectionsPage() {
     mutate(next);
     setParams(next, { replace: true });
   };
-  const setTab = (t: "approvals" | "all") => updateParams((p) => { if (t === "approvals") p.set("tab", t); else p.delete("tab"); });
   const setNewOpen = (open: boolean) => updateParams((p) => { if (open) p.set("new", "1"); else p.delete("new"); });
   const closeNew = () => setNewOpen(false);
 
   const cors = useQuery<AttendanceCorrection[]>({
     queryKey: ["corrections"],
-    queryFn: () => correctionsApi.list(isApprover ? undefined : (user!.employmentId ?? undefined)),
-    // Approvers review the whole queue without needing an employee record of their own.
-    enabled: !!user && (isApprover || !!user.employmentId),
+    queryFn: () => correctionsApi.list(user!.employmentId!),
+    enabled: !!user?.employmentId,
   });
-  const people = usePeopleDirectory(isApprover);
 
   if (!user) return null;
+  if (params.get("tab") === "approvals") return <Navigate to="/approvals?type=CORRECTION" replace />;
   const employmentId = user.employmentId;
-  if (!employmentId && !isApprover) {
+  if (!employmentId) {
     return (
       <>
         <PageHeader
           title="Attendance corrections"
-          description="Fix missed punches or wrong times. Approved corrections update the attendance record."
+          description="Submit corrections to your attendance and track their status."
         />
         <NoEmployeeRecord feature="attendance history to correct" />
+        {isApprover && <Link to="/approvals?type=CORRECTION" className="btn-secondary mt-4">Review correction requests<ChevronRight size={15} /></Link>}
       </>
     );
   }
 
   const all = cors.data ?? [];
-  const pending = all.filter((c) => PENDING.includes(c.status));
-  const list = tab === "approvals" ? pending : all;
+  const list = all;
   const selected = all.find((c) => c.id === openId) ?? null;
 
   return (
     <>
       <PageHeader
         title="Attendance corrections"
-        description="Fix missed punches or wrong times. Approved corrections update the attendance record."
+        description="Submit corrections to your attendance and track their status."
         actions={employmentId ? <button className="btn-primary" onClick={() => setNewOpen(true)}><Plus size={15} /> Request correction</button> : undefined}
       />
 
@@ -105,54 +99,31 @@ export function CorrectionsPage() {
       )}
 
       <div className="card overflow-hidden">
-        {isApprover ? (
-          <div className="px-5 pt-1">
-            <Tabs
-              value={tab}
-              onChange={setTab}
-              items={[
-                { value: "approvals", label: "Needs approval", count: cors.isPending ? undefined : pending.length },
-                { value: "all", label: "All requests", count: cors.isPending ? undefined : all.length },
-              ]}
-            />
-          </div>
-        ) : (
-          <div className="card-header border-b border-line pb-4">
-            <h3 className="card-title">My requests</h3>
-            <span className="text-xs text-fg-subtle">{all.length} total</span>
-          </div>
-        )}
+        <div className="card-header border-b border-line pb-4">
+          <h3 className="card-title">My requests</h3>
+          <span className="text-xs text-fg-subtle">{all.length} total</span>
+        </div>
 
         {cors.isPending ? (
           <div className="space-y-3 p-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-12" />)}</div>
         ) : cors.isError ? (
           <EmptyState icon={CloudOff} title="Requests unavailable" description="They’ll appear once the corrections service is reachable." />
         ) : list.length === 0 ? (
-          tab === "approvals" ? (
-            <EmptyState icon={CheckCheck} title="All caught up" description="No correction requests are waiting for a decision." />
-          ) : (
-            <EmptyState
-              icon={FilePenLine}
-              title="No correction requests"
-              description="Forgot to check in or out? Request a correction and your approver will review it."
-              action={<button className="btn-primary" onClick={() => setNewOpen(true)}><Plus size={15} /> Request correction</button>}
-            />
-          )
+          <EmptyState
+            icon={FilePenLine}
+            title="No correction requests"
+            description="Forgot to check in or out? Request a correction and your approver will review it."
+            action={<button className="btn-primary" onClick={() => setNewOpen(true)}><Plus size={15} /> Request correction</button>}
+          />
         ) : (
           <ul className="divide-y divide-line">
             {list.map((c) => {
-              const who = people.get(c.employment_id);
               return (
                 <li key={c.id}>
                   <button onClick={() => setOpenId(c.id)} className="group flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-muted/50">
-                    {isApprover ? (
-                      <Avatar name={who ?? c.employment_id} size="md" />
-                    ) : (
-                      <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted text-fg-subtle"><Clock size={15} /></span>
-                    )}
+                    <span className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-muted text-fg-subtle"><Clock size={15} /></span>
                     <div className="min-w-0 flex-1">
                       <p className="truncate text-[13px] font-medium text-fg">
-                        {isApprover && <>{who ?? <span className="font-mono text-xs">{c.employment_id}</span>} <span className="font-normal text-fg-subtle">·</span> </>}
                         {typeLabel(c.correction_type)}
                       </p>
                       <p className="truncate text-xs text-fg-subtle">
@@ -174,8 +145,6 @@ export function CorrectionsPage() {
         cor={selected}
         onClose={() => setOpenId(null)}
         actorId={employmentId}
-        isApprover={isApprover}
-        requester={selected ? people.get(selected.employment_id) : undefined}
       />
     </>
   );
@@ -200,6 +169,7 @@ function NewCorrectionSheet({ open, onClose, employmentId }: { open: boolean; on
     }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["corrections"] });
+      qc.invalidateQueries({ queryKey: ["approval-inbox"] });
       toast.success("Correction requested", `${typeLabel(type)} · ${format(new Date(workDate), "d MMM")}`);
       setReason(""); setPunchIn(""); setPunchOut("");
       onClose();
@@ -262,29 +232,20 @@ function NewCorrectionSheet({ open, onClose, employmentId }: { open: boolean; on
   );
 }
 
-function CorrectionDetailSheet({ cor, onClose, actorId, isApprover, requester }: {
+function CorrectionDetailSheet({ cor, onClose, actorId }: {
   cor: AttendanceCorrection | null;
   onClose: () => void;
-  /** null for an admin-only account: it can decide requests but has none of its own to withdraw. */
   actorId: string | null;
-  isApprover: boolean;
-  requester?: string;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
-  const [comments, setComments] = useState("");
 
   const act = useMutation({
-    mutationFn: (kind: "approve" | "reject" | "cancel") => {
-      const id = cor!.id;
-      if (kind === "approve") return correctionsApi.approve(id, comments || undefined);
-      if (kind === "reject") return correctionsApi.reject(id, comments || undefined);
-      return correctionsApi.cancel(id);
-    },
-    onSuccess: (_, kind) => {
+    mutationFn: () => correctionsApi.cancel(cor!.id),
+    onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["corrections"] });
-      toast.success({ approve: "Correction approved", reject: "Correction rejected", cancel: "Request withdrawn" }[kind]);
-      setComments("");
+      qc.invalidateQueries({ queryKey: ["approval-inbox"] });
+      toast.success("Request withdrawn");
       onClose();
     },
     onError: (e) => toast.error("Action failed", errorMessage(e)),
@@ -293,22 +254,15 @@ function CorrectionDetailSheet({ cor, onClose, actorId, isApprover, requester }:
   if (!cor) return null;
 
   const isPending = PENDING.includes(cor.status);
-  const canDecide = isApprover && isPending;
   const canWithdraw = (isPending || cor.status === "DRAFT") && !!actorId && cor.employment_id === actorId;
   const level = Number(cor.status.match(/L(\d)$/)?.[1] ?? cor.current_level);
 
-  const footer = canDecide ? (
-    <>
-      {canWithdraw && <button className="btn-ghost mr-auto" onClick={() => act.mutate("cancel")} disabled={act.isPending}>Withdraw</button>}
-      <button className="btn-danger-soft" onClick={() => act.mutate("reject")} disabled={act.isPending}>Reject</button>
-      <button className="btn-primary" onClick={() => act.mutate("approve")} disabled={act.isPending}>Approve</button>
-    </>
-  ) : canWithdraw ? (
-    <button className="btn-danger-soft" onClick={() => act.mutate("cancel")} disabled={act.isPending}>Withdraw request</button>
+  const footer = canWithdraw ? (
+    <button className="btn-danger-soft" onClick={() => act.mutate()} disabled={act.isPending}>Withdraw request</button>
   ) : undefined;
 
   return (
-    <Sheet open onClose={onClose} title="Correction request" description={requester ? `Requested by ${requester}` : undefined} footer={footer}>
+    <Sheet open onClose={onClose} title="Correction request" footer={footer}>
       <div className="space-y-6">
         <div className="flex items-start justify-between gap-3">
           <div>
@@ -346,12 +300,7 @@ function CorrectionDetailSheet({ cor, onClose, actorId, isApprover, requester }:
           />
         </div>
 
-        {canDecide && (
-          <div>
-            <label className="label" htmlFor="cr-comment">Comment <span className="font-normal text-fg-subtle">(optional)</span></label>
-            <textarea id="cr-comment" rows={2} className="input" value={comments} onChange={(e) => setComments(e.target.value)} placeholder="Visible to the requester" />
-          </div>
-        )}
+
       </div>
     </Sheet>
   );
