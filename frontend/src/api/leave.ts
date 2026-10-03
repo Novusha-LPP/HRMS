@@ -137,8 +137,11 @@ export interface LeaveApplicationSummary {
 }
 
 export const leaveApi = {
+  listArchivedTypes: () => api.get<LeaveType[]>("/v1/leave/types/archived"),
+  restoreType: (id: string) => api.post<LeaveType>(`/v1/leave/types/${id}/restore`, {}),
   listTypes: () => api.get<LeaveType[]>("/v1/leave/types"),
   createType: (body: Partial<LeaveType>) => api.post<LeaveType>("/v1/leave/types", body),
+  removeType: (id: string) => api.delete<void>(`/v1/leave/types/${id}`),
   updateType: (id: string, body: Partial<LeaveType>) => api.patch<LeaveType>(`/v1/leave/types/${id}`, body),
 
   /** year is a financial-year label (e.g. 2026 for FY2026-27), not a calendar year. */

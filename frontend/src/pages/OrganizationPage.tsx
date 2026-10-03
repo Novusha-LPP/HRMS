@@ -2,13 +2,17 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2, KeyRound, UserRoundX, UserRoundCheck, History } from "lucide-react";
+import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2, KeyRound, UserRoundX, UserRoundCheck, History, ArrowLeft, ChevronRight, UserPlus } from "lucide-react";
 import { orgApi } from "../api/org";
+import { peopleApi, personnelActionsApi } from "../api/people";
+import type { Employment } from "../api/people";
+import { departmentMembers, employeeMatches, employeeName, moveTeamMembers } from "../lib/teamManagement";
 import type { LegalEntity, Location, OrgUnit, Job, EmployeeIdScheme, ChangeLogEntry } from "../api/org";
 import { dashboardApi } from "../api/dashboard";
 import { usersApi } from "../api/users";
 import type { Role, UserAccount } from "../api/users";
 import { ResetPasswordSheet, SCOPE_LABEL, SignInChip } from "../components/users/AccessPanel";
+import { UsageHelpButton } from "../components/ui/UsageHelpButton";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
 import { Sheet, ConfirmDialog } from "../components/ui/Overlay";
@@ -33,6 +37,7 @@ export function OrganizationPage() {
       <PageHeader
         title="Organization"
         description="Companies, departments, locations and job titles across the group."
+        actions={tab === "companies" && params.get("company") ? undefined : <UsageHelpButton key={tab} topic={tab === "departments" ? "departments" : tab === "companies" ? "companies" : "organization"} />}
       />
       <Tabs
         className="mb-6"
@@ -78,6 +83,7 @@ function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) 
   const { data: orgUnits = [] } = useQuery({
     queryKey: ["org-units"],
     queryFn: () => orgApi.listOrgUnits(),
+    select: (rows) => rows.filter((u) => u.type !== "DEPARTMENT_TEMPLATE"),
   });
 
   const isLoading = hrPending || entitiesPending;
@@ -372,10 +378,14 @@ function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) 
 /* ─────────────────────────── Companies ─────────────────────────── */
 
 function CompaniesTab({ canCreate }: { canCreate: boolean }) {
+  const [params, setParams] = useSearchParams();
+  const selectedCompany = params.get("company");
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<LegalEntity | null>(null);
   const [viewingHistory, setViewingHistory] = useState<LegalEntity | null>(null);
   const { data, isPending, isError, refetch } = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
+
+  if (selectedCompany) return <CompanyDepartmentsTab key={selectedCompany} companyId={selectedCompany} onBack={() => { const next = new URLSearchParams(params); next.delete("company"); setParams(next); }} />;
 
   return (
     <div className="space-y-4">
@@ -411,6 +421,7 @@ function CompaniesTab({ canCreate }: { canCreate: boolean }) {
               <p className="mt-3 text-[15px] font-semibold text-fg">{e.name}</p>
               <p className="text-xs text-fg-subtle">{e.short_name ?? "—"} · {e.country_code}</p>
               <div className="mt-3"><StatusChip status={e.status} /></div>
+              <button className="btn-secondary w-full mt-4" onClick={() => { const next = new URLSearchParams(params); next.set("company", e.id); setParams(next); }}>Departments & teams <ChevronRight size={15} /></button>
             </div>
           ))}
         </div>
@@ -433,16 +444,17 @@ function CompanySheet({ open, onClose, initial }: { open: boolean; onClose: () =
   const qc = useQueryClient();
   const toast = useToast();
   const isEdit = !!initial;
-  const empty = { name: initial?.name ?? "", shortName: initial?.short_name ?? "", country: initial?.country_code ?? "IN", fyStart: initial?.financial_year_start_month ?? 0 };
+  const empty = { establishmentDate: initial?.establishment_date ?? "", name: initial?.name ?? "", shortName: initial?.short_name ?? "", country: initial?.country_code ?? "IN", fyStart: initial?.financial_year_start_month ?? 0 };
   const [form, setForm] = useState(empty);
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { name: form.name.trim(), short_name: form.shortName.trim() || undefined, country_code: form.country, financial_year_start_month: form.fyStart || undefined };
+      const body = { establishment_date: form.establishmentDate || null, name: form.name.trim(), short_name: form.shortName.trim() || undefined, country_code: form.country, financial_year_start_month: form.fyStart || undefined };
       return isEdit ? orgApi.updateLegalEntity(initial!.id, body) : orgApi.createLegalEntity(body);
     },
     onSuccess: (e) => {
       qc.invalidateQueries({ queryKey: ["legal-entities"] });
+      qc.invalidateQueries({ queryKey: ["dash-hr"] });
       toast.success(isEdit ? "Company updated" : "Company added", e.name);
       setForm(empty);
       onClose();
@@ -482,6 +494,12 @@ function CompanySheet({ open, onClose, initial }: { open: boolean; onClose: () =
             <label className="label" htmlFor="co-country">Country</label>
             <input id="co-country" className="input" maxLength={2} value={form.country} onChange={(e) => setForm((f) => ({ ...f, country: e.target.value.toUpperCase() }))} />
           </div>
+        </div>
+        <div>
+          <label className="label" htmlFor="co-established">Company establishment date</label>
+          <input id="co-established" type="date" className="input" value={form.establishmentDate}
+            onChange={(e) => setForm((f) => ({ ...f, establishmentDate: e.target.value }))} />
+          <p className="mt-1 text-xs text-fg-subtle">Celebrate this date each year in today’s dashboard highlights.</p>
         </div>
         <div>
           <label className="label" htmlFor="co-fy">Financial year starts <span className="font-normal text-fg-subtle">(optional — inherits the tenant default)</span></label>
@@ -541,96 +559,266 @@ function HistoryModal({ open, onClose, title, fetcher }: {
 
 /* ─────────────────────────── Departments ─────────────────────────── */
 
-function DepartmentsTab() {
+export function DepartmentsTab() {
+  const { user } = useAuth();
+  const canManage = !!user?.isAllScope;
+  const [params, setParams] = useSearchParams();
   const [adding, setAdding] = useState(false);
   const [editing, setEditing] = useState<OrgUnit | null>(null);
-  const [viewingHistory, setViewingHistory] = useState<OrgUnit | null>(null);
-  const [companyFilter, setCompanyFilter] = useState("");
-  const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
+  const [assigning, setAssigning] = useState<string[] | null>(null);
+  const [search, setSearch] = useState("");
   const units = useQuery({ queryKey: ["org-units"], queryFn: () => orgApi.listOrgUnits() });
-
-  const entityName = new Map((entities.data ?? []).map((e) => [e.id, e.name]));
-  const departments = (units.data ?? []).filter((o) => o.type !== "COMPANY" && (!companyFilter || o.legal_entity_id === companyFilter));
-
-  return (
-    <div className="space-y-4">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <select className="input sm:w-56" value={companyFilter} onChange={(e) => setCompanyFilter(e.target.value)} aria-label="Filter by company">
-          <option value="">All companies</option>
-          {entities.data?.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
-        </select>
-        <button className="btn-primary" onClick={() => setAdding(true)} disabled={!entities.data?.length}>
-          <Plus size={15} /> Add department / team
-        </button>
-      </div>
-      {units.isError ? (
-        <div className="card"><EmptyState icon={Landmark} title="Couldn’t load departments" description="The organization API isn’t responding." /></div>
-      ) : units.isPending ? (
-        <Skeleton className="h-64 rounded-xl" />
-      ) : !departments.length ? (
-        <div className="card">
-          <EmptyState
-            icon={Landmark}
-            title="No departments yet"
-            description="Departments are where employees get placed — add one for each function you need (HR, Finance, Operations…)."
-            action={entities.data?.length ? <button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add department</button> : undefined}
-          />
-        </div>
-      ) : (
-        <div className="card overflow-hidden">
-          <table className="tbl">
-            <thead><tr><th>Department / team</th><th>Company</th><th className="hidden sm:table-cell">Code</th><th>Since</th><th className="w-20" /></tr></thead>
-            <tbody>
-              {departments.map((d) => (
-                <tr key={d.id}>
-                  <td className="font-medium text-fg">{d.name}{d.type === "TEAM" && <p className="mt-1 text-xs font-normal text-fg-subtle">Team{d.parent_id ? ` · ${units.data?.find((u) => u.id === d.parent_id)?.name ?? "Parent department"}` : ""}</p>}</td>
-                  <td>{d.legal_entity_id ? entityName.get(d.legal_entity_id) ?? "—" : "—"}</td>
-                  <td className="hidden font-mono text-xs sm:table-cell">{d.code ?? "—"}</td>
-                  <td className="tabular-nums">{format(new Date(d.effective_from), "d MMM yyyy")}</td>
-                  <td>
-                    <div className="flex justify-end gap-1">
-                      <button className="btn-icon" onClick={() => setViewingHistory(d)} aria-label={`History for ${d.name}`}><History size={14} /></button>
-                      <button className="btn-icon" onClick={() => setEditing(d)} aria-label={`Edit ${d.name}`}><Pencil size={14} /></button>
-                    </div>
-                  </td>
-                </tr>
-              ))}
-            </tbody>
-          </table>
-        </div>
-      )}
-      <DepartmentSheet open={adding} onClose={() => setAdding(false)} entities={entities.data ?? []} departments={units.data ?? []} />
-      <DepartmentSheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} entities={entities.data ?? []} departments={units.data ?? []} initial={editing ?? undefined} />
-      <HistoryModal
-        open={viewingHistory !== null}
-        onClose={() => setViewingHistory(null)}
-        title={viewingHistory ? `History — ${viewingHistory.name}` : "History"}
-        fetcher={viewingHistory ? () => orgApi.orgUnitHistory(viewingHistory.id) : undefined}
-      />
-    </div>
-  );
+  const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
+  const catalog = (units.data ?? []).filter((u) => u.type === "DEPARTMENT_TEMPLATE");
+  const visible = catalog.filter((d) => `${d.name} ${d.code ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+  const openCompany = (id: string) => { const next = new URLSearchParams(params); next.set("tab", "companies"); next.set("company", id); setParams(next); };
+  return <div className="space-y-5">
+    <div className="flex flex-wrap gap-3"><input className="input flex-1 min-w-48" aria-label="Search shared departments" placeholder="Search department name or code…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <button className="btn-secondary" disabled={!catalog.length || !entities.data?.length} onClick={() => setAssigning([])}><Building2 size={15} /> Assign to company</button>
+      {canManage && <button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Create department</button>}</div>
+    {units.isPending ? <Skeleton className="h-48" /> : units.isError ? <div className="card p-5"><p>Couldn’t load departments.</p><button className="link" onClick={() => units.refetch()}>Try again</button></div>
+      : !visible.length ? <div className="card"><EmptyState icon={Landmark} title={search ? "No matching departments" : "Create your shared department list"}
+        description={canManage ? "Add Sales, HR, Finance or other departments. Company assignment comes next." : "A group administrator can create shared departments for your companies."} /></div>
+      : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{visible.map((d) => {
+        const assigned = (units.data ?? []).filter((u) => u.department_template_id === d.id && u.legal_entity_id);
+        return <div className="card p-5 space-y-4" key={d.id}>
+          <div className="flex items-start justify-between gap-2"><div><h3 className="text-base font-semibold">{d.name}</h3><p className="text-xs text-fg-subtle">{d.code || "Shared department"}</p></div>
+            {canManage && <button className="btn-icon" aria-label={`Edit ${d.name}`} onClick={() => setEditing(d)}><Pencil size={14} /></button>}</div>
+          <div className="flex flex-wrap gap-2">{assigned.length ? assigned.map((u) => <button key={u.id} className="badge badge-brand" onClick={() => openCompany(u.legal_entity_id!)}>{entities.data?.find((e) => e.id === u.legal_entity_id)?.name ?? "Company"} <ChevronRight size={12} /></button>) : <p className="text-xs text-fg-subtle">Not assigned to a company yet</p>}</div>
+          <button className="btn-secondary btn-sm w-full" disabled={!entities.data?.length} onClick={() => setAssigning([d.id])}><Building2 size={14} /> Assign to company</button>
+        </div>;
+      })}</div>}
+    {adding && <SharedDepartmentSheet onClose={() => setAdding(false)} />}
+    {editing && <SharedDepartmentSheet key={editing.id} initial={editing} onClose={() => setEditing(null)} />}
+    {assigning && <AssignDepartmentsSheet initialIds={assigning} departments={catalog} units={units.data ?? []} entities={entities.data ?? []} onClose={() => setAssigning(null)} />}
+  </div>;
 }
 
-function DepartmentSheet({ open, onClose, entities, departments, initial }: {
-  open: boolean; onClose: () => void; entities: LegalEntity[]; departments: OrgUnit[]; initial?: OrgUnit;
+function SharedDepartmentSheet({ initial, onClose }: { initial?: OrgUnit; onClose: () => void }) {
+  const qc = useQueryClient(); const toast = useToast();
+  const [name, setName] = useState(initial?.name ?? ""); const [code, setCode] = useState(initial?.code ?? "");
+  const save = useMutation({
+    mutationFn: () => initial ? orgApi.updateOrgUnit(initial.id, { name: name.trim(), code: code.trim() || null })
+      : orgApi.createOrgUnit({ name: name.trim(), code: code.trim() || undefined, type: "DEPARTMENT_TEMPLATE", effective_from: format(new Date(), "yyyy-MM-dd") }),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["org-units"] }); void qc.invalidateQueries({ queryKey: ["employees"] }); void qc.invalidateQueries({ queryKey: ["dash-hr"] }); toast.success(initial ? "Shared department updated" : "Department created"); onClose(); },
+    onError: (e) => toast.error("Couldn’t save department", errorMessage(e)),
+  });
+  return <Sheet open onClose={onClose} title={initial ? "Edit shared department" : "Create department"}
+    description={initial ? "Name and code changes update this department in every assigned company." : "Define the department first. Assign it to one or more companies afterward."}
+    footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" type="submit" form="shared-department-form" disabled={!name.trim() || save.isPending}>{save.isPending ? "Saving…" : initial ? "Save changes" : "Create department"}</button></>}>
+    <form id="shared-department-form" className="space-y-4" onSubmit={(e) => { e.preventDefault(); if (name.trim()) save.mutate(); }}>
+      <div><label className="label" htmlFor="shared-department-name">Department name</label><input className="input" id="shared-department-name" required maxLength={255} placeholder="e.g. Sales" value={name} onChange={(e) => setName(e.target.value)} /></div>
+      <div><label className="label" htmlFor="shared-department-code">Code (optional)</label><input className="input" id="shared-department-code" maxLength={50} placeholder="e.g. SALES" value={code} onChange={(e) => setCode(e.target.value)} /></div>
+    </form>
+  </Sheet>;
+}
+
+function AssignDepartmentsSheet({ initialIds = [], companyId, departments, units, entities, onClose }: {
+  initialIds?: string[]; companyId?: string; departments: OrgUnit[]; units: OrgUnit[]; entities: LegalEntity[]; onClose: () => void;
+}) {
+  const qc = useQueryClient(); const toast = useToast();
+  const [entityId, setEntityId] = useState(companyId ?? entities[0]?.id ?? "");
+  const [selected, setSelected] = useState(new Set(initialIds)); const [search, setSearch] = useState("");
+  const already = new Set(units.filter((u) => u.legal_entity_id === entityId).map((u) => u.department_template_id));
+  const chosen = departments.filter((d) => selected.has(d.id) && !already.has(d.id));
+  const visible = departments.filter((d) => `${d.name} ${d.code ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+  const save = useMutation({ mutationFn: () => orgApi.assignDepartments(entityId, chosen.map((d) => d.id)),
+    onSuccess: () => { void qc.invalidateQueries({ queryKey: ["org-units"] }); toast.success("Departments assigned", entities.find((e) => e.id === entityId)?.name); onClose(); },
+    onError: (e) => toast.error("Couldn’t assign departments", errorMessage(e)),
+  });
+  return <Sheet open onClose={onClose} title="Assign departments to company" description="Choose departments from the shared list. This company will manage its own teams and employees."
+    footer={<><button className="btn-secondary" onClick={onClose}>Cancel</button><button className="btn-primary" disabled={!entityId || !chosen.length || save.isPending} onClick={() => save.mutate()}>{save.isPending ? "Assigning…" : `Assign ${chosen.length || ""} ${chosen.length === 1 ? "department" : "departments"}`}</button></>}>
+    <div className="space-y-4"><div><label className="label" htmlFor="assign-department-company">Company / entity</label><select className="input" id="assign-department-company" value={entityId} disabled={!!companyId || save.isPending} onChange={(e) => setEntityId(e.target.value)}>
+      {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}</select></div>
+      <input className="input" aria-label="Search departments to assign" placeholder="Search departments…" value={search} onChange={(e) => setSearch(e.target.value)} />
+      <p className="text-xs text-fg-subtle">{chosen.length} selected · Existing assignments are marked below.</p>
+      <div className="divide-y divide-line rounded-xl border border-line">{visible.map((d) => <label key={d.id} className="flex items-center gap-3 p-3">
+        <input type="checkbox" className="checkbox" checked={already.has(d.id) || selected.has(d.id)} disabled={already.has(d.id) || save.isPending} aria-label={`Assign ${d.name}`}
+          onChange={() => setSelected((old) => { const next = new Set(old); if (next.has(d.id)) next.delete(d.id); else next.add(d.id); return next; })} />
+        <div className="flex-1"><p className="font-medium text-sm">{d.name}</p><p className="text-xs text-fg-subtle">{d.code}</p></div>{already.has(d.id) && <span className="badge badge-neutral">Assigned</span>}
+      </label>)}{!visible.length && <p className="p-4 text-sm text-fg-subtle">{departments.length ? "No matching departments." : "Create departments in the shared department list first."}</p>}</div>
+    </div>
+  </Sheet>;
+}
+
+function CompanyDepartmentsTab({ companyId, onBack }: { companyId: string; onBack: () => void }) {
+  const [adding, setAdding] = useState(false);
+  const [departmentId, setDepartmentId] = useState<string | null>(null);
+  const [addingTeam, setAddingTeam] = useState(false);
+  const [editing, setEditing] = useState<OrgUnit | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<OrgUnit | null>(null);
+
+  const [search, setSearch] = useState("");
+  const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
+  const units = useQuery({ queryKey: ["org-units"], queryFn: () => orgApi.listOrgUnits() });
+  const employees = useQuery({ queryKey: ["employees", "team-members"], queryFn: () => peopleApi.listAllEmployees() });
+  const entityName = new Map((entities.data ?? []).map((e) => [e.id, e.name]));
+  const department = units.data?.find((u) => u.id === departmentId && u.legal_entity_id === companyId);
+  const departments = (units.data ?? []).filter((u) => u.type !== "COMPANY" && u.type !== "TEAM"
+    && u.type !== "DEPARTMENT_TEMPLATE" && u.legal_entity_id === companyId
+    && `${u.name} ${u.code ?? ""}`.toLowerCase().includes(search.toLowerCase()));
+  const teamsFor = (id: string) => (units.data ?? []).filter((u) => u.type === "TEAM" && u.parent_id === id);
+  const membersFor = (d: OrgUnit) => departmentMembers(d, teamsFor(d.id), employees.data ?? []);
+  if (entities.isPending) return <Skeleton className="h-48" />;
+  if (entities.isError) return <div className="card p-5"><p>Couldn’t load this company.</p><button className="link" onClick={() => entities.refetch()}>Try again</button></div>;
+  if (!entities.data?.some((e) => e.id === companyId)) return <div className="card p-5"><p>This company is not available to your account.</p><button className="btn-secondary mt-3" onClick={onBack}>All companies</button></div>;
+
+  return <div className="space-y-5">
+    {!department && <><button className="btn-secondary btn-sm" onClick={onBack}><ArrowLeft size={14} /> All companies</button>
+      <div className="flex flex-wrap items-start justify-between gap-3"><div><h2 className="text-xl font-semibold">{entityName.get(companyId)} — Departments</h2><p className="text-sm text-fg-subtle mt-1">Manage this company’s teams and employees within each assigned department.</p></div><UsageHelpButton topic="company-departments" /></div></>}
+    {department ? <>
+      <button className="btn-secondary btn-sm" onClick={() => { setDepartmentId(null); setAddingTeam(false); }}><ArrowLeft size={14} /> All departments</button>
+      <div className="flex flex-wrap items-start justify-between gap-3">
+        <div><p className="text-xs text-fg-subtle mb-1">{entityName.get(department.legal_entity_id ?? "")}</p>
+          <h2 className="text-xl font-semibold">{department.name}</h2><p className="text-sm text-fg-subtle mt-1">Organize your department’s employees into teams.</p></div>
+        <div className="flex gap-2"><UsageHelpButton topic="teams" /><button className="btn-secondary btn-sm" onClick={() => setEditing(department)}><Pencil size={14} /> Department settings</button>
+          <button className="btn-primary btn-sm" onClick={() => setAddingTeam(true)}><Plus size={14} /> Create team</button></div>
+      </div>
+      <TeamWorkspace key={department.id} department={department} teams={teamsFor(department.id)} employees={employees.data ?? []}
+        loading={employees.isPending} failed={employees.isError} retry={() => employees.refetch()}
+        onCreate={() => setAddingTeam(true)} onEdit={setEditing} onHistory={setViewingHistory} />
+    </> : <>
+      <div className="flex flex-wrap items-center gap-3">
+        <input className="input flex-1 min-w-48" aria-label="Search departments" placeholder="Search departments…" value={search} onChange={(e) => setSearch(e.target.value)} />
+
+        <button className="btn-primary" onClick={() => setAdding(true)} disabled={!entities.data?.length}><Plus size={15} /> Assign departments</button>
+      </div>
+      {units.isError ? <div className="card p-5"><p>Couldn’t load departments.</p><button className="link" onClick={() => units.refetch()}>Try again</button></div>
+        : units.isPending ? <Skeleton className="h-64 rounded-xl" />
+        : !departments.length ? <div className="card"><EmptyState icon={Landmark} title={search ? "No matching departments" : "Assign departments to this company"}
+            description="Choose departments from the shared department list. Then create teams for this company." /></div>
+        : <div className="grid gap-4 md:grid-cols-2 xl:grid-cols-3">{departments.map((d) => <div className="card p-5 flex flex-col gap-4" key={d.id}>
+          <div className="flex items-start justify-between gap-2"><div><h3 className="text-base font-semibold">{d.name}</h3><p className="text-xs text-fg-subtle mt-1">{entityName.get(d.legal_entity_id ?? "") ?? "Shared department"}</p></div>
+            <div className="flex">{!d.department_template_id && <button className="btn-icon" onClick={() => setEditing(d)} aria-label={`Edit ${d.name}`}><Pencil size={14} /></button>}<button className="btn-icon" onClick={() => setViewingHistory(d)} aria-label={`History for ${d.name}`}><History size={14} /></button></div></div>
+          <div className="flex gap-4 text-sm text-fg-muted"><span>{teamsFor(d.id).length} teams</span><span>{employees.isPending ? "…" : employees.isError ? "—" : membersFor(d).length} employees</span></div>
+          <button className="btn-secondary w-full" onClick={() => setDepartmentId(d.id)}>Manage teams & employees <ChevronRight size={15} /></button>
+        </div>)}</div>}
+    </>}
+    {department && <DepartmentSheet key={`team-${department.id}-${addingTeam}`} open={addingTeam} onClose={() => setAddingTeam(false)} entities={entities.data ?? []} departments={units.data ?? []} teamParent={department} />}
+    {adding && <AssignDepartmentsSheet companyId={companyId} departments={(units.data ?? []).filter((u) => u.type === "DEPARTMENT_TEMPLATE")} units={units.data ?? []} entities={entities.data ?? []} onClose={() => setAdding(false)} />}
+    <DepartmentSheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} entities={entities.data ?? []} departments={units.data ?? []} initial={editing ?? undefined} />
+    <HistoryModal open={viewingHistory !== null} onClose={() => setViewingHistory(null)} title={viewingHistory ? `History — ${viewingHistory.name}` : "History"}
+      fetcher={viewingHistory ? () => orgApi.orgUnitHistory(viewingHistory.id) : undefined} />
+  </div>;
+}
+
+function TeamWorkspace({ department, teams, employees, loading, failed, retry, onCreate, onEdit, onHistory }: {
+  department: OrgUnit; teams: OrgUnit[]; employees: Employment[]; loading: boolean; failed: boolean; retry: () => void;
+  onCreate: () => void; onEdit: (team: OrgUnit) => void; onHistory: (team: OrgUnit) => void;
+}) {
+  const [filter, setFilter] = useState("all");
+  const [search, setSearch] = useState("");
+  const [picker, setPicker] = useState<{ target: string; ids: string[] } | null>(null);
+  const members = departmentMembers(department, teams, employees);
+  const activeTeam = teams.find((t) => t.id === filter);
+  const effectiveFilter = filter === "all" || filter === department.id || activeTeam ? filter : "all";
+  const label = activeTeam?.name ?? (effectiveFilter === department.id ? "Employees without a team" : "All employees");
+  const visible = members.filter((e) => (effectiveFilter === "all" || e.org_unit_id === effectiveFilter) && employeeMatches(e, search));
+  const groups = [{ id: "all", name: "All employees", count: members.length }, { id: department.id, name: "Without a team", count: members.filter((e) => e.org_unit_id === department.id).length },
+    ...teams.map((t) => ({ id: t.id, name: t.name, count: members.filter((e) => e.org_unit_id === t.id).length }))];
+  return <>
+    <div className="grid grid-cols-2 gap-3 lg:grid-cols-4">{groups.map((g) => <button key={g.id} type="button" aria-pressed={effectiveFilter === g.id}
+      className={`card p-4 text-left transition-colors ${effectiveFilter === g.id ? "ring-2 ring-brand-500 bg-brand-500/5" : "hover:bg-surface-raised"}`}
+      onClick={() => { setFilter(g.id); setSearch(""); }}><div className="flex items-center gap-2 text-sm font-medium"><Users size={16} /><span className="truncate">{g.name}</span></div>
+      <p className="mt-3 text-2xl font-semibold">{loading ? "…" : failed ? "—" : g.count}</p><p className="text-xs text-fg-subtle">{g.count === 1 ? "employee" : "employees"}</p></button>)}</div>
+    {!teams.length && <div className="card p-5 flex flex-wrap items-center justify-between gap-3"><div><h3 className="font-semibold">Start by creating a team</h3><p className="text-sm text-fg-subtle">For example, split Sales into Inside Sales and Field Sales.</p></div><button className="btn-primary btn-sm" onClick={onCreate}><Plus size={14} /> Create team</button></div>}
+    <section className="card overflow-hidden">
+      <div className="p-5 border-b border-line flex flex-wrap items-center justify-between gap-3"><div><h3 className="card-title">{label}</h3><p className="card-desc">{activeTeam ? "View members or add employees from this department." : "Choose a team above, or assign employees to a team."}</p></div>
+        <div className="flex flex-wrap gap-2">{activeTeam && <><button className="btn-secondary btn-sm" onClick={() => onEdit(activeTeam)}><Pencil size={14} /> Edit team</button><button className="btn-icon" aria-label={`History for ${activeTeam.name}`} onClick={() => onHistory(activeTeam)}><History size={14} /></button></>}
+          <button className="btn-primary btn-sm" disabled={loading || failed || !teams.length || !members.length}
+            onClick={() => setPicker({ target: activeTeam?.id ?? teams[0]?.id ?? department.id, ids: [] })}><UserPlus size={14} /> {activeTeam ? "Add employees" : "Assign employees"}</button></div>
+      </div>
+      {loading ? <div className="p-5"><Skeleton className="h-32" /></div> : failed ? <div className="p-5"><p>Couldn’t load employees.</p><button className="link" onClick={retry}>Try again</button></div> : <>
+        <div className="px-5 pt-4"><input className="input" aria-label="Search team members" placeholder="Search employee name or number…" value={search} onChange={(e) => setSearch(e.target.value)} /></div>
+        {!visible.length ? <EmptyState icon={Users} title={search ? "No matching employees" : activeTeam ? "This team is ready for employees" : "No employees here yet"}
+          description={search ? "Try a different name or employee number." : members.length ? "Use Add employees to choose people from your department." : "Place employees in this department from the Employees page, then assign them to teams here."} />
+          : <ul className="divide-y divide-line p-5">{visible.map((e) => <li key={e.id} className="flex flex-wrap items-center justify-between gap-3 py-3">
+            <div className="flex items-center gap-3 min-w-0"><div className="h-10 w-10 rounded-full bg-brand-500/10 text-accent flex items-center justify-center shrink-0"><Users size={17} /></div>
+              <div className="min-w-0"><p className="font-medium truncate">{employeeName(e)}</p><p className="text-xs text-fg-subtle">{e.employee_number}{e.designation ? ` · ${e.designation}` : ""}</p></div></div>
+            <div className="flex items-center gap-3"><span className={`badge ${e.org_unit_id === department.id ? "badge-neutral" : "badge-brand"}`}>{teams.find((t) => t.id === e.org_unit_id)?.name ?? "No team"}</span>
+              <button className="btn-secondary btn-sm" disabled={!teams.length && e.org_unit_id === department.id} onClick={() => setPicker({ target: e.org_unit_id === department.id ? teams[0]?.id ?? department.id : department.id, ids: [e.id] })}>{e.org_unit_id === department.id ? "Assign team" : "Move"}</button></div>
+          </li>)}</ul>}
+      </>}
+    </section>
+    {picker && <TeamMemberPicker department={department} teams={teams} members={members} initial={picker} onClose={() => setPicker(null)} />}
+  </>;
+}
+
+function TeamMemberPicker({ department, teams, members, initial, onClose }: {
+  department: OrgUnit; teams: OrgUnit[]; members: Employment[]; initial: { target: string; ids: string[] }; onClose: () => void;
+}) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const [target, setTarget] = useState(initial.target);
+  const [selected, setSelected] = useState(new Set(initial.ids));
+  const [search, setSearch] = useState("");
+  const [pending, setPending] = useState(false);
+  const [failures, setFailures] = useState<{ id: string; message: string }[]>([]);
+  const [progress, setProgress] = useState(0);
+  const eligible = members.filter((e) => e.org_unit_id !== target);
+  const visible = eligible.filter((e) => employeeMatches(e, search));
+  const chosen = eligible.filter((e) => selected.has(e.id));
+  const destination = teams.find((t) => t.id === target)?.name ?? "No team";
+  const toggle = (id: string) => setSelected((old) => { const next = new Set(old); if (next.has(id)) next.delete(id); else next.add(id); return next; });
+  const save = async () => {
+    setPending(true); setFailures([]); setProgress(0);
+    const result = await moveTeamMembers(chosen, target, (employee, unit) => personnelActionsApi.create({
+      employment_id: employee.id, type: "TRANSFER", effective_date: format(new Date(), "yyyy-MM-dd"),
+      reason_code: "TEAM_ASSIGNMENT", changes: { org_unit_id: unit },
+    }), errorMessage, setProgress);
+    await qc.invalidateQueries({ queryKey: ["employees"] });
+    void qc.invalidateQueries({ queryKey: ["employees-picker"] });
+    void qc.invalidateQueries({ queryKey: ["dash-hr"] });
+    setPending(false);
+    if (result.succeeded.length) toast.success(`${result.succeeded.length} ${result.succeeded.length === 1 ? "employee" : "employees"} updated`, `Assigned to ${destination}.`);
+    if (result.failed.length) { setSelected(new Set(result.failed.map((f) => f.id))); setFailures(result.failed); }
+    else onClose();
+  };
+  return <Sheet open onClose={() => { if (!pending) onClose(); }} title="Assign employees" description={`Choose employees from ${department.name}.`} className="max-w-lg"
+    footer={<><button className="btn-secondary" disabled={pending} onClick={onClose}>Cancel</button><button className="btn-primary" disabled={pending || !chosen.length} onClick={() => void save()}>
+      {pending ? `Updating ${progress} of ${chosen.length}…` : `Assign ${chosen.length || ""} ${chosen.length === 1 ? "employee" : "employees"}`}</button></>}>
+    <div className="space-y-4">
+      <div><label className="label" htmlFor="team-destination">Assign to</label><select className="input" id="team-destination" value={target} disabled={pending}
+        onChange={(e) => { setTarget(e.target.value); setSelected(new Set()); setFailures([]); }}><option value={department.id}>No team — stay in {department.name}</option>{teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}</select></div>
+      <p className="text-xs text-fg-subtle">Employees already in {destination} are hidden. Changes take effect today.</p>
+      {failures.length > 0 && <div role="alert" className="rounded-lg border border-danger/30 bg-danger/5 p-3 text-sm"><p className="font-medium">Some employees couldn’t be updated. Successful changes are saved.</p>{failures.map((f) => <p className="mt-1" key={f.id}>{members.find((e) => e.id === f.id) ? employeeName(members.find((e) => e.id === f.id)!) : f.id}: {f.message}</p>)}<p className="mt-2">Retry the selected employees or cancel.</p></div>}
+      <input className="input" aria-label="Search employees to assign" placeholder="Search name or employee number…" disabled={pending} value={search} onChange={(e) => setSearch(e.target.value)} />
+      <div className="flex justify-between items-center text-xs text-fg-subtle"><span>{chosen.length} selected</span><button type="button" className="link" disabled={pending || !visible.length}
+        onClick={() => setSelected((old) => { const next = new Set(old); const all = visible.every((e) => next.has(e.id)); for (const e of visible) { if (all) next.delete(e.id); else next.add(e.id); } return next; })}>{visible.length && visible.every((e) => selected.has(e.id)) ? "Deselect shown" : "Select all shown"}</button></div>
+      <div className="divide-y divide-line rounded-xl border border-line">{visible.map((e) => <label key={e.id} className={`flex items-center gap-3 p-3 cursor-pointer ${selected.has(e.id) ? "bg-brand-500/5" : "hover:bg-surface-raised"}`}>
+        <input type="checkbox" className="checkbox" disabled={pending} checked={selected.has(e.id)} onChange={() => toggle(e.id)} aria-label={`Select ${employeeName(e)}`} />
+        <div><p className="font-medium text-sm">{employeeName(e)}</p><p className="text-xs text-fg-subtle">{e.employee_number} · {teams.find((t) => t.id === e.org_unit_id)?.name ?? "No team"}</p></div></label>)}
+        {!visible.length && <p className="p-4 text-sm text-fg-subtle">{search ? "No matching employees." : "All department employees are already assigned here."}</p>}</div>
+    </div>
+  </Sheet>;
+}
+
+function DepartmentSheet({ open, onClose, entities, departments, initial, teamParent }: {
+  open: boolean; onClose: () => void; entities: LegalEntity[]; departments: OrgUnit[]; initial?: OrgUnit; teamParent?: OrgUnit;
 }) {
   const qc = useQueryClient();
   const toast = useToast();
   const isEdit = !!initial;
-  const empty = { name: initial?.name ?? "", code: initial?.code ?? "", entity: initial?.legal_entity_id ?? entities[0]?.id ?? "", parent: initial?.parent_id ?? "", type: initial?.type ?? "DEPARTMENT" };
+  const empty = { name: initial?.name ?? "", code: initial?.code ?? "", entity: initial?.legal_entity_id ?? teamParent?.legal_entity_id ?? entities[0]?.id ?? "", parent: initial?.parent_id ?? teamParent?.id ?? "", type: initial?.type ?? (teamParent ? "TEAM" : "DEPARTMENT") };
   const [form, setForm] = useState(empty);
+  const [head, setHead] = useState(initial?.head_employment_id ?? "");
+  const [lead, setLead] = useState(initial?.lead_employment_id ?? "");
+  const [pm, setPm] = useState(initial?.pm_employment_id ?? "");
+  const employees = useQuery({ queryKey: ["employees"], queryFn: peopleApi.listAllEmployees, enabled: ["TEAM", "DEPARTMENT"].includes(form.type) });
   const unitLabel = form.type === "TEAM" ? "team" : "department";
   const entityId = form.entity || entities[0]?.id || "";
-  const parentOptions = departments.filter((d) => d.legal_entity_id === entityId && d.id !== initial?.id);
+  const parentOptions = departments.filter((d) => d.legal_entity_id === entityId && d.id !== initial?.id && (form.type !== "TEAM" || d.type === "DEPARTMENT"));
 
   const save = useMutation({
     mutationFn: () =>
       isEdit
-        ? orgApi.updateOrgUnit(initial!.id, { name: form.name.trim(), code: form.code.trim() || undefined })
+        ? orgApi.updateOrgUnit(initial!.id, { ...(initial!.department_template_id ? {} : { name: form.name.trim(), code: form.code.trim() || null }), ...(form.type === "DEPARTMENT" ? { head_employment_id: head || null } : {}), ...(form.type === "TEAM" ? { lead_employment_id: lead || null, pm_employment_id: pm || null } : {}) })
         : orgApi.createOrgUnit({
             name: form.name.trim(), type: form.type, code: form.code.trim() || undefined,
             legal_entity_id: entityId, parent_id: form.parent || undefined,
             effective_from: format(new Date(), "yyyy-MM-dd"),
+            ...(form.type === "DEPARTMENT" ? { head_employment_id: head || null } : {}),
+            ...(form.type === "TEAM" ? { lead_employment_id: lead || null, pm_employment_id: pm || null } : {}),
           }),
     onSuccess: (d) => {
       qc.invalidateQueries({ queryKey: ["org-units"] });
@@ -649,7 +837,7 @@ function DepartmentSheet({ open, onClose, entities, departments, initial }: {
       open={open}
       onClose={onClose}
       title={`${isEdit ? "Edit" : "Add"} ${unitLabel}`}
-      description={isEdit ? "Moving to a different company or parent isn't supported here — create a new department and reassign employees instead." : undefined}
+      description={teamParent ? `Create a team within ${teamParent.name}.` : isEdit ? "Update the name and code for this unit." : undefined}
       footer={
         <>
           <button className="btn-secondary" onClick={onClose}>Cancel</button>
@@ -660,36 +848,39 @@ function DepartmentSheet({ open, onClose, entities, departments, initial }: {
       }
     >
       <form id="dept-form" onSubmit={submit} className="space-y-4">
-        <div>
+        {form.type === "TEAM" ? <div className="rounded-xl bg-surface-raised p-3 text-sm">
+          <p className="font-medium">{teamParent?.name ?? departments.find((d) => d.id === form.parent)?.name ?? "Department"}</p>
+          <p className="text-xs text-fg-subtle">{entities.find((e) => e.id === entityId)?.name}</p>
+        </div> : <div>
           <label className="label" htmlFor="dp-company">Company</label>
-          <select id="dp-company" className="input" value={entityId} disabled={isEdit} onChange={(e) => setForm((f) => ({ ...f, entity: e.target.value, parent: "" }))}>
+          <select id="dp-company" className="input" value={entityId} disabled={isEdit}
+            onChange={(e) => setForm((f) => ({ ...f, entity: e.target.value, parent: "" }))}>
             {entities.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
           </select>
-        </div>
+        </div>}
         <div>
-          <label className="label" htmlFor="dp-name">Department / team name</label>
-          <input id="dp-name" className="input" placeholder="e.g. Finance" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
-        </div>
-        <div>
-          <label className="label" htmlFor="dp-type">Unit type</label>
-          <select id="dp-type" className="input" disabled={isEdit} value={form.type}
-            onChange={(e) => setForm((f) => ({ ...f, type: e.target.value }))}>
-            <option value="DEPARTMENT">Department</option><option value="TEAM">Team</option>
-          </select>
+          <label className="label" htmlFor="dp-name">{form.type === "TEAM" ? "Team name" : "Department name"}</label>
+          <input id="dp-name" className="input" disabled={!!initial?.department_template_id} required placeholder={form.type === "TEAM" ? "e.g. Inside Sales" : "e.g. Sales"}
+            value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
         </div>
         <div>
           <label className="label" htmlFor="dp-code">Code <span className="font-normal text-fg-subtle">(optional)</span></label>
-          <input id="dp-code" className="input font-mono" placeholder="e.g. HQ-FIN" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
+          <input id="dp-code" className="input font-mono" disabled={!!initial?.department_template_id} placeholder={form.type === "TEAM" ? "e.g. SALES-IN" : "e.g. SALES"}
+            value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
         </div>
-        {!isEdit && parentOptions.length > 0 && (
-          <div>
-            <label className="label" htmlFor="dp-parent">Parent department {form.type !== "TEAM" && <span className="font-normal text-fg-subtle">(optional)</span>}</label>
-            <select id="dp-parent" className="input" required={form.type === "TEAM"} value={form.parent} onChange={(e) => setForm((f) => ({ ...f, parent: e.target.value }))}>
-              <option value="">None — top level</option>
-              {parentOptions.map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
-            </select>
-          </div>
-        )}
+        {["TEAM", "DEPARTMENT"].includes(form.type) && <div className="space-y-3">
+          <p className="text-xs text-fg-subtle">Choose the people who manage this department or team. Approval workflows select their approvers separately.</p>
+          {employees.isError && <p className="text-sm text-danger">Couldn’t load employees. <button type="button" className="link" onClick={() => employees.refetch()}>Retry</button></p>}
+          {(form.type === "DEPARTMENT" ? [{ title: "Head of Department", value: head, change: setHead }] : [{ title: "Team lead", value: lead, change: setLead }, { title: "Project Manager", value: pm, change: setPm }]).map((role) => <label key={role.title} className="label block">{role.title}<select className="input mt-1" value={role.value} disabled={employees.isPending || employees.isError} onChange={(e) => role.change(e.target.value)}>
+            <option value="">Unassigned</option>{employees.data?.filter((e) => e.legal_entity_id === entityId && e.employment_state !== "SEPARATED").map((e) => <option key={e.id} value={e.id}>{employeeName(e)} · {e.employee_number}</option>)}
+          </select></label>)}
+        </div>}
+        {form.type !== "TEAM" && !isEdit && parentOptions.length > 0 && <div>
+          <label className="label" htmlFor="dp-parent">Parent department (optional)</label>
+          <select id="dp-parent" className="input" value={form.parent} onChange={(e) => setForm((f) => ({ ...f, parent: e.target.value }))}>
+            <option value="">None — top level</option>{parentOptions.filter((d) => d.type !== "TEAM").map((d) => <option key={d.id} value={d.id}>{d.name}</option>)}
+          </select>
+        </div>}
       </form>
     </Sheet>
   );

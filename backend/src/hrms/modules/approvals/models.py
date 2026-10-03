@@ -15,8 +15,23 @@ class ApprovalFlow(SQLModel, table=True):
     name: str = Field(max_length=150)
     request_type: str = Field(max_length=30)
     org_unit_id: UUID | None = Field(default=None)
+    employment_id: UUID | None = Field(default=None)
+    reusable: bool = Field(default=False)
+    owner_employment_id: UUID | None = Field(default=None)
+    legal_entity_id: UUID | None = Field(default=None)
     enabled: bool = Field(default=True)
     steps: list[dict] = Field(sa_column=Column(JSONB, nullable=False))
+    version: int = Field(default=1)
+    updated_by: UUID = Field()
+    updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class EmployeeApprovalFlow(SQLModel, table=True):
+    __tablename__ = "employee_approval_flows"
+    tenant_id: UUID = Field(primary_key=True)
+    employment_id: UUID = Field(primary_key=True)
+    request_type: str = Field(primary_key=True, max_length=30)
+    flow_id: UUID | None = Field(default=None)
     version: int = Field(default=1)
     updated_by: UUID = Field()
     updated_at: datetime = Field(default_factory=lambda: datetime.now(UTC))

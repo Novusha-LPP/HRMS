@@ -18,8 +18,15 @@ from hrms.modules.approvals.models import (
     ApprovalEvent,
     ApprovalFlow,
     ApprovalInstance,
+    EmployeeApprovalFlow,
 )
-from hrms.modules.approvals.schemas import Decision, DelegationWrite, FlowWrite
+from hrms.modules.approvals.schemas import (
+    Decision,
+    DelegationWrite,
+    EmployeeFlowWrite,
+    FlowWrite,
+    RequestType,
+)
 from hrms.modules.kernel.models import UserAccount
 
 router = APIRouter(prefix="/v1/approvals", tags=["Approval workflows"])
@@ -42,6 +49,8 @@ def flow_public(flow):
         name=flow.name,
         request_type=flow.request_type,
         org_unit_id=to_typed_id("org_unit", flow.org_unit_id) if flow.org_unit_id else None,
+        employment_id=to_typed_id("employment", flow.employment_id) if flow.employment_id else None,
+        reusable=flow.reusable,
         enabled=flow.enabled,
         steps=steps_public(flow.steps),
         version=flow.version,
@@ -77,7 +86,7 @@ async def may_view(session, tenant_id, scope, principal, instance):
     ):
         return True
     flow = await flow_get(session, tenant_id, instance.flow_id)
-    if await service.manages(session, tenant_id, scope, flow):
+    if await service.manages_request(session, tenant_id, scope, flow, instance.employment_id):
         return True
     for step in instance.steps:
         if any(
@@ -90,7 +99,9 @@ async def may_view(session, tenant_id, scope, principal, instance):
 
 async def instance_public(session, tenant_id, scope, principal, instance):
     flow = await flow_get(session, tenant_id, instance.flow_id)
-    management = await service.manages(session, tenant_id, scope, flow)
+    management = await service.manages_request(
+        session, tenant_id, scope, flow, instance.employment_id
+    )
     can_act = False
     try:
         await service.actor_for(session, tenant_id, instance, principal)
@@ -195,11 +206,15 @@ async def flows(tenant_id: TenantDep, session: SessionDep, scope: ScopeDep):
     rows = (
         await session.execute(
             select(ApprovalFlow)
-            .where(ApprovalFlow.tenant_id == tenant_id)
+            .where(ApprovalFlow.tenant_id == tenant_id, ApprovalFlow.reusable == True)  # noqa: E712
             .order_by(col(ApprovalFlow.name))
         )
     ).scalars()
-    return [flow_public(f) for f in rows if await service.manages(session, tenant_id, scope, f)]
+    return [
+        {**flow_public(f), "can_manage": await service.manages(session, tenant_id, scope, f)}
+        for f in rows
+        if await service.visible_template(session, tenant_id, scope, f)
+    ]
 
 
 @router.get("/directory")
@@ -257,13 +272,22 @@ async def write_flow(body, flow, principal, scope, tenant_id, session):
     seen = set()
     employee_levels: dict[UUID, int] = {}
     previous_ids = {s["id"] for s in flow.steps}
+    sources = set()
     for level, step in enumerate(body.steps):
+        if step.approver_source != "PEOPLE":
+            if step.approver_source in sources:
+                raise HTTPException(422, "A team role can appear only once in a chain")
+            sources.add(step.approver_source)
         ids = []
         for typed in step.approver_ids:
             if not typed.startswith("usr_"):
                 raise HTTPException(422, "Use account identifiers for approvers")
             uid = to_uuid(typed)
             account = await service.active_account(session, tenant_id, uid)
+            if flow.employment_id and account.employment_id == flow.employment_id:
+                raise HTTPException(
+                    422, "An individual workflow cannot include its requester as approver"
+                )
             if uid in seen:
                 raise HTTPException(422, "An account can appear only once in an approval chain")
             seen.add(uid)
@@ -277,25 +301,43 @@ async def write_flow(body, flow, principal, scope, tenant_id, session):
             raise HTTPException(422, "Unknown stage identifier")
         if any(s["id"] == sid for s in steps):
             raise HTTPException(422, "Stage identifiers must be unique")
-        steps.append(dict(id=sid, name=step.name.strip(), approver_ids=ids))
+        steps.append(
+            dict(
+                id=sid,
+                name=step.name.strip(),
+                approver_ids=ids,
+                approver_source=step.approver_source,
+            )
+        )
     flow.name = body.name.strip()
     flow.steps = steps
     flow.enabled = body.enabled
     flow.updated_by = principal.user_account_id
     flow.updated_at = service.now()
-    await lock_resource(session, tenant_id, f"approval-flow:{flow.request_type}:{flow.org_unit_id}")
+    await lock_resource(
+        session,
+        tenant_id,
+        f"approval-flow:{flow.request_type}:{flow.org_unit_id}:{flow.employment_id}",
+    )
     duplicate = (
-        await session.execute(
-            select(ApprovalFlow.id).where(
-                ApprovalFlow.tenant_id == tenant_id,
-                ApprovalFlow.request_type == flow.request_type,
-                ApprovalFlow.org_unit_id == flow.org_unit_id,
-                ApprovalFlow.id != flow.id,
+        None
+        if flow.reusable
+        else (
+            await session.execute(
+                select(ApprovalFlow.id).where(
+                    ApprovalFlow.tenant_id == tenant_id,
+                    ApprovalFlow.request_type == flow.request_type,
+                    ApprovalFlow.org_unit_id == flow.org_unit_id,
+                    ApprovalFlow.employment_id == flow.employment_id,
+                    ApprovalFlow.id != flow.id,
+                )
             )
-        )
-    ).first()
+        ).first()
+    )
     if duplicate:
-        raise HTTPException(409, "A flow already exists for this request type and department/team")
+        raise HTTPException(
+            409, "A flow already exists for this request type and selected assignment"
+        )
     session.add(flow)
     await service.event(
         session,
@@ -317,12 +359,37 @@ async def create_flow(
     tenant_id: TenantDep,
     session: SessionDep,
 ):
+    if not body.reusable:
+        raise HTTPException(422, "Create reusable workflows and assign them from employee profiles")
+    company = None
+    if body.reusable:
+        scope.require("approvals.manage")
+        if principal.employment_id:
+            company = (
+                await session.execute(
+                    text(
+                        "SELECT legal_entity_id FROM employments WHERE tenant_id=:tid AND id=:eid"
+                    ),
+                    dict(tid=tenant_id, eid=principal.employment_id),
+                )
+            ).scalar()
+        elif not scope.is_all:
+            granted = scope.for_permission("approvals.admin")
+            if len(granted.legal_entity_ids) != 1:
+                raise HTTPException(
+                    422, "Create workflows with a single-company or group administration grant"
+                )
+            company = next(iter(granted.legal_entity_ids))
     flow = ApprovalFlow(
+        reusable=body.reusable,
+        owner_employment_id=principal.employment_id,
+        legal_entity_id=company,
         tenant_id=tenant_id,
         id=uuid4(),
         name=body.name,
         request_type=body.request_type,
         org_unit_id=to_uuid(body.org_unit_id) if body.org_unit_id else None,
+        employment_id=to_uuid(body.employment_id) if body.employment_id else None,
         steps=[],
         updated_by=principal.user_account_id,
     )
@@ -343,8 +410,15 @@ async def update_flow(
     if body.version != flow.version:
         raise HTTPException(409, "Flow changed; reload before saving")
     target = to_uuid(body.org_unit_id) if body.org_unit_id else None
-    if target != flow.org_unit_id or body.request_type != flow.request_type:
+    employee = to_uuid(body.employment_id) if body.employment_id else None
+    if (
+        target != flow.org_unit_id
+        or employee != flow.employment_id
+        or body.request_type != flow.request_type
+    ):
         raise HTTPException(422, "Flow request type and department/team cannot be changed")
+    if body.reusable != flow.reusable:
+        raise HTTPException(422, "Workflow kind cannot be changed")
     flow.version += 1
     return await write_flow(body, flow, principal, scope, tenant_id, session)
 
@@ -562,7 +636,7 @@ async def delegate(
     ):
         raise HTTPException(409, "Choose an uncompleted level of a pending request")
     flow = await flow_get(session, tenant_id, instance.flow_id)
-    admin = await service.manages(session, tenant_id, scope, flow)
+    admin = await service.manages_request(session, tenant_id, scope, flow, instance.employment_id)
     if not admin and not any(
         str(principal.user_account_id) in step["approver_ids"]
         for step in instance.steps[body.level :]
@@ -703,3 +777,169 @@ async def revoke(
             record.instance_id,
         )
     return delegation_public(record)
+
+
+@router.get("/employees/{employment_id}/flows")
+async def employee_flows(
+    employment_id: str, tenant_id: TenantDep, session: SessionDep, scope: ScopeDep
+):
+    eid = to_uuid(employment_id)
+    from hrms.core.authz import authorize_employment
+
+    can_manage = True
+    try:
+        await service.authorize_employee_assignment(session, tenant_id, scope, eid)
+    except HTTPException as exc:
+        if exc.status_code != 403:
+            raise
+        can_manage = False
+        await authorize_employment(session, tenant_id, scope, eid)
+    rows = (
+        await session.execute(
+            select(EmployeeApprovalFlow, ApprovalFlow)
+            .outerjoin(
+                ApprovalFlow,
+                (col(ApprovalFlow.tenant_id) == col(EmployeeApprovalFlow.tenant_id))
+                & (col(ApprovalFlow.id) == col(EmployeeApprovalFlow.flow_id)),
+            )
+            .where(
+                EmployeeApprovalFlow.tenant_id == tenant_id,
+                EmployeeApprovalFlow.employment_id == eid,
+            )
+        )
+    ).all()
+    return dict(
+        can_manage=can_manage,
+        assignments=[
+            dict(
+                request_type=assignment.request_type,
+                version=assignment.version,
+                flow=flow_public(flow) if flow else None,
+            )
+            for assignment, flow in rows
+        ],
+    )
+
+
+@router.put("/employees/{employment_id}/flows/{request_type}")
+async def assign_employee_flow(
+    employment_id: str,
+    request_type: RequestType,
+    body: EmployeeFlowWrite,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+    principal: CurrentUser,
+):
+    eid = to_uuid(employment_id)
+    await service.authorize_employee_assignment(session, tenant_id, scope, eid)
+    await lock_resource(session, tenant_id, f"employee-approval:{eid}:{request_type}")
+    assignment = (
+        (
+            await session.execute(
+                select(EmployeeApprovalFlow)
+                .where(
+                    EmployeeApprovalFlow.tenant_id == tenant_id,
+                    EmployeeApprovalFlow.employment_id == eid,
+                    EmployeeApprovalFlow.request_type == request_type,
+                )
+                .with_for_update()
+                .execution_options(populate_existing=True)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if body.version != (assignment.version if assignment else 0):
+        raise HTTPException(409, "Employee workflow changed; reload before saving")
+    employee_exists = (
+        await session.execute(
+            text(
+                "SELECT id FROM employments WHERE tenant_id=:tid AND id=:eid "
+                "AND archived_at IS NULL"
+            ),
+            dict(tid=tenant_id, eid=eid),
+        )
+    ).scalar()
+    if not employee_exists:
+        raise HTTPException(404, "Employee not found")
+    if body.flow_id is None:
+        if assignment and assignment.flow_id:
+            await service.event(
+                session,
+                tenant_id,
+                assignment.flow_id,
+                principal.user_account_id,
+                "EMPLOYEE_UNASSIGNED",
+                dict(employment_id=str(eid), request_type=request_type),
+            )
+        if assignment is None:
+            assignment = EmployeeApprovalFlow(
+                tenant_id=tenant_id,
+                employment_id=eid,
+                request_type=request_type,
+                flow_id=None,
+                updated_by=principal.user_account_id,
+            )
+        else:
+            assignment.flow_id = None
+            assignment.version += 1
+            assignment.updated_by = principal.user_account_id
+            assignment.updated_at = service.now()
+        session.add(assignment)
+        await session.flush()
+        return await employee_flows(employment_id, tenant_id, session, scope)
+    flow = await flow_get(session, tenant_id, to_uuid(body.flow_id), lock=True)
+    if not flow.reusable or flow.request_type != request_type or not flow.enabled:
+        raise HTTPException(422, "Choose an enabled reusable workflow for this request type")
+    if not await service.visible_template(session, tenant_id, scope, flow):
+        raise HTTPException(403, "Workflow is outside your company scope")
+    company = (
+        await session.execute(
+            text(
+                "SELECT legal_entity_id FROM employments WHERE tenant_id=:tid AND id=:eid "
+                "AND archived_at IS NULL"
+            ),
+            dict(tid=tenant_id, eid=eid),
+        )
+    ).scalar()
+    if not company:
+        raise HTTPException(404, "Employee not found")
+    if flow.legal_entity_id and flow.legal_entity_id != company:
+        raise HTTPException(422, "Choose a workflow available to this employee’s company")
+    for step in flow.steps:
+        if step.get("approver_source", "PEOPLE") != "PEOPLE":
+            raise HTTPException(422, "Choose a workflow with specific approvers")
+        eligible = []
+        for uid in step["approver_ids"]:
+            account = await service.active_account(session, tenant_id, UUID(uid))
+            if account.employment_id != eid:
+                eligible.append(uid)
+        if not eligible:
+            raise HTTPException(
+                422, f'Stage "{step["name"]}" has no approver other than this employee'
+            )
+    if assignment is None:
+        assignment = EmployeeApprovalFlow(
+            tenant_id=tenant_id,
+            employment_id=eid,
+            request_type=request_type,
+            flow_id=flow.id,
+            updated_by=principal.user_account_id,
+        )
+    else:
+        assignment.version += 1
+        assignment.flow_id = flow.id
+        assignment.updated_by = principal.user_account_id
+        assignment.updated_at = service.now()
+    session.add(assignment)
+    await service.event(
+        session,
+        tenant_id,
+        flow.id,
+        principal.user_account_id,
+        "EMPLOYEE_ASSIGNED",
+        dict(employment_id=str(eid), request_type=request_type, version=assignment.version),
+    )
+    await session.flush()
+    return await employee_flows(employment_id, tenant_id, session, scope)

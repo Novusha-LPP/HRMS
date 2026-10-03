@@ -28,6 +28,7 @@ class LeaveTypeCreate(BaseModel):
 
 
 class LeaveTypeUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=10)
     name: str | None = None
     days_per_year: float | None = Field(default=None, ge=0)
     carry_forward: bool | None = None

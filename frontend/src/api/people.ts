@@ -20,6 +20,7 @@ export interface Employment {
   legal_entity_name: string | null;
   org_unit_id: string | null;
   department: string | null;
+  team_name?: string | null;
   job_id: string | null;
   designation: string | null;
   location_id: string | null;

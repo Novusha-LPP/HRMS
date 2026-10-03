@@ -58,7 +58,7 @@ from hrms.core.authz import (
     visible_employments_select,
 )
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import now_utc, tenure_months
+from hrms.core.datetime_utils import business_today, now_utc, tenure_months
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.metrics import ACCRUAL_RUN, ACCRUALS_CREDITED
@@ -67,6 +67,7 @@ from hrms.modules.approvals import service as approval_flow
 from hrms.modules.leave.engine import (
     compute_fy_year,
     get_or_create_ledger_row,
+    lock_bulk_ledger,
     lock_leave_bucket,
     record_accruals,
     record_transaction,
@@ -153,6 +154,44 @@ async def list_leave_types(
     return [_lt_resp(t) for t in rows.scalars()]
 
 
+@router.get(
+    "/types/archived",
+    response_model=list[LeaveTypeResponse],
+    dependencies=[require_global_permission("leave.write")],
+)
+async def list_archived_leave_types(
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> list[LeaveTypeResponse]:
+    rows = await session.execute(
+        select(LeaveType)
+        .where(LeaveType.tenant_id == tenant_id)
+        .where(col(LeaveType.archived_at).is_not(None))
+        .order_by(LeaveType.name)
+    )
+    return [_lt_resp(t) for t in rows.scalars()]
+
+
+@router.post(
+    "/types/{leave_type_id}/restore",
+    response_model=LeaveTypeResponse,
+    dependencies=[require_global_permission("leave.write")],
+)
+async def restore_leave_type(
+    leave_type_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> LeaveTypeResponse:
+    lt = await _get_lt(session, tenant_id, leave_type_id)
+    if not lt.archived_at:
+        raise HTTPException(409, "Leave type is already restored")
+    lt.archived_at = None
+    lt.is_active = True
+    session.add(lt)
+    await session.flush()
+    return _lt_resp(lt)
+
+
 @router.post(
     "/types",
     response_model=LeaveTypeResponse,
@@ -183,11 +222,34 @@ async def update_leave_type(
     session: SessionDep,
 ) -> LeaveTypeResponse:
     lt = await _get_lt(session, tenant_id, leave_type_id)
+    if lt.archived_at:
+        raise HTTPException(409, "Restore this leave type before editing it")
     for k, v in body.model_dump(exclude_unset=True).items():
         setattr(lt, k, v)
     session.add(lt)
     await session.flush()
     return _lt_resp(lt)
+
+
+@router.delete(
+    "/types/{leave_type_id}",
+    status_code=204,
+    dependencies=[require_global_permission("leave.write")],
+)
+async def remove_leave_type(
+    leave_type_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> None:
+    lt = await _get_lt(session, tenant_id, leave_type_id)
+    if lt.archived_at:
+        raise HTTPException(404, "Leave type not found")
+    if lt.is_comp_off:
+        raise HTTPException(409, "The system compensatory-off type cannot be removed")
+    lt.is_active = False
+    lt.archived_at = now_utc()
+    session.add(lt)
+    await session.flush()
 
 
 # ─── Leave balances ───────────────────────────────────────────────────────────
@@ -556,16 +618,18 @@ async def accrue_period(
     recorded_by: UUID,
     employment_clause: str = "",
     employment_params: dict | None = None,
+    current_period: str | None = None,
 ) -> AccrualRunResponse:
     """
     The accrual itself, shared by POST /accrual/run and the daily job (hrms.jobs), which runs
     it for every employee as SYSTEM_ACTOR. Idempotent per period.
     """
+    current_period = current_period or business_today().strftime("%Y-%m")
     if period is None:
-        period = now_utc().strftime("%Y-%m")
+        period = current_period
     if not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", period):
         raise HTTPException(422, "period must be YYYY-MM")
-    if period > now_utc().strftime("%Y-%m"):
+    if period > current_period:
         raise HTTPException(422, "Cannot accrue a future period")
     await lock_resource(session, tenant_id, "leave-accrual")
     started = time.perf_counter()
@@ -589,10 +653,11 @@ async def accrue_period(
     emp_rows = await session.execute(
         text(f"""
             SELECT e.id, e.hire_date, e.employment_state FROM employments e
-            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state NOT IN ('SEPARATED')
+            WHERE e.tenant_id = CAST(:tid AS uuid)
+              AND (e.separation_date IS NULL OR e.separation_date > CAST(:as_of AS date))
             {clause}
         """),
-        {"tid": str(tenant_id), **params},
+        {"tid": str(tenant_id), "as_of": as_of, **params},
     )
     employees = sorted(((UUID(str(r[0])), r[1], r[2]) for r in emp_rows), key=lambda e: str(e[0]))
 
@@ -703,6 +768,7 @@ async def close_year_end(
     transaction already exists dated this FY's closing month.
     """
     scope = scope.for_permission("leave.write")
+    await lock_bulk_ledger(session, tenant_id)
     clause, params = scope.employment_filter_sql("e")
     combos = (
         await session.execute(

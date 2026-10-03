@@ -1,7 +1,6 @@
 """Real HTTP/RLS coverage for configurable hierarchies and delegated authority."""
 
 import asyncio
-import json
 from datetime import UTC, date, datetime, timedelta
 
 import pytest
@@ -29,14 +28,14 @@ async def setup(client):
 
 
 async def flow(client, unit, actors, kind="CORRECTION", stages=4):
-    return await ok(
+    created = await ok(
         client,
         "POST",
         "/v1/approvals/flows",
         json=dict(
             name="Engineering approval",
             request_type=kind,
-            org_unit_id=unit,
+            reusable=True,
             steps=[
                 dict(name=names, approver_ids=[actor["id"]])
                 for names, actor in zip(
@@ -44,6 +43,26 @@ async def flow(client, unit, actors, kind="CORRECTION", stages=4):
                 )
             ],
         ),
+    )
+
+    # Explicit selections replace implicit department/team inheritance.
+    employees = await ok(client, "GET", "/v1/employees?limit=200")
+    for member in employees:
+        if member.get("org_unit_id") == unit:
+            await select_flow(client, member["id"], created)
+    return created
+
+
+async def select_flow(client, employment_id, selected):
+    current = await ok(client, "GET", f"/v1/approvals/employees/{employment_id}/flows")
+    previous = next(
+        (a for a in current["assignments"] if a["request_type"] == selected["request_type"]), None
+    )
+    return await ok(
+        client,
+        "PUT",
+        f"/v1/approvals/employees/{employment_id}/flows/{selected['request_type']}",
+        json=dict(flow_id=selected["id"], version=previous["version"] if previous else 0),
     )
 
 
@@ -188,7 +207,7 @@ async def test_delegation_upper_authority_expiry_revoke_and_audit(api):
     assert denied.status_code == 409  # Delegate cannot act at another level.
 
 
-async def test_team_override_and_department_fallback(api):
+async def test_employee_selection_survives_team_transfer(api):
     client, _ = api
     admin, placement, worker, worker_headers, actors = await setup(client)
     department = placement["org_unit_id"]
@@ -209,12 +228,13 @@ async def test_team_override_and_department_fallback(api):
                 ),
             )
         )
-    await flow(client, department, actors, stages=4)
+    original = await flow(client, department, actors, stages=4)
     team_flow = await flow(client, teams[0]["id"], [actors[1]], stages=1)
-    # A second worker belongs to a different child team, which inherits department.
+    # A second worker in another team explicitly selects a different workflow.
     other, other_login = await employee(client, company, "OTHER")
     await hire(client, other["id"], {**placement, "org_unit_id": teams[1]["id"]})
-    # Move the original worker into Team A through a personnel action.
+    await select_flow(client, other["id"], team_flow)
+    # Placement changes leave the original worker’s selection unchanged.
     await ok(
         client,
         "POST",
@@ -228,9 +248,9 @@ async def test_team_override_and_department_fallback(api):
     )
     a = await correction(client, worker_headers)
     b = await correction(client, bearer(other_login["access_token"]))
-    assert a["total_levels"] == 1 and b["total_levels"] == 4
+    assert a["total_levels"] == 4 and b["total_levels"] == 1
     request = await instance_for(client, actors[1]["headers"], a["id"])
-    assert request["flow_id"] == team_flow["id"]
+    assert request["flow_id"] == original["id"]
 
 
 async def test_configuration_validation_and_concurrent_approval(api):
@@ -239,7 +259,6 @@ async def test_configuration_validation_and_concurrent_approval(api):
     body = dict(
         name="Bad",
         request_type="CORRECTION",
-        org_unit_id=placement["org_unit_id"],
         steps=[
             dict(name="A", approver_ids=[actors[0]["id"]]),
             dict(name="B", approver_ids=[actors[0]["id"]]),
@@ -260,7 +279,7 @@ async def test_configuration_validation_and_concurrent_approval(api):
             ],
         },
     )
-    assert duplicate.status_code == 409
+    assert duplicate.status_code == 201  # Reusable chains of the same type are independent.
     cor = await correction(client, worker_headers)
     instance = await instance_for(client, actors[0]["headers"], cor["id"])
     replies = await asyncio.gather(
@@ -484,9 +503,9 @@ async def test_tenant_isolation_and_flow_wide_delegation(api):
     assert other["user"]["tenant_id"] != admin["user"]["tenant_id"]
 
 
-async def test_any_one_stage_disabled_route_default_and_rejection(api):
+async def test_disabled_selection_requires_explicit_replacement_and_rejection(api):
     client, _ = api
-    _, placement, _, worker_headers, actors = await setup(client)
+    _, placement, worker, worker_headers, actors = await setup(client)
     default = await ok(
         client,
         "POST",
@@ -509,6 +528,19 @@ async def test_any_one_stage_disabled_route_default_and_rejection(api):
     )
     stale = await client.put(f"/v1/approvals/flows/{department['id']}", json=department)
     assert stale.status_code == 409
+    blocked = await client.post(
+        "/v1/corrections",
+        headers=worker_headers,
+        json=dict(
+            work_date="2026-09-28",
+            correction_type="REGULARIZE",
+            requested_punch_in="2026-09-28T09:30:00+05:30",
+            requested_punch_out="2026-09-28T18:30:00+05:30",
+            reason="Disabled workflow",
+        ),
+    )
+    assert blocked.status_code == 409
+    await select_flow(client, worker["id"], default)
     cor = await correction(client, worker_headers)
     instance = await instance_for(client, actors[1]["headers"], cor["id"])
     assert instance["flow_id"] == default["id"] and len(instance["steps"]) == 2
@@ -563,7 +595,6 @@ async def test_person_cannot_hold_multiple_levels_using_different_accounts(api):
     body = dict(
         name="Alias chain",
         request_type="CORRECTION",
-        org_unit_id=placement["org_unit_id"],
         steps=[
             dict(name="Lead", approver_ids=[actors[0]["id"]]),
             dict(name="Alias", approver_ids=[alias["id"]]),
@@ -589,50 +620,27 @@ async def test_person_cannot_hold_multiple_levels_using_different_accounts(api):
     assert response.status_code == 422
 
 
-async def test_department_administrator_cannot_manage_sibling_or_default_flows(api):
-    client, engine = api
+async def test_company_hr_can_create_reusable_flow_but_not_edit_group_flow(api):
+    client, _ = api
     admin, placement, _, _, actors = await setup(client)
+    group_flow = await flow(client, placement["org_unit_id"], actors)
     company = admin["user"]["legal_entities"][0]["id"]
-    sibling = await org_basics(client, company)
-    team = await ok(
-        client,
-        "POST",
-        "/v1/org/org-units",
-        json=dict(
-            name="Department child",
-            type="TEAM",
-            legal_entity_id=company,
-            parent_id=placement["org_unit_id"],
-            effective_from="2020-01-01",
-        ),
-    )
-    email, password, account = await make_user(
+    email, password, _ = await make_user(
         client, role="HR_MANAGER", scope_type="LEGAL_ENTITY", legal_entity_ids=[company]
     )
-    async with engine.begin() as conn:
-        await conn.execute(
-            text(
-                "UPDATE role_assignments SET scope_type='ORG_UNIT', scope_value=:v "
-                "WHERE user_account_id=:id"
-            ),
-            dict(v=json.dumps([placement["org_unit_id"]]), id=to_uuid(account["id"])),
-        )
     login = await ok(client, "POST", "/v1/auth/login", json=dict(email=email, password=password))
-    headers = bearer(login["access_token"])
-    route = await flow(client, placement["org_unit_id"], actors)
-    await flow(client, sibling["org_unit_id"], actors)
-    client.headers.update(headers)
-    own = await ok(client, "GET", "/v1/approvals/flows")
-    assert [row["id"] for row in own] == [route["id"]]
-    await flow(client, team["id"], actors)
-    body = dict(
-        name="Outside",
-        request_type="OVERTIME",
-        steps=[dict(name="Lead", approver_ids=[actors[0]["id"]])],
-    )
-    assert (await client.post("/v1/approvals/flows", json=body)).status_code == 403
+    client.headers.update(bearer(login["access_token"]))
+    visible = await ok(client, "GET", "/v1/approvals/flows")
+    assert next(f for f in visible if f["id"] == group_flow["id"])["can_manage"] is False
     assert (
-        await client.post(
-            "/v1/approvals/flows", json={**body, "org_unit_id": sibling["org_unit_id"]}
-        )
+        await client.put(f"/v1/approvals/flows/{group_flow['id']}", json=group_flow)
     ).status_code == 403
+    body = dict(
+        name="Company flow",
+        request_type="OVERTIME",
+        reusable=True,
+        steps=[dict(name="Review", approver_ids=[actors[0]["id"]])],
+    )
+    own = await ok(client, "POST", "/v1/approvals/flows", json=body)
+    assert own["reusable"] is True
+    assert (await client.put(f"/v1/approvals/flows/{own['id']}", json=own)).status_code == 200

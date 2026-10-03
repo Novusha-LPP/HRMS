@@ -12,6 +12,7 @@ import {
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
 import { orgApi } from "../api/org";
+import { EmployeeWorkflowSection } from "../components/approvals/EmployeeWorkflowSection";
 import { onboardingApi } from "../api/onboarding";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -31,6 +32,7 @@ interface Row {
   email?: string;
   company?: string;
   department?: string;
+  team?: string;
   designation?: string;
   location?: string;
   hireDate: string;
@@ -72,6 +74,7 @@ function toRow(e: Employment, name: string, company?: string, dob?: string | nul
     state: e.employment_state,
     stage: e.service_stage ?? undefined,
     department: e.department ?? undefined,
+    team: e.team_name ?? undefined,
     designation: e.designation ?? undefined,
     location: e.location ?? undefined,
     manager: e.manager_name ?? undefined,
@@ -90,6 +93,7 @@ function downloadCsv(rows: Row[]) {
     ["Email", (r) => r.email ?? ""],
     ["Company", (r) => r.company ?? ""],
     ["Department", (r) => r.department ?? ""],
+    ["Team", (r) => r.team ?? ""],
     ["Designation", (r) => r.designation ?? ""],
     ["Location", (r) => r.location ?? ""],
     ["Date of joining", (r) => r.hireDate],
@@ -392,6 +396,7 @@ export function EmployeePage() {
                       {r.department ?? (r.legalEntityId !== undefined
                         ? <span className="text-warning">Not placed</span>
                         : "—")}
+                      {r.team && <p className="text-xs text-fg-subtle">Team: {r.team}</p>}
                     </td>
                     <td className="hidden lg:table-cell">{r.designation ?? "—"}</td>
                     <td className="whitespace-nowrap tabular-nums">{format(new Date(r.hireDate), "d MMM yyyy")}</td>
@@ -450,12 +455,14 @@ export function EmployeePage() {
   );
 }
 
-type EmployeeSheetTab = "overview" | "kyc" | "access";
+type EmployeeSheetTab = "overview" | "kyc" | "access" | "workflow";
 
 function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose, onTransfer }: {
   row: Row | null; canPlace: boolean; canViewAccess: boolean; canManageAccess: boolean;
   onClose: () => void; onTransfer: () => void;
 }) {
+  const { user } = useAuth();
+  const canConfigureWorkflow = !!user?.permissions.some((p) => p === "*" || p === "approvals.manage");
   const [activeTab, setActiveTab] = useState<EmployeeSheetTab>("overview");
 
   const fields = row
@@ -463,6 +470,7 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
         { icon: Hash, label: "Employee ID", value: row.employeeNumber },
         { icon: Landmark, label: "Company", value: row.company },
         { icon: Building2, label: "Department", value: row.department },
+        { icon: Users, label: "Team", value: row.team },
         { icon: Briefcase, label: "Designation", value: row.designation },
         { icon: UserRound, label: "Reports to", value: row.manager },
         { icon: MapPin, label: "Location", value: row.location },
@@ -517,6 +525,7 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
             items={[
               { value: "overview", label: "Employment overview" },
               { value: "kyc", label: "KYC & Documents" },
+              ...(canConfigureWorkflow ? [{ value: "workflow" as const, label: "Approval workflow" }] : []),
               ...(canViewAccess ? [{ value: "access" as const, label: "Access" }] : []),
             ]}
           />
@@ -542,6 +551,7 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
               </div>
             </>
           )}
+          {activeTab === "workflow" && canConfigureWorkflow && <EmployeeWorkflowSection key={row.id} employmentId={row.id} />}
           {activeTab === "kyc" && (
             <KycSection
               employmentId={row.id}
@@ -577,6 +587,9 @@ function PlacementFields({ legalEntityId, values, onChange, excludeEmploymentId 
   const personName = new Map((persons.data ?? []).map((p) => [p.id, `${p.preferred_name || p.legal_first_name} ${p.legal_last_name}`]));
 
   const departments = (orgUnits.data ?? []).filter((o) => o.type === "DEPARTMENT" && o.legal_entity_id === legalEntityId);
+  const selectedUnit = orgUnits.data?.find((o) => o.id === values.orgUnitId);
+  const departmentId = selectedUnit?.type === "TEAM" ? selectedUnit.parent_id ?? "" : values.orgUnitId;
+  const teams = (orgUnits.data ?? []).filter((o) => o.type === "TEAM" && o.parent_id === departmentId && o.legal_entity_id === legalEntityId);
   const entityLocations = (locations.data ?? []).filter((l) => !l.legal_entity_id || l.legal_entity_id === legalEntityId);
   const managers = (employees.data ?? []).filter((e) => e.legal_entity_id === legalEntityId && e.id !== excludeEmploymentId);
 
@@ -587,11 +600,19 @@ function PlacementFields({ legalEntityId, values, onChange, excludeEmploymentId 
     <>
       <div>
         <label className="label" htmlFor="pl-dept">Department</label>
-        <select id="pl-dept" className="input" value={values.orgUnitId} onChange={(e) => onChange({ orgUnitId: e.target.value })}>
+        <select id="pl-dept" className="input" value={departmentId} onChange={(e) => onChange({ orgUnitId: e.target.value })}>
           <option value="">{departments.length ? "Choose department…" : "No departments yet for this company"}</option>
           {departments.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
         </select>
       </div>
+      {departmentId && <div>
+        <label className="label" htmlFor="pl-team">Team (optional)</label>
+        <select id="pl-team" className="input" value={selectedUnit?.type === "TEAM" ? values.orgUnitId : departmentId}
+          onChange={(e) => onChange({ orgUnitId: e.target.value })}>
+          <option value={departmentId}>No team</option>
+          {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
+        </select>
+      </div>}
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label" htmlFor="pl-job">Designation</label>

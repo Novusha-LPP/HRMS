@@ -1,10 +1,14 @@
 import { api } from "./client";
 
 export type RequestType = "LEAVE" | "LEAVE_CANCELLATION" | "CORRECTION" | "OVERTIME";
-export interface ApprovalStep { id?: string; name: string; approver_ids: string[]; }
+export interface ApprovalStep { id?: string; name: string; approver_ids: string[]; approver_source?: "PEOPLE" | "TEAM_LEAD" | "TEAM_PM"; }
 export interface ApprovalFlow {
   id: string; name: string; request_type: RequestType; org_unit_id: string | null;
-  enabled: boolean; version: number; steps: ApprovalStep[];
+  reusable?: boolean; can_manage?: boolean; employment_id?: string | null; enabled: boolean; version: number; steps: ApprovalStep[];
+}
+export interface EmployeeFlowSelection {
+  can_manage: boolean;
+  assignments: { request_type: RequestType; version: number; flow: ApprovalFlow | null }[];
 }
 export interface ApprovalRequest {
   approval_mode?: "FLOW" | "POLICY";
@@ -20,6 +24,8 @@ export interface Delegation {
   valid_from: string; valid_until: string; reason: string; revoked_at: string | null; created_by: string;
 }
 export const approvalsApi = {
+  employeeFlows: (id: string) => api.get<EmployeeFlowSelection>(`/v1/approvals/employees/${id}/flows`),
+  assignEmployeeFlow: (id: string, type: RequestType, flowId: string | null, version: number) => api.put<EmployeeFlowSelection>(`/v1/approvals/employees/${id}/flows/${type}`, { flow_id: flowId, version }),
   flows: () => api.get<ApprovalFlow[]>("/v1/approvals/flows"),
   saveFlow: (body: Omit<ApprovalFlow, "id" | "version"> & { version?: number }, id?: string) =>
     id ? api.put<ApprovalFlow>(`/v1/approvals/flows/${id}`, body) : api.post<ApprovalFlow>("/v1/approvals/flows", body),

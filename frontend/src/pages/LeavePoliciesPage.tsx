@@ -175,6 +175,24 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
     onError: (e) => toast.error("Couldn’t update leave type", errorMessage(e)),
   });
 
+  const remove = useMutation({
+    mutationFn: (id: string) => leaveApi.removeType(id),
+    onSuccess: () => { invalidate(); toast.success("Leave type removed"); },
+    onError: (e) => toast.error("Couldn’t remove leave type", errorMessage(e)),
+  });
+
+  const [showArchived, setShowArchived] = useState(false);
+  const [editingId, setEditingId] = useState<string | null>(null);
+  const archived = useQuery({
+    queryKey: ["leave-types", "archived"],
+    queryFn: () => leaveApi.listArchivedTypes(),
+    enabled: showArchived,
+  });
+  const restore = useMutation({
+    mutationFn: (id: string) => leaveApi.restoreType(id),
+    onSuccess: () => { invalidate(); toast.success("Leave type restored"); },
+    onError: (e) => toast.error("Couldn’t restore leave type", errorMessage(e)),
+  });
   const [name, setName] = useState("");
   const [code, setCode] = useState("");
   const [daysPerYear, setDaysPerYear] = useState("");
@@ -183,13 +201,16 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
 
   const create = useMutation({
     mutationFn: () =>
-      leaveApi.createType({
+      (editingId ? leaveApi.updateType(editingId, {
         name: name.trim(),
         code: code.trim(),
         days_per_year: Number(daysPerYear),
         is_paid: isPaid,
         requires_approval: requiresApproval,
-      }),
+      }) : leaveApi.createType({
+        name: name.trim(), code: code.trim(), days_per_year: Number(daysPerYear),
+        is_paid: isPaid, requires_approval: requiresApproval,
+      })),
     onSuccess: () => {
       invalidate();
       setName("");
@@ -197,9 +218,10 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
       setDaysPerYear("");
       setIsPaid(true);
       setRequiresApproval(true);
-      toast.success("Leave type added");
+      toast.success(editingId ? "Leave type updated" : "Leave type added");
+      setEditingId(null);
     },
-    onError: (e) => toast.error("Couldn’t add leave type", errorMessage(e)),
+    onError: (e) => toast.error(editingId ? "Couldn’t update leave type" : "Couldn’t add leave type", errorMessage(e)),
   });
 
   const canCreate = name.trim() !== "" && code.trim() !== "" && daysPerYear !== "" && Number(daysPerYear) >= 0;
@@ -222,6 +244,7 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
               <th className="pb-2 font-normal text-center">Encashable</th>
               <th className="pb-2 font-normal text-center">Accrues monthly</th>
               <th className="pb-2 font-normal text-center">Carry forward</th>
+              <th className="pb-2 font-normal text-right">Actions</th>
             </tr>
           </thead>
           <tbody className="divide-y divide-line">
@@ -287,11 +310,29 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
                     )}
                   </div>
                 </td>
+                <td className="py-2 text-right">
+                  <button type="button" className="btn-secondary btn-sm mr-2"
+                    onClick={() => {
+                      setEditingId(t.id); setName(t.name); setCode(t.code);
+                      setDaysPerYear(String(t.days_per_year)); setIsPaid(t.is_paid);
+                      setRequiresApproval(t.requires_approval);
+                    }}>
+                    <PenLine size={14} /> Edit
+                  </button>
+                  <button type="button" className="btn-secondary btn-sm" disabled={remove.isPending || editingId === t.id}
+                    aria-label={`Remove ${t.name}`}
+                    onClick={() => {
+                      if (window.confirm(`Remove ${t.name}? Past leave requests and balances will be preserved. New requests will no longer be allowed.`)) remove.mutate(t.id);
+                    }}>
+                    <Trash2 size={14} /> Remove
+                  </button>
+                </td>
               </tr>
             ))}
           </tbody>
         </table>
       )}
+      {editingId && <p className="mb-2 text-sm font-medium">Editing leave type</p>}
       <form
         className="flex flex-wrap items-end gap-2 border-t border-line pt-4"
         onSubmit={(e) => {
@@ -347,9 +388,38 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
           Requires approval
         </label>
         <button className="btn-secondary btn-sm" type="submit" disabled={!canCreate || create.isPending}>
-          <Plus size={14} /> Add leave type
+          {editingId ? <PenLine size={14} /> : <Plus size={14} />}
+          {editingId ? "Save changes" : "Add leave type"}
         </button>
+        {editingId && <button type="button" className="btn-secondary btn-sm" disabled={create.isPending}
+          onClick={() => {
+            setEditingId(null); setName(""); setCode(""); setDaysPerYear("");
+            setIsPaid(true); setRequiresApproval(true);
+          }}>Cancel edit</button>}
       </form>
+      <div className="mt-4 border-t border-line pt-4">
+        <button type="button" className="btn-secondary btn-sm" aria-expanded={showArchived}
+          onClick={() => setShowArchived((v) => !v)}>
+          {showArchived ? "Hide archived leave types" : "Archived leave types"}
+        </button>
+        {showArchived && (
+          <div className="mt-3 space-y-2">
+            {archived.isPending ? <Skeleton className="h-9" /> : archived.isError ? (
+              <Notice tone="warning" title="Couldn’t load archived leave types">
+                <button type="button" className="link" onClick={() => archived.refetch()}>Try again</button>
+              </Notice>
+            ) : !archived.data?.length ? <p className="text-xs text-fg-subtle">No archived leave types.</p> : (
+              archived.data.map((t) => (
+                <div key={t.id} className="flex items-center justify-between gap-3 rounded border border-line p-3">
+                  <span className="text-sm">{t.name} ({t.code}) · {t.days_per_year} days/year</span>
+                  <button type="button" className="btn-secondary btn-sm" disabled={restore.isPending}
+                    onClick={() => restore.mutate(t.id)}><RefreshCw size={14} /> Restore</button>
+                </div>
+              ))
+            )}
+          </div>
+        )}
+      </div>
     </div>
   );
 }

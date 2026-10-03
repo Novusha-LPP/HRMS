@@ -64,6 +64,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "policy.read",
             "policy.write",
             "approvals.manage",
+            "approvals.admin",
             "reports.read",
             "reports.write",
             "dashboard.hr",
@@ -75,6 +76,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
     ),
     "MANAGER": frozenset(
         {
+            "approvals.manage",
             "self.read",
             "self.write",
             "leave.apply",
@@ -111,7 +113,7 @@ SELF_SERVICE_ONLY_ROLES = frozenset({"EMPLOYEE"})
 ROLE_DESCRIPTIONS: dict[str, str] = {
     "SUPER_ADMIN": "Full platform access across every company",
     "HR_MANAGER": "Manage people, approvals and policy for companies in scope",
-    "MANAGER": "Approve leave/corrections and view direct reports",
+    "MANAGER": "Manage workflows for led teams and reporting groups; approve requests",
     "EMPLOYEE": "Self-service only",
     "ACCOUNTANT": "Read-only people + reports access for companies in scope",
 }

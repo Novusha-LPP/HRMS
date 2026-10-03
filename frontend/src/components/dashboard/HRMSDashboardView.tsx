@@ -187,6 +187,11 @@ export function HRMSDashboardView() {
     toast.success("Message copied", `Paste it to send to ${who}.`);
   };
   const highlightRows: { key: string; icon: LucideIcon; tone: string; label: string; people: Person[]; action?: (p: Person[]) => void; actionLabel?: string }[] = [
+    {
+      key: "company_anniversaries", icon: Cake, tone: "bg-pink-50 text-pink-600 dark:bg-pink-950 dark:text-pink-400", label: "company anniversaries today",
+      people: list<Person>(highlights.company_anniversaries), actionLabel: "Copy wish",
+      action: (ps) => copy(`Happy company anniversary to ${ps.map((p) => `${p.name} (${p.years} years)`).join(", ")}! Celebrating another year together. 🎉`, ps.map((p) => p.name).join(", ")),
+    },
     { key: "joining", icon: UserPlus, tone: "bg-blue-50 text-blue-600 dark:bg-blue-950 dark:text-blue-400", label: "joining today", people: list<Person>(highlights.joining) },
     { key: "exiting", icon: LogOut, tone: "bg-rose-50 text-rose-600 dark:bg-rose-950 dark:text-rose-400", label: "leaving today", people: list<Person>(highlights.exiting) },
     {
