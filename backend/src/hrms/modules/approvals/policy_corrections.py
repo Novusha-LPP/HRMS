@@ -12,8 +12,9 @@ from hrms.core.authz import authorize_employment, visible_employment_ids
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.modules.approvals.models import ApprovalInstance
 from hrms.modules.corrections import router as corrections
-from hrms.modules.corrections.models import AttendanceCorrectionRequest
+from hrms.modules.corrections.models import AttendanceCorrectionRequest, CorrectionApprovalAction
 from hrms.modules.corrections.schemas import CorrectionApprovalRequest
+from hrms.modules.kernel.models import UserAccount
 
 PENDING = ("PENDING_L1", "PENDING_L2", "PENDING_L3", "PENDING")
 
@@ -79,7 +80,21 @@ async def public(session, tenant_id, scope, principal, cor):
         .mappings()
         .one()
     )
-    history = await corrections._get_history(session, tenant_id, cor.id)
+    history = (
+        await session.execute(
+            select(CorrectionApprovalAction, UserAccount.email)
+            .outerjoin(
+                UserAccount,
+                (col(UserAccount.tenant_id) == col(CorrectionApprovalAction.tenant_id))
+                & (col(UserAccount.id) == col(CorrectionApprovalAction.approver_user_account_id)),
+            )
+            .where(
+                CorrectionApprovalAction.tenant_id == tenant_id,
+                CorrectionApprovalAction.correction_id == cor.id,
+            )
+            .order_by(col(CorrectionApprovalAction.actioned_at))
+        )
+    ).all()
     return dict(
         approval_mode="POLICY",
         id=to_typed_id("attendance_correction", cor.id),
@@ -110,12 +125,19 @@ async def public(session, tenant_id, scope, principal, cor):
         history=[
             dict(
                 action=h.action,
-                actor_id=None,
-                actor_name=f"Level {h.level} reviewer",
+                actor_id=to_typed_id("user", h.approver_user_account_id)
+                if h.approver_user_account_id
+                else None,
+                actor_name=email
+                or (
+                    to_typed_id("employment", h.approver_employment_id)
+                    if h.approver_employment_id
+                    else f"Level {h.level} reviewer"
+                ),
                 details=dict(step_name=f"Approval level {h.level}", comments=h.comments),
                 created_at=h.actioned_at,
             )
-            for h in history
+            for h, email in history
         ],
         created_at=cor.submitted_at,
     )
