@@ -2,7 +2,7 @@ import { resetSessionCache } from "../lib/session";
 import { useQueryClient } from "@tanstack/react-query";
 import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
-import { setPlatformToken } from "../api/platformClient";
+import { PlatformApiError, setPlatformToken } from "../api/platformClient";
 import { platformTenantsApi } from "../api/platform";
 import type { PlatformRole } from "../api/platform";
 
@@ -44,8 +44,10 @@ export function PlatformAuthProvider({ children }: { children: ReactNode }) {
         setAdmin(me);
         localStorage.setItem(ADMIN_KEY, JSON.stringify(me));
       })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (localStorage.getItem(TOKEN_KEY) !== token) return;
+        // Keep the session during an outage; only explicit rejection invalidates it.
+        if (!(error instanceof PlatformApiError) || error.status !== 401) return;
         localStorage.removeItem(TOKEN_KEY);
         localStorage.removeItem(ADMIN_KEY);
         setPlatformToken(null);

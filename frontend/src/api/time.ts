@@ -103,6 +103,7 @@ export interface HourlyArrivalStat {
 }
 
 export interface DailyAnalysisResponse {
+  total_filtered: number;
   work_date: string;
   metrics: DailyMetrics;
   department_stats: DepartmentAttendanceStat[];
@@ -111,6 +112,8 @@ export interface DailyAnalysisResponse {
 }
 
 export interface DailyAnalysisParams {
+  limit?: number;
+  offset?: number;
   work_date?: string;
   department?: string;
   status?: string;
@@ -138,6 +141,8 @@ export const timeApi = {
 
   dailyAnalysis: (params?: DailyAnalysisParams) => {
     const q = new URLSearchParams();
+    if (params?.limit !== undefined) q.set("limit", String(params.limit));
+    if (params?.offset !== undefined) q.set("offset", String(params.offset));
     if (params?.work_date) q.append("work_date", params.work_date);
     if (params?.department) q.append("department", params.department);
     if (params?.status) q.append("status", params.status);

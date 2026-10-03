@@ -104,8 +104,9 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     setAuthToken(token);
     api.get<MeResponse>("/v1/auth/me")
       .then((me) => { if (getAuthToken() === token) setUser(toAuthUser(me)); })
-      .catch(() => {
+      .catch((error: unknown) => {
         if (getAuthToken() !== token) return;
+        if (!(error instanceof ApiError) || error.status !== 401) return;
         // Expired/invalid token — drop it silently and fall back to the login page.
         localStorage.removeItem(TOKEN_KEY);
         setAuthToken(null);

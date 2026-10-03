@@ -27,7 +27,15 @@ export interface UserAccount {
 
 export const usersApi = {
   listRoles: () => api.get<Role[]>("/v1/roles"),
-  listUsers: () => api.get<UserAccount[]>("/v1/users"),
+  listUsersPage: (offset = 0, limit = 200) => api.get<UserAccount[]>(`/v1/users?limit=${limit}&offset=${offset}`),
+  listUsers: async () => {
+    const users: UserAccount[] = [];
+    for (let offset = 0; ; offset += 200) {
+      const page = await api.get<UserAccount[]>(`/v1/users?limit=200&offset=${offset}`);
+      users.push(...page);
+      if (page.length < 200) return users;
+    }
+  },
   createUser: (body: {
     email: string;
     password: string;
