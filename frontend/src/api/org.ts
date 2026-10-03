@@ -7,6 +7,7 @@ export interface LegalEntity {
   country_code: string;
   status: string;
   version: number;
+  establishment_date: string | null;
   financial_year_start_month: number | null;
 }
 
@@ -40,6 +41,10 @@ export interface OrgUnit {
   type: string;
   parent_id: string | null;
   legal_entity_id: string | null;
+  department_template_id?: string | null;
+  head_employment_id?: string | null;
+  lead_employment_id?: string | null;
+  pm_employment_id?: string | null;
   status: string;
   effective_from: string;
   effective_to: string | null;
@@ -69,11 +74,11 @@ export interface EmployeeIdScheme {
 export const orgApi = {
   listLegalEntities: () => api.get<LegalEntity[]>("/v1/org/legal-entities"),
   createLegalEntity: (body: {
-    name: string; short_name?: string; country_code?: string; financial_year_start_month?: number;
+    name: string; short_name?: string; country_code?: string; financial_year_start_month?: number; establishment_date?: string | null;
   }) => api.post<LegalEntity>("/v1/org/legal-entities", body),
   updateLegalEntity: (
     id: string,
-    body: Partial<Pick<LegalEntity, "name" | "short_name" | "country_code" | "financial_year_start_month">>,
+    body: Partial<Pick<LegalEntity, "name" | "short_name" | "country_code" | "financial_year_start_month" | "establishment_date">>,
   ) => api.patch<LegalEntity>(`/v1/org/legal-entities/${id}`, body),
   legalEntityHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/legal-entities/${id}/history`),
 
@@ -88,12 +93,14 @@ export const orgApi = {
   ) => api.patch<Location>(`/v1/org/locations/${id}`, body),
   locationHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/locations/${id}/history`),
 
+  assignDepartments: (entityId: string, departmentIds: string[]) =>
+    api.post<OrgUnit[]>(`/v1/org/legal-entities/${entityId}/departments`, { department_ids: departmentIds }),
   listOrgUnits: () => api.get<OrgUnit[]>("/v1/org/org-units"),
   createOrgUnit: (body: {
     name: string; type: string; code?: string; parent_id?: string;
-    legal_entity_id?: string; location_id?: string; effective_from: string;
+    legal_entity_id?: string; location_id?: string; effective_from: string; head_employment_id?: string | null; lead_employment_id?: string | null; pm_employment_id?: string | null;
   }) => api.post<OrgUnit>("/v1/org/org-units", body),
-  updateOrgUnit: (id: string, body: Partial<Pick<OrgUnit, "name" | "code" | "type">>) =>
+  updateOrgUnit: (id: string, body: Partial<Pick<OrgUnit, "name" | "code" | "type" | "head_employment_id" | "lead_employment_id" | "pm_employment_id">>) =>
     api.patch<OrgUnit>(`/v1/org/org-units/${id}`, body),
   orgUnitHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/org-units/${id}/history`),
 

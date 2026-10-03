@@ -25,6 +25,7 @@ class LegalEntity(SQLModel, table=True):
     # TAN, PAN, CIN etc. stored as JSONB in a companion registrations table
     country_code: str = Field(max_length=2, default="IN")
     status: str = Field(default="ACTIVE", max_length=50)
+    establishment_date: date | None = None
     financial_year_start_month: int | None = Field(default=None, ge=1, le=12)
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     recorded_by: UUID | None = Field(default=None)
@@ -71,6 +72,10 @@ class OrgUnit(SQLModel, table=True):
     type: str = Field(max_length=50)  # Tenant-defined: DIVISION, DEPARTMENT, TEAM, ...
     parent_id: UUID | None = Field(default=None)
     legal_entity_id: UUID | None = Field(default=None)
+    department_template_id: UUID | None = Field(default=None)
+    head_employment_id: UUID | None = Field(default=None)
+    lead_employment_id: UUID | None = Field(default=None)
+    pm_employment_id: UUID | None = Field(default=None)
     location_id: UUID | None = Field(default=None)
     cost_centre_id: UUID | None = Field(default=None)
     status: str = Field(default="ACTIVE", max_length=50)

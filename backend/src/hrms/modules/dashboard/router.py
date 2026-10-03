@@ -312,7 +312,11 @@ _CURRENT_DEPARTMENT = """
     LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
         AND a.effective_from <= CURRENT_DATE
         AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
-    LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
+    LEFT JOIN org_units assigned_unit
+        ON assigned_unit.tenant_id = a.tenant_id AND assigned_unit.id = a.org_unit_id
+    LEFT JOIN org_units ou ON ou.tenant_id = assigned_unit.tenant_id
+        AND ou.id = CASE WHEN assigned_unit.type = 'TEAM'
+            THEN assigned_unit.parent_id ELSE assigned_unit.id END
 """
 
 _UPCOMING_DAYS = 45
@@ -1134,7 +1138,32 @@ async def hr_dashboard(
             ]
 
         current = "e.employment_state != 'SEPARATED'"
+        company_clause = ""
+        company_params = {}
+        if not scope.is_all:
+            company_clause = " AND le.id = ANY(CAST(:celebration_entities AS uuid[]))"
+            company_params["celebration_entities"] = [str(i) for i in scope.legal_entity_ids]
+        if focus is not None:
+            company_clause += " AND le.id = CAST(:focus_le AS uuid)"
+        company_anniversaries = [
+            {"name": r["name"], "company": r["name"], "department": "Company", "years": r["years"]}
+            for r in await rows(
+                f"""
+                SELECT le.name,
+                       EXTRACT(YEAR FROM
+                           age(CAST(:today AS date), le.establishment_date))::int AS years
+                FROM legal_entities le
+                WHERE le.tenant_id = CAST(:tid AS uuid) AND le.archived_at IS NULL
+                  AND le.status = 'ACTIVE' AND le.establishment_date < CAST(:today AS date)
+                  AND to_char(le.establishment_date, 'MM-DD') = :mmdd
+                  {company_clause}
+                ORDER BY le.name
+                """,
+                today=today, mmdd=today_mmdd, **company_params,
+            )
+        ]
         return {
+            "company_anniversaries": company_anniversaries,
             "joining": await people("e.hire_date = CAST(:today AS date)"),
             "exiting": await people("e.separation_date = CAST(:today AS date)"),
             "birthdays": await people(

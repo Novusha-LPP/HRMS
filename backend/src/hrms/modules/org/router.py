@@ -13,19 +13,21 @@ can't even see the *names* of companies they don't administer.
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
-from sqlalchemy import text
+from sqlalchemy import func, text
 from sqlmodel import select
 
 from hrms.core.authn import CurrentUser
 from hrms.core.authz import ScopeDep, require_permission
 from hrms.core.change_audit import record_change
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import now_utc
+from hrms.core.datetime_utils import business_today, now_utc
 from hrms.core.ids import to_typed_id, to_uuid
+from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
 from hrms.modules.kernel.models import EntityChangeLog
 from hrms.modules.org.models import EmployeeIdScheme, Job, LegalEntity, Location, OrgUnit
 from hrms.modules.org.schemas import (
+    AssignDepartmentsRequest,
     ChangeLogEntry,
     EmployeeIdSchemeCreate,
     EmployeeIdSchemeResponse,
@@ -134,6 +136,7 @@ async def create_legal_entity(
         name=body.name,
         short_name=body.short_name,
         country_code=body.country_code,
+        establishment_date=body.establishment_date,
         financial_year_start_month=body.financial_year_start_month,
     )
     session.add(entity)
@@ -156,6 +159,7 @@ def _le_fields(entity: LegalEntity) -> dict:
         "name": entity.name,
         "short_name": entity.short_name,
         "country_code": entity.country_code,
+        "establishment_date": entity.establishment_date,
         "financial_year_start_month": entity.financial_year_start_month,
     }
 
@@ -168,6 +172,7 @@ def _le_response(entity: LegalEntity) -> LegalEntityResponse:
         country_code=entity.country_code,
         status=entity.status,
         version=entity.version,
+        establishment_date=entity.establishment_date,
         financial_year_start_month=entity.financial_year_start_month,
     )
 
@@ -484,14 +489,42 @@ async def create_org_unit(
         le_uuid = to_uuid(body.legal_entity_id)
         if not scope.covers_entity(le_uuid):
             raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this legal entity")
+    if body.type == "DEPARTMENT_TEMPLATE":
+        if not scope.is_all:
+            raise HTTPException(403, "Only a group administrator can manage shared departments")
+        if le_uuid or parent_uuid:
+            raise HTTPException(422, "Shared departments are defined before assigning a company")
+        if not body.name.strip():
+            raise HTTPException(422, "Department name is required")
+        await lock_resource(session, tenant_id, "department-catalog")
+        duplicate = await session.execute(
+            select(OrgUnit).where(
+                OrgUnit.tenant_id == tenant_id,
+                OrgUnit.type == "DEPARTMENT_TEMPLATE",
+                OrgUnit.archived_at.is_(None),  # type: ignore[attr-defined]
+                func.lower(OrgUnit.name) == body.name.strip().lower(),  # type: ignore[attr-defined]
+            )
+        )
+        if duplicate.scalars().first():
+            raise HTTPException(409, "A shared department with this name already exists")
+    if body.type == "TEAM":
+        if not body.parent_id:
+            raise HTTPException(422, "A team must belong to a department")
+        parent = await _get_org_unit(session, tenant_id, body.parent_id)
+        if parent.type != "DEPARTMENT":
+            raise HTTPException(422, "A team's parent must be a department")
+        if parent.legal_entity_id != le_uuid:
+            raise HTTPException(422, "A team must belong to the same company as its department")
     loc_uuid: UUID | None = None
     if body.location_id:
         loc_uuid = to_uuid(body.location_id)
 
+    roles = await _team_roles(session, tenant_id, body.type, le_uuid, body.model_dump())
     unit = OrgUnit(
+        **roles,
         tenant_id=tenant_id,
         id=uid,
-        name=body.name,
+        name=body.name.strip(),
         code=body.code,
         type=body.type,
         parent_id=parent_uuid,
@@ -509,7 +542,7 @@ async def create_org_unit(
         "CREATE",
         changed_by=principal.user_account_id,
         before=None,
-        after={"name": unit.name, "code": unit.code, "type": unit.type},
+        after={"name": unit.name, "code": unit.code, "type": unit.type, **roles},
     )
     return _ou_response(unit)
 
@@ -521,14 +554,55 @@ def _ou_response(unit: OrgUnit) -> OrgUnitResponse:
         code=unit.code,
         type=unit.type,
         parent_id=to_typed_id("org_unit", unit.parent_id) if unit.parent_id else None,
+        department_template_id=to_typed_id("org_unit", unit.department_template_id)
+        if unit.department_template_id
+        else None,
         legal_entity_id=to_typed_id("legal_entity", unit.legal_entity_id)
         if unit.legal_entity_id
+        else None,
+        head_employment_id=to_typed_id("employment", unit.head_employment_id)
+        if unit.head_employment_id
+        else None,
+        lead_employment_id=to_typed_id("employment", unit.lead_employment_id)
+        if unit.lead_employment_id
+        else None,
+        pm_employment_id=to_typed_id("employment", unit.pm_employment_id)
+        if unit.pm_employment_id
         else None,
         status=unit.status,
         effective_from=unit.effective_from,
         effective_to=unit.effective_to,
         version=unit.version,
     )
+
+
+async def _team_roles(session, tenant_id, kind, entity_id, fields):
+    roles = {}
+    for key in ("head_employment_id", "lead_employment_id", "pm_employment_id"):
+        if key not in fields:
+            continue
+        value = fields[key]
+        expected = "DEPARTMENT" if key == "head_employment_id" else "TEAM"
+        if value and kind != expected:
+            raise HTTPException(422, "Assign HODs to departments and leads/PMs to teams")
+        uid = to_uuid(value) if value else None
+        if uid:
+            row = (
+                await session.execute(
+                    text("""
+                SELECT id FROM employments WHERE tenant_id=:tid AND id=:eid
+                AND legal_entity_id=:company AND archived_at IS NULL
+                AND employment_state<>'SEPARATED'
+            """),
+                    dict(tid=tenant_id, eid=uid, company=entity_id),
+                )
+            ).first()
+            if not row:
+                raise HTTPException(
+                    422, "Department heads, leads and PMs must be active employees of this company"
+                )
+        roles[key] = uid
+    return roles
 
 
 async def _get_org_unit(session, tenant_id: UUID, unit_id: str) -> OrgUnit:
@@ -543,6 +617,79 @@ async def _get_org_unit(session, tenant_id: UUID, unit_id: str) -> OrgUnit:
     if not unit:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Org unit not found")
     return unit
+
+
+@router.post(
+    "/legal-entities/{entity_id}/departments",
+    response_model=list[OrgUnitResponse],
+    dependencies=[require_permission("org.write")],
+    summary="Assign shared departments to a company",
+)
+async def assign_departments(
+    entity_id: str,
+    body: AssignDepartmentsRequest,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> list[OrgUnitResponse]:
+    scope = scope.for_permission("org.write")
+    entity_uuid = to_uuid(entity_id)
+    if not scope.covers_entity(entity_uuid):
+        raise HTTPException(403, "Not authorized for this company")
+    await _get_legal_entity(session, tenant_id, entity_id)
+    await lock_resource(session, tenant_id, "department-catalog")
+    await lock_resource(session, tenant_id, f"company-departments:{entity_uuid}")
+    templates = []
+    for template_id in dict.fromkeys(body.department_ids):
+        template = await _get_org_unit(session, tenant_id, template_id)
+        if template.type != "DEPARTMENT_TEMPLATE":
+            raise HTTPException(422, "Select a department from the shared department list")
+        templates.append(template)
+    assigned = []
+    for template in templates:
+        result = await session.execute(
+            select(OrgUnit).where(
+                OrgUnit.tenant_id == tenant_id,
+                OrgUnit.legal_entity_id == entity_uuid,
+                OrgUnit.department_template_id == template.id,
+                OrgUnit.archived_at.is_(None),  # type: ignore[attr-defined]
+            )
+        )
+        existing = result.scalars().first()
+        if existing:
+            assigned.append(_ou_response(existing))
+            continue
+        unit = OrgUnit(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            name=template.name,
+            code=template.code,
+            type="DEPARTMENT",
+            legal_entity_id=entity_uuid,
+            department_template_id=template.id,
+            effective_from=business_today(),
+        )
+        session.add(unit)
+        await session.flush()
+        await record_change(
+            session,
+            tenant_id,
+            "org_unit",
+            unit.id,
+            "CREATE",
+            changed_by=principal.user_account_id,
+            before=None,
+            after={
+                "name": unit.name,
+                "code": unit.code,
+                "type": unit.type,
+                "department_template_id": template.id,
+                "legal_entity_id": entity_uuid,
+            },
+        )
+        assigned.append(_ou_response(unit))
+    return assigned
 
 
 @router.patch(
@@ -564,6 +711,35 @@ async def update_org_unit(
     if unit.legal_entity_id and not scope.covers_entity(unit.legal_entity_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this legal entity")
     fields = body.model_dump(exclude_unset=True)
+    if unit.type == "DEPARTMENT_TEMPLATE":
+        if not scope.is_all:
+            raise HTTPException(403, "Only a group administrator can manage shared departments")
+        if "type" in fields and fields["type"] != unit.type:
+            raise HTTPException(422, "A shared department's type cannot be changed")
+        if "name" in fields:
+            name = (fields["name"] or "").strip()
+            if not name:
+                raise HTTPException(422, "Department name is required")
+            fields["name"] = name
+            await lock_resource(session, tenant_id, "department-catalog")
+            duplicate = await session.execute(
+                select(OrgUnit).where(
+                    OrgUnit.tenant_id == tenant_id,
+                    OrgUnit.type == "DEPARTMENT_TEMPLATE",
+                    OrgUnit.id != unit.id,
+                    OrgUnit.archived_at.is_(None),  # type: ignore[attr-defined]
+                    func.lower(OrgUnit.name) == name.lower(),  # type: ignore[attr-defined]
+                )
+            )
+            if duplicate.scalars().first():
+                raise HTTPException(409, "A shared department with this name already exists")
+    elif unit.department_template_id and any(k != "head_employment_id" for k in fields):
+        raise HTTPException(409, "Edit this department in the shared department list")
+    fields.update(
+        await _team_roles(
+            session, tenant_id, fields.get("type", unit.type), unit.legal_entity_id, fields
+        )
+    )
     before = {k: getattr(unit, k) for k in fields}
     for k, v in fields.items():
         setattr(unit, k, v)
@@ -579,6 +755,31 @@ async def update_org_unit(
         before=before,
         after=fields,
     )
+    if unit.type == "DEPARTMENT_TEMPLATE":
+        linked = await session.execute(
+            select(OrgUnit).where(
+                OrgUnit.tenant_id == tenant_id,
+                OrgUnit.department_template_id == unit.id,
+                OrgUnit.archived_at.is_(None),  # type: ignore[attr-defined]
+            )
+        )
+        updates = {k: v for k, v in fields.items() if k in ("name", "code")}
+        for company_department in linked.scalars():
+            old = {k: getattr(company_department, k) for k in updates}
+            for k, v in updates.items():
+                setattr(company_department, k, v)
+            session.add(company_department)
+            await record_change(
+                session,
+                tenant_id,
+                "org_unit",
+                company_department.id,
+                "UPDATE",
+                changed_by=principal.user_account_id,
+                before=old,
+                after=updates,
+            )
+        await session.flush()
     return _ou_response(unit)
 
 

@@ -101,7 +101,9 @@ _EMPLOYEE_SELECT = """
         p.legal_last_name AS last_name,
         COALESCE(NULLIF(p.preferred_name, ''), p.legal_first_name) || ' ' || p.legal_last_name
             AS full_name,
-        a.org_unit_id, ou.name AS department,
+        a.org_unit_id,
+        CASE WHEN ou.type = 'TEAM' THEN parent_ou.name ELSE ou.name END AS department,
+        CASE WHEN ou.type = 'TEAM' THEN ou.name ELSE NULL END AS team_name,
         a.job_id, j.title AS designation,
         a.location_id, l.name AS location,
         am.manager_employment_id,
@@ -113,6 +115,8 @@ _EMPLOYEE_SELECT = """
     (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from <=
     CURRENT_DATE
     LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
+    LEFT JOIN org_units parent_ou ON parent_ou.tenant_id = ou.tenant_id
+        AND parent_ou.id = ou.parent_id
     LEFT JOIN jobs j ON j.tenant_id = a.tenant_id AND j.id = a.job_id
     LEFT JOIN locations l ON l.tenant_id = a.tenant_id AND l.id = a.location_id
     LEFT JOIN assignment_managers am
@@ -192,6 +196,7 @@ def _employment_row_response(r, *, show_personal: bool = True) -> EmploymentResp
         legal_entity_name=r.legal_entity_name,
         org_unit_id=to_typed_id("org_unit", r.org_unit_id) if r.org_unit_id else None,
         department=r.department,
+        team_name=r.team_name,
         job_id=to_typed_id("job", r.job_id) if r.job_id else None,
         designation=r.designation,
         location_id=to_typed_id("location", r.location_id) if r.location_id else None,
@@ -1018,6 +1023,10 @@ async def _validate_assignment_references(session, tenant_id, emp, changes, scop
         )
         if not row:
             raise HTTPException(422, f"Invalid reference: {key}")
+        if key == "org_unit_id" and (
+            row.get("type") == "DEPARTMENT_TEMPLATE" or row.get("archived_at") is not None
+        ):
+            raise HTTPException(422, "Assign a company department or team, not a shared department")
         if key in ("org_unit_id", "location_id") and row.get("legal_entity_id") not in (
             None,
             emp.legal_entity_id,

@@ -4,7 +4,7 @@ import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, Plus, Trash2, Check, X, Users, Search, ClipboardCheck, Clock, Settings2, ChevronRight, ChevronLeft } from "lucide-react";
 import { approvalsApi } from "../api/approvals";
 import type { ApprovalFlow, ApprovalRequest, ApprovalStep, RequestType } from "../api/approvals";
-import { orgApi } from "../api/org";
+import { UsageHelpButton } from "../components/ui/UsageHelpButton";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatusBadge } from "../components/ui/StatusBadge";
@@ -59,20 +59,18 @@ function FlowEditor({ initial, close }: { initial?: ApprovalFlow; close: () => v
   const qc = useQueryClient();
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<RequestType>(initial?.request_type ?? "LEAVE");
-  const [unit, setUnit] = useState(initial?.org_unit_id ?? "");
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
-  const [steps, setSteps] = useState<ApprovalStep[]>(initial?.steps ?? [{ name: "Team lead / PM", approver_ids: [] }]);
+  const [steps, setSteps] = useState<ApprovalStep[]>(initial?.steps ?? [{ name: "Approval", approver_ids: [], approver_source: "PEOPLE" }]);
   const directory = useQuery({ queryKey: ["approval-directory"], queryFn: () => approvalsApi.directory() });
-  const units = useQuery({ queryKey: ["org-units"], queryFn: orgApi.listOrgUnits });
   const save = useMutation({
-    mutationFn: () => approvalsApi.saveFlow({ name: name.trim(), request_type: kind, org_unit_id: unit || null, enabled,
+    mutationFn: () => approvalsApi.saveFlow({ name: name.trim(), request_type: kind, org_unit_id: null, employment_id: null, reusable: true, enabled,
       steps, version: initial?.version }, initial?.id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["approval-flows"] }); close(); toast.success("Approval flow saved", "New requests use this chain. Submitted requests keep their original chain."); },
     onError: (e) => toast.error("Couldn’t save flow", errorMessage(e)),
   });
   const update = (index: number, value: Partial<ApprovalStep>) => setSteps((items) => items.map((s, i) => i === index ? { ...s, ...value } : s));
-  const invalid = directory.isPending || directory.isError || units.isPending || units.isError || !name.trim() || steps.some((s) => !s.name.trim() || !s.approver_ids.length);
-  return <Sheet open onClose={close} title={initial ? "Edit approval flow" : "New approval flow"} description="Choose where this flow applies, then arrange its approval stages." className="max-w-2xl" footer={<>
+  const invalid = directory.isPending || directory.isError || !name.trim() || steps.some((s) => !s.name.trim() || !s.approver_ids.length);
+  return <Sheet open onClose={close} title={initial ? "Edit approval flow" : "New approval flow"} description="Define the approval stages, then assign this workflow from employee profiles." className="max-w-2xl" footer={<>
     <button type="button" className="btn-secondary" onClick={close}>Cancel</button><button type="submit" form="approval-flow-form" className="btn-primary" disabled={save.isPending || invalid}>{save.isPending ? "Saving…" : "Save flow"}</button>
   </>}>
   <form id="approval-flow-form" className="space-y-6" onSubmit={(e) => { e.preventDefault(); if (!invalid) save.mutate(); }}>
@@ -80,14 +78,11 @@ function FlowEditor({ initial, close }: { initial?: ApprovalFlow; close: () => v
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="label sm:col-span-2">Flow name<input className="input mt-1" required maxLength={150} placeholder="e.g. Engineering leave approval" value={name} onChange={(e) => setName(e.target.value)} /></label>
       <label className="label">Request type<select className="input mt-1" value={kind} disabled={!!initial} onChange={(e) => setKind(e.target.value as RequestType)}>{TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select></label>
-      <label className="label">Department / team<select className="input mt-1" value={unit} disabled={!!initial || units.isPending} onChange={(e) => setUnit(e.target.value)}>
-        <option value="">All departments · default flow</option>{units.data?.filter((u) => u.status === "ACTIVE").map((u) => <option key={u.id} value={u.id}>{u.type === "TEAM" ? `${units.data?.find((p) => p.id === u.parent_id)?.name ?? "Department"} / ` : ""}{u.name} · {label(u.type)}</option>)}
-      </select></label>
+
     </div>
     </section>
     <section className="space-y-3"><div><h3 className="eyebrow">Approval stages</h3><p className="mt-1 text-[13px] text-fg-subtle">One selected person approves each stage. Use different people for the next stage.</p></div>
     {directory.isError && <Notice title="Couldn’t load approvers">Reload to try again.</Notice>}
-    {units.isError && <Notice title="Couldn’t load departments">Reload before saving.</Notice>}
     <div className="space-y-3">
       {steps.map((step, index) => <div key={step.id ?? index}>
         <div className="rounded-xl border border-line bg-surface p-4">
@@ -108,7 +103,7 @@ function FlowEditor({ initial, close }: { initial?: ApprovalFlow; close: () => v
     <button type="button" className="btn-secondary btn-sm" disabled={steps.length >= 50} onClick={() => setSteps((items) => [...items, { name: "", approver_ids: [] }])}><Plus size={14} /> Add stage</button>
     </section>
     <label className="flex items-center gap-2 rounded-lg border border-line bg-muted p-3 text-[13px]"><input type="checkbox" checked={enabled} onChange={(e) => setEnabled(e.target.checked)} /> Use this flow for new requests</label>
-    <p className="text-xs text-fg-subtle">Team flows take priority over department defaults. Submitted requests keep the chain they started with.</p>
+    <p className="text-xs text-fg-subtle">Assign this workflow in Employees → employee profile → Approval workflow. The same workflow can be assigned to several employees. Team and department changes do not affect routing.</p>
   </form></Sheet>;
 }
 
@@ -194,17 +189,9 @@ export function ApprovalsPage({ view = "requests" }: { view?: "requests" | "flow
   const isFlows = view === "flows";
   const inbox = useQuery({ queryKey: ["approval-inbox"], queryFn: approvalsApi.inbox, enabled: !isFlows });
   const flows = useQuery({ queryKey: ["approval-flows"], queryFn: approvalsApi.flows, enabled: isFlows && canManage });
-  const units = useQuery({ queryKey: ["org-units"], queryFn: orgApi.listOrgUnits, enabled: isFlows && canManage });
-  const scopeName = (id: string | null) => {
-    if (!id) return "All departments";
-    const unit = units.data?.find((u) => u.id === id);
-    if (!unit) return "Department / team";
-    const parent = units.data?.find((u) => u.id === unit.parent_id);
-    return unit.type === "TEAM" && parent ? `${parent.name} / ${unit.name}` : unit.name;
-  };
   const query = search.trim().toLowerCase();
   const requests = (inbox.data ?? []).filter((r) => (!kind || r.request_type === kind) && (tab === "all" || r.can_act) && `${r.employee_name} ${r.employee_number} ${r.flow_name} ${r.steps[r.current_level - 1]?.name ?? ""}`.toLowerCase().includes(query));
-  const filteredFlows = (flows.data ?? []).filter((f) => (!kind || f.request_type === kind) && (!enabledFilter || String(f.enabled) === enabledFilter) && `${f.name} ${scopeName(f.org_unit_id)} ${f.steps.map((s) => s.name).join(" ")}`.toLowerCase().includes(query));
+  const filteredFlows = (flows.data ?? []).filter((f) => (!kind || f.request_type === kind) && (!enabledFilter || String(f.enabled) === enabledFilter) && `${f.name} ${f.steps.map((s) => s.name).join(" ")}`.toLowerCase().includes(query));
   const count = isFlows ? filteredFlows.length : requests.length;
   const totalPages = Math.max(1, Math.ceil(count / 10));
   const currentPage = Math.min(page, totalPages);
@@ -215,8 +202,8 @@ export function ApprovalsPage({ view = "requests" }: { view?: "requests" | "flow
   if (isFlows && !canManage) return <Navigate to="/approvals" replace />;
   return <>
     <PageHeader title={isFlows ? "Approval flows" : "Approvals"}
-      description={isFlows ? "Set approval stages for each department, team, and request type." : "Review employee requests and follow their approval progress."}
-      actions={isFlows ? <button className="btn-primary" onClick={() => setEditing("new")}><Plus size={15} /> New flow</button> : canManage ? <Link to="/approval-flows" className="btn-secondary"><Settings2 size={15} /> Manage flows</Link> : undefined} />
+      description={isFlows ? "Define reusable approval stages, then choose each employee’s workflow in their profile." : "Review employee requests and follow their approval progress."}
+      actions={isFlows ? <><UsageHelpButton topic="approvals" /><button className="btn-primary" onClick={() => setEditing("new")}><Plus size={15} /> New flow</button></> : canManage ? <Link to="/approval-flows" className="btn-secondary"><Settings2 size={15} /> Manage flows</Link> : undefined} />
     {!isFlows && <div className="mb-6 grid gap-4 sm:grid-cols-3">
       <StatCard label="Pending requests" value={failed ? "—" : (inbox.data?.length ?? 0)} icon={ClipboardCheck} hint="Across your approval chains" loading={loading} />
       <StatCard label="Needs your review" value={failed ? "—" : mine} icon={Users} iconTone="orange" hint="Ready for your decision" loading={loading} />
@@ -229,22 +216,22 @@ export function ApprovalsPage({ view = "requests" }: { view?: "requests" | "flow
         { value: "mine", label: "Needs my review", count: inbox.isPending || failed ? undefined : mine },
       ]} /></div>}
       <div className="flex flex-wrap items-center gap-3 border-b border-line p-4 sm:px-5">
-        <div className="relative min-w-0 flex-1 basis-56"><Search size={15} className="absolute left-3 top-2.5 text-fg-subtle" /><input className="input w-full pl-9" aria-label={isFlows ? "Search approval flows" : "Search approval requests"} placeholder={isFlows ? "Search flows or departments…" : "Search employee, ID, or stage…"} value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></div>
+        <div className="relative min-w-0 flex-1 basis-56"><Search size={15} className="absolute left-3 top-2.5 text-fg-subtle" /><input className="input w-full pl-9" aria-label={isFlows ? "Search approval flows" : "Search approval requests"} placeholder={isFlows ? "Search workflows or stages…" : "Search employee, ID, or stage…"} value={search} onChange={(e) => { setSearch(e.target.value); setPage(1); }} /></div>
         <select className="input w-full sm:w-48" aria-label="Filter by request type" value={kind} onChange={(e) => { setKind(e.target.value as RequestType | ""); setPage(1); }}><option value="">All request types</option>{TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select>
         {isFlows && <select className="input w-full sm:w-36" aria-label="Filter by flow status" value={enabledFilter} onChange={(e) => { setEnabledFilter(e.target.value); setPage(1); }}><option value="">All statuses</option><option value="true">Enabled</option><option value="false">Disabled</option></select>}
         {(search || kind || enabledFilter) && <button className="btn-ghost btn-sm" onClick={() => { setSearch(""); setKind(""); setEnabledFilter(""); setPage(1); }}>Clear filters</button>}
       </div>
       {loading ? <div className="space-y-3 p-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-16" />)}</div> : failed ? <EmptyState title="Information unavailable" description="Use Retry to load this page again." /> : !count ? <EmptyState icon={isFlows ? Settings2 : ClipboardCheck}
         title={search || kind || enabledFilter ? "No matching results" : isFlows ? "No approval flows yet" : tab === "mine" ? "All caught up" : "No pending requests"}
-        description={search || kind || enabledFilter ? "Try another search or clear the filters." : isFlows ? "Create a flow, choose its department, and add the people who approve each stage." : "Requests routed through configured flows appear here when they need approval."}
+        description={search || kind || enabledFilter ? "Try another search or clear the filters." : isFlows ? "Create a workflow with its stages and approvers, then assign it to employees." : "Requests routed through configured flows appear here when they need approval."}
         action={isFlows && !search && !kind && !enabledFilter ? <button className="btn-primary" onClick={() => setEditing("new")}><Plus size={15} /> Create first flow</button> : undefined} /> : <>
-        <div className="relative overflow-x-auto"><table className={`tbl ${isFlows ? "min-w-[880px]" : "min-w-[720px]"}`}><thead><tr>{isFlows ? <><th>Flow</th><th>Department / team</th><th>Approval stages</th><th>Status</th><th className="relative"><span className="sr-only">Actions</span></th></> : <><th>Employee</th><th>Request</th><th>Current stage</th><th className="relative"><span className="sr-only">Actions</span></th></>}</tr></thead><tbody>
+        <div className="relative overflow-x-auto"><table className={`tbl ${isFlows ? "min-w-[880px]" : "min-w-[720px]"}`}><thead><tr>{isFlows ? <><th>Flow</th><th>Approval stages</th><th>Status</th><th className="relative"><span className="sr-only">Actions</span></th></> : <><th>Employee</th><th>Request</th><th>Current stage</th><th className="relative"><span className="sr-only">Actions</span></th></>}</tr></thead><tbody>
           {isFlows ? filteredFlows.slice(offset, offset + 10).map((flow) => <tr key={flow.id}>
             <td><p className="whitespace-nowrap font-medium text-fg">{flow.name}</p><p className="mt-1 text-xs text-fg-subtle">{TYPE_LABEL[flow.request_type]}</p></td>
-            <td><p className="text-fg">{scopeName(flow.org_unit_id)}</p><p className="mt-1 text-xs text-fg-subtle">{flow.org_unit_id ? "Department / team flow" : "Default for other departments"}</p></td>
+
             <td><div className="flex max-w-sm flex-wrap items-center gap-1.5">{flow.steps.map((s, i) => <span key={s.id ?? i} className="inline-flex items-center gap-1.5">{i > 0 && <ChevronRight size={12} className="text-fg-subtle" />}<span className="rounded-md border border-line bg-muted/40 px-2 py-1 text-xs text-fg-muted">{s.name}</span></span>)}</div></td>
             <td><StatusBadge status={flow.enabled ? "ACTIVE" : "INACTIVE"} label={flow.enabled ? "Enabled" : "Disabled"} /></td>
-            <td><button className="btn-secondary btn-sm" onClick={() => setEditing(flow)} aria-label={`Edit ${flow.name}`}>Edit flow</button></td>
+            <td><button className="btn-secondary btn-sm" disabled={flow.can_manage === false} onClick={() => setEditing(flow)} aria-label={`Edit ${flow.name}`}>Edit flow</button></td>
           </tr>) : requests.slice(offset, offset + 10).map((request) => <tr key={request.id}>
             <td><div className="flex items-center gap-3"><Avatar name={request.employee_name} /><div><p className="whitespace-nowrap font-medium text-fg">{request.employee_name}</p><p className="mt-1 text-xs text-fg-subtle">{request.employee_number}</p></div></div></td>
             <td><p className="font-medium text-fg">{TYPE_LABEL[request.request_type]}</p><p className="mt-1 whitespace-nowrap text-xs text-fg-subtle">{requestSummary(request)}</p></td>
@@ -255,7 +242,7 @@ export function ApprovalsPage({ view = "requests" }: { view?: "requests" | "flow
         <div className="flex items-center justify-between gap-3 border-t border-line px-5 py-3"><p className="text-xs text-fg-subtle">Showing {offset + 1}–{Math.min(offset + 10, count)} of {count}</p><div className="flex items-center gap-2"><button className="btn-icon" aria-label="Previous page" disabled={currentPage === 1} onClick={() => setPage(currentPage - 1)}><ChevronLeft size={15} /></button><span className="text-xs tabular-nums text-fg-muted">{currentPage} / {totalPages}</span><button className="btn-icon" aria-label="Next page" disabled={currentPage === totalPages} onClick={() => setPage(currentPage + 1)}><ChevronRight size={15} /></button></div></div>
       </>}
     </div>
-    {isFlows && <p className="mt-4 text-xs text-fg-subtle">Team flows override their department’s flow. The default flow covers remaining departments. Without an enabled flow, existing approval policies apply.</p>}
+    {isFlows && <p className="mt-4 text-xs text-fg-subtle">Assign saved workflows from each employee’s profile. Team and department changes do not change their workflow. Without a selected workflow, existing approval policies apply.</p>}
     {editing && <FlowEditor key={editing === "new" ? "new" : editing.id} initial={editing === "new" ? undefined : editing} close={() => setEditing(null)} />}
     {selected && <RequestPanel key={selected.id} request={selected} close={() => setSelected(null)} />}
   </>;

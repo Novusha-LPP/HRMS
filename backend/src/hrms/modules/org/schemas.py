@@ -9,6 +9,7 @@ class LegalEntityCreate(BaseModel):
     short_name: str | None = Field(default=None, max_length=50)
     country_code: str = Field(default="IN", max_length=2)
     # None = inherit the tenant/deployment default (HRMS_DEFAULT_FINANCIAL_YEAR_START_MONTH).
+    establishment_date: date | None = None
     financial_year_start_month: int | None = Field(default=None, ge=1, le=12)
 
 
@@ -18,6 +19,7 @@ class LegalEntityUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     short_name: str | None = Field(default=None, max_length=50)
     country_code: str | None = Field(default=None, max_length=2)
+    establishment_date: date | None = None
     financial_year_start_month: int | None = Field(default=None, ge=1, le=12)
 
 
@@ -30,6 +32,7 @@ class LegalEntityResponse(BaseModel):
     country_code: str
     status: str
     version: int
+    establishment_date: date | None = None
     financial_year_start_month: int | None = None
 
 
@@ -48,6 +51,9 @@ class LocationCreate(BaseModel):
 class LocationUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     type: str | None = Field(default=None, max_length=50)
+    head_employment_id: str | None = None
+    lead_employment_id: str | None = None
+    pm_employment_id: str | None = None
     address_line1: str | None = Field(default=None)
     city: str | None = Field(default=None)
     state_code: str | None = Field(default=None)
@@ -78,6 +84,9 @@ class OrgUnitCreate(BaseModel):
     parent_id: str | None = Field(default=None)
     legal_entity_id: str | None = Field(default=None)
     location_id: str | None = Field(default=None)
+    head_employment_id: str | None = None
+    lead_employment_id: str | None = None
+    pm_employment_id: str | None = None
     effective_from: date
 
 
@@ -91,6 +100,13 @@ class OrgUnitUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=255)
     code: str | None = Field(default=None)
     type: str | None = Field(default=None, max_length=50)
+    head_employment_id: str | None = None
+    lead_employment_id: str | None = None
+    pm_employment_id: str | None = None
+
+
+class AssignDepartmentsRequest(BaseModel):
+    department_ids: list[str] = Field(min_length=1, max_length=100)
 
 
 class OrgUnitResponse(BaseModel):
@@ -102,6 +118,10 @@ class OrgUnitResponse(BaseModel):
     type: str
     parent_id: str | None
     legal_entity_id: str | None = None
+    department_template_id: str | None = None
+    head_employment_id: str | None = None
+    lead_employment_id: str | None = None
+    pm_employment_id: str | None = None
     status: str
     effective_from: date
     effective_to: date | None

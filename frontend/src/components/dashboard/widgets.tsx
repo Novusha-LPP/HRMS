@@ -626,6 +626,7 @@ export function TodaysHighlights({ data, loading }: WidgetProps) {
   const toast = useToast();
   const h = dict(data?.highlights_today);
   const groups: { key: string; label: string; icon: LucideIcon; people: HighlightPerson[] }[] = [
+    { key: "company_anniversaries", label: "Company anniversaries today", icon: Cake, people: (h.company_anniversaries as HighlightPerson[]) ?? [] },
     { key: "joining", label: "Joining today", icon: UserPlus, people: (h.joining as HighlightPerson[]) ?? [] },
     { key: "exiting", label: "Leaving today", icon: UserMinus, people: (h.exiting as HighlightPerson[]) ?? [] },
     { key: "birthdays", label: "Birthdays today", icon: Cake, people: (h.birthdays as HighlightPerson[]) ?? [] },
@@ -633,7 +634,9 @@ export function TodaysHighlights({ data, loading }: WidgetProps) {
   ];
   const any = groups.some((g) => g.people.length > 0);
   const wish = (p: HighlightPerson, key: string) => {
-    navigator.clipboard.writeText(key === "birthdays"
+    navigator.clipboard.writeText(key === "company_anniversaries"
+      ? `Happy company anniversary to ${p.name}! Celebrating ${p.years} years together. 🎉`
+      : key === "birthdays"
       ? `Happy Birthday ${p.name}! Wishing you a wonderful year ahead from everyone at ${p.company}! 🎂`
       : `Congratulations ${p.name} on ${p.years} ${p.years === 1 ? "year" : "years"} with ${p.company}! Thank you for all you do. 🎉`);
     toast.success("Message copied", `Ready to paste for ${p.name}.`);
@@ -653,9 +656,9 @@ export function TodaysHighlights({ data, loading }: WidgetProps) {
                 {g.people.map((p, i) => (
                   <li key={i} className="flex items-center justify-between gap-2 text-[13px]">
                     <span className="min-w-0 truncate text-fg">
-                      {p.name}{g.key === "anniversaries" && p.years ? <span className="text-fg-subtle"> · {p.years}y</span> : null}
+                      {p.name}{(g.key === "anniversaries" || g.key === "company_anniversaries") && p.years ? <span className="text-fg-subtle"> · {p.years}y</span> : null}
                     </span>
-                    {(g.key === "birthdays" || g.key === "anniversaries") && (
+                    {(g.key === "birthdays" || g.key === "anniversaries" || g.key === "company_anniversaries") && (
                       <button onClick={() => wish(p, g.key)} className="link shrink-0 text-xs">
                         {g.key === "birthdays" ? "Copy wish" : "Copy note"}
                       </button>

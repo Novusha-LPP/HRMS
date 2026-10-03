@@ -97,6 +97,7 @@ class EmploymentResponse(BaseModel):
     legal_entity_name: str | None = None
     org_unit_id: str | None = None
     department: str | None = None
+    team_name: str | None = None
     job_id: str | None = None
     designation: str | None = None
     location_id: str | None = None
