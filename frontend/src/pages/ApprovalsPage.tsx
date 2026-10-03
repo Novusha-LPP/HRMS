@@ -142,11 +142,11 @@ function RequestPanel({ request, close }: { request: ApprovalRequest; close: () 
     <div data-autofocus tabIndex={-1} className="flex items-center gap-3 outline-none"><Avatar name={current.employee_name} size="lg" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-fg">{current.employee_name}</p><p className="text-xs text-fg-subtle">{current.employee_number}</p></div><StatusBadge status={current.status} /></div>
     {detail.isError && <Notice title="Couldn’t refresh request">Reload before taking action.</Notice>}
     <section><h3 className="eyebrow mb-3">Request details</h3><dl className="grid gap-x-4 gap-y-3 rounded-xl border border-line bg-muted/40 p-4 text-[13px] sm:grid-cols-2">{Object.entries(current.request).filter(([, v]) => v != null).map(([k, v]) => <div key={k} className={k.includes("reason") ? "sm:col-span-2" : ""}><dt className="text-xs text-fg-subtle">{DETAIL_LABEL[k] ?? label(k)}</dt><dd className="mt-1 break-words text-fg">{detailValue(k, v)}</dd></div>)}</dl></section>
-    <section><div className="mb-3 flex items-center justify-between"><h3 className="eyebrow">Approval progress</h3><span className="text-xs text-fg-subtle">{current.steps.length} stages</span></div>
+    <section><div className="mb-3 flex items-center justify-between"><h3 className="eyebrow">Approval progress</h3><span className="text-xs text-fg-subtle">{current.steps.length} {current.steps.length === 1 ? "stage" : "stages"}</span></div>
     <ol className="space-y-2">{current.steps.map((step, i) => {
       const completed = current.status === "APPROVED" || i + 1 < current.current_level;
       const active = current.status === "PENDING" && i + 1 === current.current_level;
-      return <li key={step.id} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${active ? "border-brand-500/40 bg-brand-500/5" : "border-line"}`}>
+      return <li key={step.id ?? i} className={`flex items-center gap-3 rounded-lg border px-3 py-2.5 ${active ? "border-brand-500/40 bg-brand-500/5" : "border-line"}`}>
         <span className={`grid h-7 w-7 shrink-0 place-items-center rounded-full text-xs font-medium ${completed ? "bg-success/10 text-success" : active ? "bg-brand-500/15 text-accent" : "bg-muted text-fg-subtle"}`}>{completed ? <Check size={14} /> : i + 1}</span>
         <span className="flex-1 text-[13px] font-medium text-fg">{step.name}</span><span className="text-xs text-fg-subtle">{completed ? "Approved" : active ? "Awaiting review" : current.status === "REJECTED" && i + 1 === current.current_level ? "Rejected" : current.status === "PENDING" ? "Upcoming" : "Not reached"}</span>
       </li>;
