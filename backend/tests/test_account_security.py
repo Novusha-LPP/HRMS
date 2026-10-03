@@ -388,9 +388,28 @@ async def test_unknown_and_wrong_password_are_indistinguishable(api):
     assert timings["unknown"] > 0.05
 
 
-async def test_password_checks_do_not_freeze_the_event_loop(api):
+async def test_password_checks_do_not_freeze_the_event_loop(api, monkeypatch):
+    """
+    bcrypt takes ~0.17 s per check; on the event loop it would stall every other request.
+    Checked directly (each check runs on a worker thread, never the loop's), plus a coarse
+    end-to-end bound — far below the ~1 s six on-loop checks would cost, far above the
+    jitter of a slow, coverage-traced CI runner (which tripped the old 0.25 s bound).
+    """
+    import threading
+
+    from hrms.core import security
+
     client, _ = api
     await tenant(client)
+    loop_thread = threading.get_ident()
+    threads: list[int] = []
+    real_verify = security.verify_password
+
+    def recording_verify(plain, hashed):
+        threads.append(threading.get_ident())
+        return real_verify(plain, hashed)
+
+    monkeypatch.setattr(security, "verify_password", recording_verify)
     lags: list[float] = []
     stop = asyncio.Event()
 
@@ -407,8 +426,9 @@ async def test_password_checks_do_not_freeze_the_event_loop(api):
     )
     stop.set()
     await watcher
-    # bcrypt on the loop would stall it ~0.17 s per check (≈1 s for six); off-loop it stays ≪ that.
-    assert max(lags) < 0.25, f"event loop stalled for {max(lags):.3f}s"
+    assert threads, "no password check ran"
+    assert loop_thread not in threads, "a password check ran on the event loop"
+    assert max(lags) < 0.75, f"event loop stalled for {max(lags):.3f}s"
 
 
 # ─── Roles and scopes ────────────────────────────────────────────────────────
