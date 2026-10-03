@@ -1,0 +1,15 @@
+# yaml-language-server: $schema=none
+# Loads every dashboard in ops/grafana/dashboards (mounted at /etc/grafana/dashboards) into an
+# "HRMS" folder. The JSON files are the source of truth: edits made in the UI are not saved
+# back, so change the file and restart Grafana instead.
+apiVersion: 1
+
+providers:
+  - name: hrms
+    folder: HRMS
+    type: file
+    disableDeletion: true
+    allowUiUpdates: false
+    updateIntervalSeconds: 60
+    options:
+      path: /etc/grafana/dashboards

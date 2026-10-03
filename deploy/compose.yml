@@ -12,13 +12,20 @@ x-api: &api
   image: ${HRMS_API_IMAGE:-ghcr.io/novusha-lpp/hrms/api}:${HRMS_VERSION:?set HRMS_VERSION}
   restart: unless-stopped
   env_file: ${HRMS_ENV_FILE:?set HRMS_ENV_FILE to this env file's path}
+  mem_limit: ${HRMS_API_MEMORY:-1g}
+  cpus: ${HRMS_API_CPUS:-2}
   environment: &api-env
     HRMS_ENVIRONMENT: ${HRMS_ENVIRONMENT}
     HRMS_DEBUG: "false"
     HRMS_LOG_FORMAT: json
-    HRMS_DATABASE_URL: postgresql+asyncpg://hrms:${HRMS_DB_OWNER_PASSWORD:?}@db:5432/hrms
+    # Runtime never receives owner credentials: only migrate/backup get those.
+    HRMS_DATABASE_URL: postgresql+asyncpg://hrms_app:${HRMS_APP_ROLE_PASSWORD:?}@db:5432/hrms
     HRMS_APP_DATABASE_URL: postgresql+asyncpg://hrms_app:${HRMS_APP_ROLE_PASSWORD:?}@db:5432/hrms
     HRMS_STORAGE_DIR: /app/storage
+    HRMS_DB_OWNER_PASSWORD: ""
+    HRMS_DATABASE_POOL_SIZE: ${HRMS_DATABASE_POOL_SIZE:-5}
+    HRMS_DATABASE_MAX_OVERFLOW: ${HRMS_DATABASE_MAX_OVERFLOW:-5}
+    FORWARDED_ALLOW_IPS: ${HRMS_FORWARDED_ALLOW_IPS:-172.30.15.1}
   volumes:
     - kyc-storage:/app/storage
   networks: [backend]
@@ -27,6 +34,8 @@ services:
   db:
     image: postgres:16-alpine
     restart: unless-stopped
+    mem_limit: ${HRMS_DB_MEMORY:-2g}
+    cpus: ${HRMS_DB_CPUS:-2}
     environment:
       POSTGRES_USER: hrms
       POSTGRES_PASSWORD: ${HRMS_DB_OWNER_PASSWORD:?}
@@ -50,6 +59,7 @@ services:
     environment:
       <<: *api-env
       HRMS_APP_ROLE_PASSWORD: ${HRMS_APP_ROLE_PASSWORD:?}
+      HRMS_DATABASE_URL: postgresql+asyncpg://hrms:${HRMS_DB_OWNER_PASSWORD:?}@db:5432/hrms
       PROMETHEUS_MULTIPROC_DIR: ""  # one process, not the API's worker pool
     depends_on:
       db: {condition: service_healthy}
@@ -111,4 +121,8 @@ volumes:
 
 networks:
   backend:
+    ipam:
+      config:
+        - subnet: ${HRMS_BACKEND_SUBNET:-172.30.15.0/24}
+          gateway: ${HRMS_BACKEND_GATEWAY:-172.30.15.1}
   frontend:

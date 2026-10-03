@@ -124,7 +124,9 @@ Today `testinghrms` / `hrmsapi` are served by the **dev servers from the working
      /backup/restore.sh /import/pre-cutover.dump
    docker compose --env-file deploy/env/testing.env -f deploy/compose.yml up -d --wait
    ```
-5. Switch the tunnel to 8180/8115 (above) and check the site.
+5. Switch the tunnel to 8180/8115 (above) and check the site. In
+   `ops/prometheus/prometheus.yml`, change the testing targets from 8015 to 8115 (the
+   `hrms-api` and `hrms-ready` jobs), then `docker restart hrms-prometheus`.
 6. Stop the dev servers. Keep `hrms-db-1` for a week as a fallback, then remove it.
 
 Local development keeps working as before: the dev servers and `hrms-db-1`, with
@@ -174,8 +176,9 @@ or the storage volume on its own reveals nothing.
 - **Losing the key loses the data.** Keep each environment's key in the password manager,
   separately from the backups. A backup is only restorable together with its key.
 - **Rotation:** put a new key first, keep the old one after it, then deploy. The `migrate`
-  step re-encrypts every value and file with the new key. Remove the old key only after
-  `docker compose … run --rm jobs python -m hrms.deploy encrypt-pii --check` reports 0.
+  step re-encrypts every value and file with the new key. The current-data check must pass before retirement, but it is insufficient on its own.
+  Keep every old key while any retained local/off-site backup or document version needs it.
+  Prove a historical restore with the archived keys before retiring a key.
 - **Existing data** (rows and files from before encryption) is still readable as it is.
   The `migrate` step encrypts it on the first deploy, which covers the testing cut-over.
 - **Uploaded files** can live on local disk (`HRMS_DOCUMENT_STORAGE=local`, the default) or

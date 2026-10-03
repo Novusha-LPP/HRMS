@@ -73,17 +73,21 @@ compose logs migrate | grep -q "encrypt-pii:" || fail "migrate did not run encry
 
 for _ in $(seq 1 20); do
   curl -s -H "Authorization: Bearer $token" "$api/metrics" \
-    | grep -q 'hrms_job_last_success_timestamp_seconds{job_name="accrual"}' && break
+    | grep -Eq 'hrms_job_last_success_timestamp_seconds\{job_name="accrual"\} [1-9]' && break
   sleep 3
 done || true
 curl -s -H "Authorization: Bearer $token" "$api/metrics" \
-  | grep -q 'job_name="accrual"' || fail "the jobs container did not record a successful accrual"
+  | grep -Eq 'hrms_job_last_success_timestamp_seconds\{job_name="accrual"\} [1-9]' || fail "the jobs container did not record a successful accrual"
 
 web=http://127.0.0.1:$web_port
 curl -s "$web/config.js" | grep -q "\"http://127.0.0.1:$api_port\"" || fail "config.js not written"
 curl -s "$web/config.js" | grep -q '"testing"' || fail "config.js has the wrong environment"
 curl -s -D - -o /dev/null "$web/some/deep/link" | grep -qi "x-frame-options: DENY" \
   || fail "web security headers missing"
+curl -s -D - -o /dev/null "$web/some/deep/link" | grep -qi "content-security-policy:.*script-src 'self'" \
+  || fail "CSP missing from SPA"
+curl -s -D - -o /dev/null "$web/config.js" | grep -qi "content-security-policy:" \
+  || fail "CSP missing from config.js"
 [ "$(code "$web/some/deep/link")" = 200 ] || fail "SPA fallback broken"
 
 # Backups are root-only (umask 077), so look at them through a container.
