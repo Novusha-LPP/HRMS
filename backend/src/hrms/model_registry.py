@@ -13,6 +13,7 @@ from sqlalchemy import DateTime, ForeignKeyConstraint, UniqueConstraint
 from sqlmodel import SQLModel
 
 from hrms.jobs import models as jobs  # noqa: F401
+from hrms.modules.approvals import models as approvals  # noqa: F401
 from hrms.modules.corrections import models as corrections  # noqa: F401
 from hrms.modules.dashboard import models as dashboard  # noqa: F401
 from hrms.modules.kernel import models as kernel  # noqa: F401
@@ -30,10 +31,30 @@ metadata = SQLModel.metadata
 
 # References include tenant_id, so a UUID belonging to another tenant cannot be linked.
 RELATIONS = {
+    "approval_flows": {"org_unit_id": "org_units", "updated_by": "user_accounts"},
+    "approval_instances": {"flow_id": "approval_flows", "employment_id": "employments"},
+    "approval_delegations": {
+        "flow_id": "approval_flows",
+        "instance_id": "approval_instances",
+        "original_user_id": "user_accounts",
+        "delegate_user_id": "user_accounts",
+        "created_by": "user_accounts",
+        "revoked_by": "user_accounts",
+    },
+    "approval_events": {
+        "flow_id": "approval_flows",
+        "instance_id": "approval_instances",
+        "actor_user_id": "user_accounts",
+    },
     "role_assignments": {"user_account_id": "user_accounts", "role_id": "roles"},
     "user_accounts": {"employment_id": "employments"},
     "locations": {"legal_entity_id": "legal_entities"},
-    "org_units": {"legal_entity_id": "legal_entities", "parent_id": "org_units"},
+    "org_units": {
+        "legal_entity_id": "legal_entities",
+        "parent_id": "org_units",
+        "location_id": "locations",
+        "cost_centre_id": "cost_centres",
+    },
     "positions": {"org_unit_id": "org_units", "job_id": "jobs", "grade_id": "grades"},
     "employments": {"person_id": "persons", "legal_entity_id": "legal_entities"},
     "assignments": {
@@ -80,7 +101,10 @@ RELATIONS = {
     "employee_kyc_documents": {"employment_id": "employments"},
     "kyc_access_log": {"employment_id": "employments", "actor_user_account_id": "user_accounts"},
     "onboarding_cases": {"employment_id": "employments", "template_id": "onboarding_templates"},
-    "onboarding_items": {"case_id": "onboarding_cases"},
+    "onboarding_items": {
+        "case_id": "onboarding_cases",
+        "template_item_id": "onboarding_template_items",
+    },
     "onboarding_template_items": {"template_id": "onboarding_templates"},
     "leave_type_bucket_mapping": {
         "leave_type_id": "leave_types",
@@ -114,6 +138,10 @@ RELATIONS = {
 # database is the truth here, so say so.
 # (Tables whose migrations declare them NOT NULL are listed in _STRICT_TABLES.)
 _STRICT_TABLES = {
+    "approval_flows",
+    "approval_instances",
+    "approval_delegations",
+    "approval_events",
     "api_keys",
     "job_runs",
     "import_batches",

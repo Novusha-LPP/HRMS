@@ -4,7 +4,10 @@ import enum
 from datetime import UTC, date, datetime
 from uuid import UUID
 
+import sqlalchemy as sa
 from sqlmodel import Field, SQLModel
+
+from hrms.core.field_crypto import EncryptedString
 
 
 class KycStatus(enum.StrEnum):
@@ -35,6 +38,11 @@ class DocumentStatus(enum.StrEnum):
     REJECTED = "REJECTED"
 
 
+def _encrypted(name: str) -> sa.Column:
+    """Stored encrypted at rest (core/field_crypto.py); the schemas check the length."""
+    return sa.Column(name, EncryptedString(name), nullable=True)
+
+
 class EmployeeKycRecord(SQLModel, table=True):
     __tablename__ = "employee_kyc_records"
 
@@ -44,20 +52,20 @@ class EmployeeKycRecord(SQLModel, table=True):
     person_id: UUID | None = Field(default=None, index=True)
 
     # Identity
-    pan_number: str | None = Field(default=None, max_length=20)
-    aadhaar_number: str | None = Field(default=None, max_length=20)
-    uan_number: str | None = Field(default=None, max_length=20)
-    pf_number: str | None = Field(default=None, max_length=50)
-    esi_number: str | None = Field(default=None, max_length=50)
-    passport_number: str | None = Field(default=None, max_length=50)
+    pan_number: str | None = Field(default=None, sa_column=_encrypted("pan_number"))
+    aadhaar_number: str | None = Field(default=None, sa_column=_encrypted("aadhaar_number"))
+    uan_number: str | None = Field(default=None, sa_column=_encrypted("uan_number"))
+    pf_number: str | None = Field(default=None, sa_column=_encrypted("pf_number"))
+    esi_number: str | None = Field(default=None, sa_column=_encrypted("esi_number"))
+    passport_number: str | None = Field(default=None, sa_column=_encrypted("passport_number"))
     passport_expiry: date | None = Field(default=None)
-    driving_license: str | None = Field(default=None, max_length=50)
-    voter_id: str | None = Field(default=None, max_length=50)
+    driving_license: str | None = Field(default=None, sa_column=_encrypted("driving_license"))
+    voter_id: str | None = Field(default=None, sa_column=_encrypted("voter_id"))
 
     # Bank
     bank_name: str | None = Field(default=None, max_length=100)
     account_holder_name: str | None = Field(default=None, max_length=255)
-    account_number: str | None = Field(default=None, max_length=50)
+    account_number: str | None = Field(default=None, sa_column=_encrypted("account_number"))
     ifsc_code: str | None = Field(default=None, max_length=20)
     branch_name: str | None = Field(default=None, max_length=100)
 
@@ -91,7 +99,8 @@ class EmployeeKycDocument(SQLModel, table=True):
 
     document_type: str = Field(max_length=50)
     document_title: str = Field(max_length=255)
-    document_number: str | None = Field(default=None, max_length=100)
+    # The identifier printed on the document (Aadhaar, PAN, …): encrypted like the record's.
+    document_number: str | None = Field(default=None, sa_column=_encrypted("document_number"))
 
     file_name: str = Field(max_length=255)
     file_size: int = Field()

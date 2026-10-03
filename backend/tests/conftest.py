@@ -54,6 +54,10 @@ async def api(monkeypatch, tmp_path):
         async_sessionmaker(runtime, expire_on_commit=False, autoflush=False),
     )
     monkeypatch.setattr(settings, "storage_dir", str(tmp_path))
+    # Encryption at rest on, as in every deployed environment (core/field_crypto.py).
+    from hrms.core.field_crypto import DEV_KEYS
+
+    monkeypatch.setattr(settings, "field_encryption_keys", DEV_KEYS)
     # Every test registers its own company from the same address: keep the
     # anonymous-registration limit out of the way (the throttle tests set their
     # own) and start from clean attempt counters.

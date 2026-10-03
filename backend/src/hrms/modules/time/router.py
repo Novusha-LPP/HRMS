@@ -35,6 +35,7 @@ from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import business_today, calc_lateness, is_working_day, now_utc, to_tz
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
+from hrms.modules.approvals import service as approval_flow
 from hrms.modules.policy.engine import PolicyResolver, resolve_policy
 from hrms.modules.time.models import (
     AttendanceDay,
@@ -372,7 +373,6 @@ async def list_pending_overtime(
     "/overtime/{attendance_day_id}",
     response_model=AttendanceDayResponse,
     summary="Approve or reject a day's overtime",
-    dependencies=[require_permission("corrections.approve")],
 )
 async def review_overtime(
     attendance_day_id: str,
@@ -382,22 +382,40 @@ async def review_overtime(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> AttendanceDayResponse:
-    scope = scope.for_permission("corrections.approve")
     ad_uuid = to_uuid(attendance_day_id)
     row = await session.execute(
         select(AttendanceDay)
         .where(AttendanceDay.tenant_id == tenant_id)
         .where(AttendanceDay.id == ad_uuid)
+        .with_for_update()
     )
     ad = row.scalars().first()
     if not ad:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Attendance day not found")
+    dynamic = await approval_flow.current_instance(session, tenant_id, "OVERTIME", ad.id)
+    if dynamic and dynamic.status == "PENDING":
+        await approval_flow.require_actor(session, tenant_id, "OVERTIME", ad.id, principal)
+    else:
+        scope = scope.for_permission("corrections.approve")
+        await authorize_employment(session, tenant_id, scope, ad.employment_id)
     if ad.ot_status != OvertimeStatus.PENDING:
         raise HTTPException(
             status.HTTP_400_BAD_REQUEST,
             f"This day's overtime is already {ad.ot_status}, not pending",
         )
-    await authorize_employment(session, tenant_id, scope, ad.employment_id)
+    if dynamic and dynamic.status == "PENDING":
+        final = await approval_flow.record_decision(
+            session,
+            tenant_id,
+            "OVERTIME",
+            ad.id,
+            principal,
+            "APPROVE" if body.status == "APPROVED" else "REJECT",
+            body.notes,
+        )
+        if not final:
+            await session.flush()
+            return _attendance_day_response(ad)
     if ad.employment_id == principal.employment_id:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can't approve your own overtime")
 

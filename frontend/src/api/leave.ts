@@ -124,8 +124,8 @@ export interface LeaveApplication {
 
 /** Statuses that wait on an approver's decision (leave or its cancellation). */
 export const DECISION_STATUSES = [
-  "PENDING_L1", "PENDING_L2", "PENDING_L3",
-  "CANCEL_PENDING_L1", "CANCEL_PENDING_L2", "CANCEL_PENDING_L3",
+  "PENDING_L1", "PENDING_L2", "PENDING_L3", "PENDING",
+  "CANCEL_PENDING_L1", "CANCEL_PENDING_L2", "CANCEL_PENDING_L3", "CANCEL_PENDING",
 ];
 
 /** Page size for the applications list; a shorter page is the last one. */

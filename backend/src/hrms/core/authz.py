@@ -63,6 +63,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "onboarding.write",
             "policy.read",
             "policy.write",
+            "approvals.manage",
             "reports.read",
             "reports.write",
             "dashboard.hr",

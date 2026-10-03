@@ -19,8 +19,8 @@ import { useToast, errorMessage } from "../components/ui/Toast";
 import { usePeopleDirectory } from "../lib/usePeopleDirectory";
 import { LeaveLedgerView } from "../components/leave/LeaveLedgerView";
 
-const PENDING = ["PENDING_L1", "PENDING_L2", "PENDING_L3"];
-const CANCEL_PENDING = ["CANCEL_PENDING_L1", "CANCEL_PENDING_L2", "CANCEL_PENDING_L3"];
+const PENDING = ["PENDING_L1", "PENDING_L2", "PENDING_L3", "PENDING"];
+const CANCEL_PENDING = ["CANCEL_PENDING_L1", "CANCEL_PENDING_L2", "CANCEL_PENDING_L3", "CANCEL_PENDING"];
 
 function dateRange(a: string, b: string) {
   const from = new Date(a);

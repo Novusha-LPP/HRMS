@@ -6,8 +6,16 @@ Deployment steps, run by the deploy's one-shot `migrate` service before the API 
 1. Applies every migration (alembic upgrade head), as the database owner.
 2. Sets the hrms_app role's password from HRMS_APP_ROLE_PASSWORD. Migration 0005 creates the
    role with a published development password; a deployed environment must never keep it.
+3. Sets the role's timeouts (APP_ROLE_SETTINGS), so nothing can hold locks indefinitely.
+4. Runs encrypt-pii (below), so no identifier stays in plain text or under a retired key.
 
-Both are idempotent, so every deploy runs them.
+Both are idempotent, so every deploy runs them. And, for the encrypted identifiers
+(core/field_crypto.py):
+
+    python -m hrms.deploy encrypt-pii           rewrite plain or old-key values with the
+                                                active key (idempotent; counts only)
+    python -m hrms.deploy encrypt-pii --check   exit 1 if any value still needs it
+    python -m hrms.deploy decrypt-pii           back to plain text, only to downgrade 0030
 """
 from __future__ import annotations
 
@@ -43,12 +51,25 @@ def _app_role_password() -> str | None:
     return password
 
 
-async def _set_app_role_password(password: str) -> None:
+# Guard rails on the application's role: a runaway query or a transaction left open can't
+# hold locks or connections indefinitely. Far above anything measured (the heaviest request,
+# a 2,000-employee accrual, takes ~1 s); applied to new connections.
+APP_ROLE_SETTINGS = {
+    "statement_timeout": "60s",
+    "lock_timeout": "10s",
+    "idle_in_transaction_session_timeout": "120s",
+}
+
+
+async def _configure_app_role(password: str | None) -> None:
     engine = create_async_engine(settings.database_url)
     try:
         async with engine.begin() as conn:
-            # Validated above to [A-Za-z0-9_-], so it can't break out of the literal.
-            await conn.execute(text(f"ALTER ROLE hrms_app PASSWORD '{password}'"))
+            if password:
+                # Validated above to [A-Za-z0-9_-], so it can't break out of the literal.
+                await conn.execute(text(f"ALTER ROLE hrms_app PASSWORD '{password}'"))
+            for name, value in APP_ROLE_SETTINGS.items():
+                await conn.execute(text(f"ALTER ROLE hrms_app SET {name} = '{value}'"))
     finally:
         await engine.dispose()
 
@@ -58,14 +79,167 @@ def migrate() -> None:
     config = Config(str(ALEMBIC_INI))
     config.set_main_option("script_location", str(ALEMBIC_INI.parent / "alembic"))
     command.upgrade(config, "head")
+    asyncio.run(_configure_app_role(password))
     if password:
-        asyncio.run(_set_app_role_password(password))
         print("hrms_app password set from HRMS_APP_ROLE_PASSWORD")
+    print("hrms_app limits: " + ", ".join(f"{k}={v}" for k, v in APP_ROLE_SETTINGS.items()))
+    # Every deploy leaves no identifier in plain text or under a retired key (idempotent).
+    rewritten = asyncio.run(_rewrite_pii(check=False))
+    print(f"encrypt-pii: {rewritten} identifier value(s) encrypted with the active key")
+
+
+# Table -> encrypted columns. Must match the EncryptedString columns of the models
+# (tests/test_field_crypto.py checks that it does).
+ENCRYPTED_COLUMNS: dict[str, tuple[str, ...]] = {
+    "employee_kyc_records": (
+        "pan_number", "aadhaar_number", "uan_number", "pf_number", "esi_number",
+        "passport_number", "driving_license", "voter_id", "account_number",
+    ),
+    "employee_kyc_documents": ("document_number",),
+}
+
+
+async def _rewrite_pii(*, check: bool, decrypt: bool = False) -> int:
+    """One transaction per tenant (RLS binds the owner too). Returns the values to change."""
+    from hrms.core.field_crypto import PREFIX, FieldCryptoError, cipher
+
+    if not settings.field_encryption_keys and not decrypt:
+        if check:
+            raise SystemExit("HRMS_FIELD_ENCRYPTION_KEYS is not set: nothing is being encrypted")
+        print("encrypt-pii: skipped, HRMS_FIELD_ENCRYPTION_KEYS is not set (local)")
+        return 0
+    c = cipher()
+    engine = create_async_engine(settings.database_url)
+    pending = 0
+    unreadable: list[str] = []
+    try:
+        async with engine.connect() as conn:
+            tenants = [r[0] for r in await conn.execute(text("SELECT id FROM tenants ORDER BY id"))]
+        for tenant_id in tenants:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant_id)}
+                )
+                for table, columns in ENCRYPTED_COLUMNS.items():
+                    rows = await conn.execute(
+                        text(f"SELECT id, {', '.join(columns)} FROM {table} WHERE tenant_id = :t"),
+                        {"t": str(tenant_id)},
+                    )
+                    for row in rows.mappings().all():
+                        changes = {}
+                        for column in columns:
+                            stored = row[column]
+                            if not stored:
+                                continue
+                            try:
+                                if decrypt:
+                                    if stored.startswith(PREFIX):
+                                        changes[column] = c.decrypt(stored, column)
+                                elif c.needs_rewrite(stored):
+                                    changes[column] = c.encrypt(c.decrypt(stored, column), column)
+                            except FieldCryptoError:
+                                # Ids only, never values. Usually a key removed too early.
+                                unreadable.append(f"{table}.{column} id={row['id']}")
+                        pending += len(changes)
+                        if changes and not check:
+                            sets = ", ".join(f"{col} = :{col}" for col in changes)
+                            where = "tenant_id = :t AND id = :id"
+                            await conn.execute(
+                                text(f"UPDATE {table} SET {sets} WHERE {where}"),
+                                {**changes, "t": str(tenant_id), "id": row["id"]},
+                            )
+        if not decrypt:
+            pending += await _rewrite_documents(engine, tenants, check=check, errors=unreadable)
+    finally:
+        await engine.dispose()
+    if unreadable:
+        # Everything else was handled; these need the key that wrote them put back.
+        raise UnreadableValues(unreadable)
+    return pending
+
+
+class UnreadableValues(RuntimeError):
+    def __init__(self, where: list[str]):
+        shown = "; ".join(where[:20]) + (f" (+{len(where) - 20} more)" if len(where) > 20 else "")
+        super().__init__(
+            f"{len(where)} value(s) don't decrypt with HRMS_FIELD_ENCRYPTION_KEYS — add back the "
+            f"key that wrote them: {shown}"
+        )
+
+
+async def _rewrite_documents(engine, tenants, *, check: bool, errors: list[str]) -> int:
+    """
+    Uploaded files: a pre-store file (plain, at a server path) is encrypted into the document
+    store and its row repointed; a file sealed with a retired key is re-sealed. Old plain
+    files are removed only after their rows are committed.
+    """
+    from pathlib import Path
+
+    from hrms.core import document_store as store
+    from hrms.core.field_crypto import FieldCryptoError, cipher
+
+    active = cipher().active_id
+    pending = 0
+    for tenant_id in tenants:
+        retired: list[str] = []
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant_id)}
+            )
+            rows = await conn.execute(
+                text("SELECT id, storage_path FROM employee_kyc_documents WHERE tenant_id = :t"),
+                {"t": str(tenant_id)},
+            )
+            for doc_id, ref in rows.all():
+                if not ref:
+                    continue
+                if ref.startswith(store.REF_PREFIX):
+                    key = ref[len(store.REF_PREFIX) :]
+                    try:
+                        blob = store.backend().get(key)
+                    except store.DocumentMissing:
+                        continue
+                    if store.sealed_key_id(blob) == active:
+                        continue
+                    pending += 1
+                    if not check:
+                        try:
+                            store.backend().put(key, store.seal(store.unseal(blob, key), key))
+                        except FieldCryptoError:
+                            errors.append(f"employee_kyc_documents file id={doc_id}")
+                    continue
+                if not Path(ref).exists():
+                    continue
+                pending += 1
+                if check:
+                    continue
+                new_ref = store.save(f"kyc/{tenant_id}/{Path(ref).name}", Path(ref).read_bytes())
+                await conn.execute(
+                    text("UPDATE employee_kyc_documents SET storage_path = :r "
+                         "WHERE tenant_id = :t AND id = :id"),
+                    {"r": new_ref, "t": str(tenant_id), "id": doc_id},
+                )
+                retired.append(ref)
+        for path in retired:
+            Path(path).unlink(missing_ok=True)
+    return pending
 
 
 def main(argv: list[str]) -> int:
     if argv == ["migrate"]:
         migrate()
+        return 0
+    if argv and argv[0] in ("encrypt-pii", "decrypt-pii"):
+        check = "--check" in argv[1:]
+        try:
+            count = asyncio.run(_rewrite_pii(check=check, decrypt=argv[0] == "decrypt-pii"))
+        except UnreadableValues as exc:
+            print(f"{argv[0]}: {exc}", file=sys.stderr)
+            return 1
+        if check:
+            print(f"{count} identifier value(s) not yet encrypted with the active key")
+            return 1 if count else 0
+        print(f"{argv[0]}: {count} value(s) rewritten")
         return 0
     print(__doc__, file=sys.stderr)
     return 2

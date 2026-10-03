@@ -658,4 +658,7 @@ async def test_a_rerun_adds_kyc_that_appeared_in_the_source_after_the_first_impo
                 {"t": tid, "c": src.code("staff.one")},
             )
         ).scalar()
-    assert pan == "ABCDE1234F"
+    # Imported identifiers are encrypted at rest like any other (core/field_crypto.py).
+    from hrms.core.field_crypto import cipher
+
+    assert pan.startswith("enc:v1:") and cipher().decrypt(pan, "pan_number") == "ABCDE1234F"

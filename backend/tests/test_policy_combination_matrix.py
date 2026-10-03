@@ -162,6 +162,9 @@ CORE_CASES = list(itertools.product(HOURS, BREAKS, [0, 15], [False, True], SCENA
 async def test_policy_arithmetic_matrix(monkeypatch, hours, mode, grace, ot, scenario):
     from hrms.modules.time import service
 
+    monkeypatch.setattr(service.approval_flow, "finish", AsyncMock())
+    monkeypatch.setattr(service.approval_flow, "start", AsyncMock())
+
     day = date(2026, 9, 28)
     events, start, end = example(day, hours, mode, scenario)
     oracle = expected(events, start, end, hours, mode, grace, ot)
@@ -635,6 +638,9 @@ async def test_eight_hour_api_boundaries(api, monkeypatch):
 )
 async def test_multiple_visits_and_open_breaks(monkeypatch, mode, worked, deducted, open_session):
     from hrms.modules.time import service
+
+    monkeypatch.setattr(service.approval_flow, "finish", AsyncMock())
+    monkeypatch.setattr(service.approval_flow, "start", AsyncMock())
 
     day = date(2026, 9, 28)
     tz = ZoneInfo("Asia/Kolkata")

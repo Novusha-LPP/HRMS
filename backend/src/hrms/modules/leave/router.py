@@ -63,6 +63,7 @@ from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.metrics import ACCRUAL_RUN, ACCRUALS_CREDITED
 from hrms.core.tenancy import TenantDep
+from hrms.modules.approvals import service as approval_flow
 from hrms.modules.leave.engine import (
     compute_fy_year,
     get_or_create_ledger_row,
@@ -538,8 +539,12 @@ async def run_accrual(
     scope = scope.for_permission("leave.write")
     clause, params = scope.employment_filter_sql("e")
     return await accrue_period(
-        session, tenant_id, period, recorded_by=principal.user_account_id,
-        employment_clause=clause, employment_params=params,
+        session,
+        tenant_id,
+        period,
+        recorded_by=principal.user_account_id,
+        employment_clause=clause,
+        employment_params=params,
     )
 
 
@@ -990,7 +995,10 @@ async def submit_application(
     app.days_requested = sum(app.days_by_month.values())
     await _hold_leave_balance(session, tenant_id, principal, app, lt)
 
-    if lt.requires_approval:
+    route = await approval_flow.start(session, tenant_id, "LEAVE", app.id, app.employment_id)
+    if route:
+        app.total_levels = len(route.steps)
+    if route or lt.requires_approval:
         app.status = LeaveApplicationStatus.PENDING_L1
         app.current_level = 1
     else:
@@ -1019,9 +1027,10 @@ async def approve_application(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveApplicationResponse:
-    scope = scope.for_permission("leave.approve")
     app, lt = await _get_app_lt(session, tenant_id, app_id)
-    await authorize_employment(session, tenant_id, scope, app.employment_id)
+    if await approval_flow.current_instance(session, tenant_id, "LEAVE", app.id) is None:
+        scope = scope.for_permission("leave.approve")
+        await authorize_employment(session, tenant_id, scope, app.employment_id)
     _assert_pending(app)
 
     await _check_reviewer(session, tenant_id, principal, scope, app, cancel=False)
@@ -1040,6 +1049,9 @@ async def approve_application(
     )
     session.add(action)
 
+    await approval_flow.record_decision(
+        session, tenant_id, "LEAVE", app.id, principal, "APPROVE", body.comments
+    )
     if app.current_level >= app.total_levels:
         app.status = LeaveApplicationStatus.APPROVED
         await _post_leave_transaction(
@@ -1053,13 +1065,7 @@ async def approve_application(
         )
     else:
         app.current_level += 1
-        next_status = [
-            None,
-            LeaveApplicationStatus.PENDING_L1,
-            LeaveApplicationStatus.PENDING_L2,
-            LeaveApplicationStatus.PENDING_L3,
-        ]
-        app.status = next_status[app.current_level]
+        app.status = approval_flow.pending_status(app.current_level)
 
     session.add(app)
     await session.flush()
@@ -1075,9 +1081,10 @@ async def reject_application(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveApplicationResponse:
-    scope = scope.for_permission("leave.approve")
     app, lt = await _get_app_lt(session, tenant_id, app_id)
-    await authorize_employment(session, tenant_id, scope, app.employment_id)
+    if await approval_flow.current_instance(session, tenant_id, "LEAVE", app.id) is None:
+        scope = scope.for_permission("leave.approve")
+        await authorize_employment(session, tenant_id, scope, app.employment_id)
     _assert_pending(app)
 
     await _check_reviewer(session, tenant_id, principal, scope, app, cancel=False)
@@ -1096,6 +1103,9 @@ async def reject_application(
     )
     session.add(action)
 
+    await approval_flow.record_decision(
+        session, tenant_id, "LEAVE", app.id, principal, "REJECT", body.comments
+    )
     app.status = LeaveApplicationStatus.REJECTED
     await _post_leave_transaction(
         session, tenant_id, principal, app, lt, LeaveTransactionType.RELEASE
@@ -1129,7 +1139,9 @@ async def cancel_application(
         LeaveApplicationStatus.PENDING_L1,
         LeaveApplicationStatus.PENDING_L2,
         LeaveApplicationStatus.PENDING_L3,
+        "PENDING",
     ):
+        await approval_flow.finish(session, tenant_id, "LEAVE", app.id, "CANCELLED")
         app.status = LeaveApplicationStatus.CANCELLED
         app.cancel_reason = body.cancel_reason
         app.cancel_requested_at = now_utc()
@@ -1141,10 +1153,13 @@ async def cancel_application(
         return _app_resp(app, lt, await _get_history(session, tenant_id, app.id))
 
     if app.status == LeaveApplicationStatus.APPROVED:
-        if lt.cancel_requires_approval:
+        route = await approval_flow.start(
+            session, tenant_id, "LEAVE_CANCELLATION", app.id, app.employment_id
+        )
+        if route or lt.cancel_requires_approval:
             app.status = LeaveApplicationStatus.CANCEL_PENDING_L1
             app.current_level = 1
-            app.total_levels = lt.cancel_approval_levels
+            app.total_levels = len(route.steps) if route else lt.cancel_approval_levels
         else:
             app.status = LeaveApplicationStatus.CANCELLED
             await _post_leave_transaction(
@@ -1168,9 +1183,13 @@ async def approve_cancellation(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveApplicationResponse:
-    scope = scope.for_permission("leave.approve")
     app, lt = await _get_app_lt(session, tenant_id, app_id)
-    await authorize_employment(session, tenant_id, scope, app.employment_id)
+    if (
+        await approval_flow.current_instance(session, tenant_id, "LEAVE_CANCELLATION", app.id)
+        is None
+    ):
+        scope = scope.for_permission("leave.approve")
+        await authorize_employment(session, tenant_id, scope, app.employment_id)
     _assert_cancel_pending(app)
 
     await _check_reviewer(session, tenant_id, principal, scope, app, cancel=True)
@@ -1189,6 +1208,9 @@ async def approve_cancellation(
     )
     session.add(action)
 
+    await approval_flow.record_decision(
+        session, tenant_id, "LEAVE_CANCELLATION", app.id, principal, "APPROVE", body.comments
+    )
     if app.current_level >= app.total_levels:
         app.status = LeaveApplicationStatus.CANCELLED
         await _post_leave_transaction(
@@ -1202,13 +1224,7 @@ async def approve_cancellation(
         )
     else:
         app.current_level += 1
-        cancel_statuses = [
-            None,
-            LeaveApplicationStatus.CANCEL_PENDING_L1,
-            LeaveApplicationStatus.CANCEL_PENDING_L2,
-            LeaveApplicationStatus.CANCEL_PENDING_L3,
-        ]
-        app.status = cancel_statuses[app.current_level]
+        app.status = approval_flow.pending_status(app.current_level, cancel=True)
 
     session.add(app)
     await session.flush()
@@ -1224,9 +1240,13 @@ async def reject_cancellation(
     tenant_id: TenantDep,
     session: SessionDep,
 ) -> LeaveApplicationResponse:
-    scope = scope.for_permission("leave.approve")
     app, lt = await _get_app_lt(session, tenant_id, app_id)
-    await authorize_employment(session, tenant_id, scope, app.employment_id)
+    if (
+        await approval_flow.current_instance(session, tenant_id, "LEAVE_CANCELLATION", app.id)
+        is None
+    ):
+        scope = scope.for_permission("leave.approve")
+        await authorize_employment(session, tenant_id, scope, app.employment_id)
     _assert_cancel_pending(app)
 
     await _check_reviewer(session, tenant_id, principal, scope, app, cancel=True)
@@ -1244,6 +1264,9 @@ async def reject_cancellation(
         recorded_at=now_utc(),
     )
     session.add(action)
+    await approval_flow.record_decision(
+        session, tenant_id, "LEAVE_CANCELLATION", app.id, principal, "REJECT", body.comments
+    )
     app.status = LeaveApplicationStatus.APPROVED
     session.add(app)
     await session.flush()
@@ -1574,6 +1597,7 @@ def _assert_pending(app: LeaveApplication) -> None:
         LeaveApplicationStatus.PENDING_L1,
         LeaveApplicationStatus.PENDING_L2,
         LeaveApplicationStatus.PENDING_L3,
+        "PENDING",
     ):
         raise HTTPException(400, f"Application not pending approval (status: {app.status})")
 
@@ -1583,6 +1607,7 @@ def _assert_cancel_pending(app: LeaveApplication) -> None:
         LeaveApplicationStatus.CANCEL_PENDING_L1,
         LeaveApplicationStatus.CANCEL_PENDING_L2,
         LeaveApplicationStatus.CANCEL_PENDING_L3,
+        "CANCEL_PENDING",
     ):
         raise HTTPException(400, f"Application cancellation not pending (status: {app.status})")
 
@@ -1757,6 +1782,10 @@ async def _hold_leave_balance(
 
 
 async def _check_reviewer(session, tenant_id, principal, scope, app, cancel=False):
+    if await approval_flow.require_actor(
+        session, tenant_id, "LEAVE_CANCELLATION" if cancel else "LEAVE", app.id, principal
+    ):
+        return
     history = (
         await session.execute(
             select(LeaveApprovalAction)

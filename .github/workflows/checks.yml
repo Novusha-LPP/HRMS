@@ -43,7 +43,8 @@ jobs:
       # Fails if a model field, table or constraint has no migration (and only then — see
       # src/hrms/alembic_hooks.py for what is deliberately not compared).
       - run: alembic check
-      - run: pytest -q
+      # Coverage below [tool.coverage.report] fail_under fails the build.
+      - run: pytest -q --cov --cov-report=term
       - name: Verify the recent migrations roll back and reapply
         run: |
           alembic downgrade 0016
