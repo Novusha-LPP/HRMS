@@ -21,8 +21,8 @@ groups:
 
       - alert: HrmsHighErrorRate
         expr: |
-          sum(rate(hrms_http_requests_total{job="hrms-api",status=~"5.."}[5m]))
-            / sum(rate(hrms_http_requests_total{job="hrms-api"}[5m])) > 0.01
+          sum by (environment) (rate(hrms_http_requests_total{job="hrms-api",status=~"5.."}[5m]))
+            / sum by (environment) (rate(hrms_http_requests_total{job="hrms-api"}[5m])) > 0.01
         for: 10m
         labels: {severity: critical}
         annotations:
@@ -32,7 +32,7 @@ groups:
       - alert: HrmsSlowResponses
         expr: |
           histogram_quantile(0.95,
-            sum by (le) (rate(hrms_http_request_duration_seconds_bucket{job="hrms-api",route!~"/health.*|/metrics"}[5m]))
+            sum by (le, environment) (rate(hrms_http_request_duration_seconds_bucket{job="hrms-api",route!~"/health.*|/metrics"}[5m]))
           ) > 0.3
         for: 10m
         labels: {severity: warning}
@@ -93,7 +93,7 @@ groups:
 
       # hrms.jobs records every run in job_runs; /metrics exports each job's last success.
       - alert: HrmsJobStale
-        expr: time() - hrms_job_last_success_timestamp_seconds > 26 * 3600
+        expr: time() - hrms_job_last_success_timestamp_seconds{job_name!="mail-delivery"} > 26 * 3600
         for: 15m
         labels: {severity: critical}
         annotations:
@@ -101,9 +101,64 @@ groups:
           runbook_url: "docs/OBSERVABILITY.md#hrmsjobstale"
 
       - alert: HrmsJobNeverRan
-        expr: absent(hrms_job_last_success_timestamp_seconds)
-        for: 26h
+        expr: hrms_job_last_success_timestamp_seconds == 0
+        for: 15m
         labels: {severity: warning}
         annotations:
           summary: "No scheduled job has ever succeeded — is the jobs container running?"
           runbook_url: "docs/OBSERVABILITY.md#hrmsjobstale"
+
+      - alert: HrmsPublicSiteDown
+        expr: probe_success{job="hrms-public"} == 0
+        for: 3m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.instance }} is unreachable from outside (Cloudflare tunnel, DNS or the service behind it)"
+          runbook_url: "docs/OBSERVABILITY.md#hrmspublicsitedown"
+
+  - name: hrms-backups
+    rules:
+      - alert: HrmsBackupStale
+        expr: time() - hrms_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.environment }} has no verified recent database backup"
+      - alert: HrmsBackupMonitoringMissing
+        expr: absent(hrms_backup_last_success_timestamp_seconds)
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "Backup-age exporter is not configured or no longer running"
+      - alert: HrmsOffsiteBackupStale
+        expr: time() - hrms_offsite_backup_last_success_timestamp_seconds > 26 * 3600
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.environment }} off-site backup copy is overdue"
+      - alert: HrmsOffsiteBackupMonitoringMissing
+        expr: absent(hrms_offsite_backup_last_success_timestamp_seconds)
+        for: 15m
+        labels: {severity: critical}
+        annotations:
+          summary: "No off-site backup confirmation is being exported"
+      - alert: HrmsHostMemoryPressure
+        expr: node_memory_MemAvailable_bytes / node_memory_MemTotal_bytes < 0.1
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "HRMS host has less than 10% available memory"
+
+      - alert: HrmsHostDiskPressure
+        expr: node_filesystem_avail_bytes{job="hrms-host",fstype!~"tmpfs|overlay|squashfs"} / node_filesystem_size_bytes{job="hrms-host",fstype!~"tmpfs|overlay|squashfs"} < 0.15
+        for: 10m
+        labels: {severity: critical}
+        annotations:
+          summary: "{{ $labels.mountpoint }} has less than 15% disk space available"
+
+      - alert: HrmsResetDeliveryStale
+        expr: time() - hrms_job_last_success_timestamp_seconds{job_name="mail-delivery"} > 300
+        for: 5m
+        labels: {severity: critical}
+        annotations:
+          summary: "Password recovery delivery worker has not succeeded for five minutes"

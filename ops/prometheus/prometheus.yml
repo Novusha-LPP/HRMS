@@ -14,26 +14,65 @@ alerting:
         - targets: ["127.0.0.1:9093"]
 
 scrape_configs:
+  # TESTING. Until the cut-over (docs/ENVIRONMENTS.md) the testing site is still served by the
+  # dev server on 8015, which has no metrics token (the header is ignored). At the cut-over,
+  # change 8015 to 8115 here and in the hrms-ready job below, then restart Prometheus.
   - job_name: hrms-api
     metrics_path: /metrics
     authorization:
       credentials_file: /etc/prometheus/secrets/testing-metrics-token
     static_configs:
-      - targets: ["127.0.0.1:8115"]
+      - targets: ["127.0.0.1:8015"]
         labels: {environment: testing}
 
   - job_name: hrms-api-production
     metrics_path: /metrics
     authorization:
       credentials_file: /etc/prometheus/secrets/production-metrics-token
-    static_configs:
-      - targets: ["127.0.0.1:8215"]
-        labels: {environment: production}
+    # Opt in only after production exists. Avoid permanent false alarms for an absent stack.
+    file_sd_configs:
+      - files: ["/etc/prometheus/targets/production.yml"]
     # alerts.yml selects job="hrms-api"; keep one job label for both environments.
     relabel_configs:
       - target_label: job
         replacement: hrms-api
 
+  # Readiness (database reachable + migrations at this code's head), probed from this host by
+  # the blackbox exporter. Feeds the HrmsNotReady alert.
+  - job_name: hrms-ready
+    metrics_path: /probe
+    params:
+      module: [http_ready]
+    static_configs:
+      - targets: ["http://127.0.0.1:8015/health/ready"]
+        labels: {environment: testing}
+    relabel_configs: &blackbox
+      - source_labels: [__address__]
+        target_label: __param_target
+      - source_labels: [__param_target]
+        target_label: instance
+      - target_label: __address__
+        replacement: 127.0.0.1:9115
+
+  # What users actually reach: through Cloudflare and the tunnel. Catches a dead tunnel or DNS
+  # problem that the local checks above can't see. Feeds HrmsPublicSiteDown.
+  - job_name: hrms-public
+    metrics_path: /probe
+    params:
+      module: [http_2xx]
+    static_configs:
+      - targets: ["https://testinghrms.alvision.in/", "https://hrmsapi.alvision.in/health/live"]
+        labels: {environment: testing}
+    relabel_configs: *blackbox
+
+  - job_name: hrms-host
+    static_configs:
+      - targets: ["127.0.0.1:9100"]
+
   - job_name: prometheus
     static_configs:
       - targets: ["127.0.0.1:9090"]
+
+  - job_name: blackbox
+    static_configs:
+      - targets: ["127.0.0.1:9115"]

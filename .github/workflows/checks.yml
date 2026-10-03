@@ -1,5 +1,5 @@
 name: HRMS checks
-on: [push, pull_request]
+on: [push, pull_request, workflow_call]
 permissions:
   contents: read
 jobs:
@@ -43,13 +43,10 @@ jobs:
       # Fails if a model field, table or constraint has no migration (and only then — see
       # src/hrms/alembic_hooks.py for what is deliberately not compared).
       - run: alembic check
-      # On the fresh schema, before the tests fill it: a downgrade is checked for being
-      # reversible, not for coping with data (0030 needs decrypt-pii first, by design).
-      - name: Verify the recent migrations roll back and reapply
-        run: |
-          alembic downgrade 0016
-          alembic upgrade head
-          alembic check
+      # Irreversible data migrations retain their schema during a code rollback.
+      # Exercise reversible migrations on a separate database, then a populated upgrade.
+      - name: Verify migration upgrade and rollback boundaries
+        run: python scripts/check_migrations.py
       # Coverage below [tool.coverage.report] fail_under fails the build.
       - run: pytest -q --cov --cov-report=term
   frontend:
@@ -73,8 +70,55 @@ jobs:
   # The deployed stack (deploy/compose.yml) from freshly built images: health, hidden docs,
   # metrics token, CORS, the app role's password, the jobs, the web config and a backup that
   # restores. What testing and production run is exactly what this proves.
+  browser:
+    runs-on: ubuntu-latest
+    services:
+      postgres:
+        image: postgres:16-alpine
+        env:
+          POSTGRES_USER: hrms
+          POSTGRES_PASSWORD: test-password
+          POSTGRES_DB: hrms_browser_test
+        ports: ["5432:5432"]
+        options: >-
+          --health-cmd "pg_isready -U hrms -d hrms_browser_test"
+          --health-interval 5s --health-timeout 5s --health-retries 10
+    env:
+      HRMS_DATABASE_URL: postgresql+asyncpg://hrms:test-password@localhost:5432/hrms_browser_test
+      HRMS_E2E_DATABASE_URL: postgresql+asyncpg://hrms:test-password@localhost:5432/hrms_browser_test
+      HRMS_E2E_APP_DATABASE_URL: postgresql+asyncpg://hrms_app:hrms_app_dev_password@localhost:5432/hrms_browser_test
+      HRMS_E2E_PYTHON: python
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.12"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "24"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - run: pip install uv==0.12.17
+      - run: uv sync --frozen --extra dev
+        working-directory: backend
+      - run: echo "$PWD/backend/.venv/bin" >> "$GITHUB_PATH"
+      - run: alembic upgrade head
+        working-directory: backend
+      - run: npm ci
+        working-directory: frontend
+      - run: npx playwright install --with-deps chromium
+        working-directory: frontend
+      - run: npm run test:e2e
+        working-directory: frontend
+      - uses: actions/upload-artifact@v4
+        if: failure()
+        with:
+          name: browser-failures
+          path: frontend/test-results
+          retention-days: 7
+
   deploy-smoke:
-    needs: [backend, frontend]
+    needs: [backend, frontend, browser]
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4

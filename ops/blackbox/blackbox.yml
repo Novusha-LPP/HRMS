@@ -1,0 +1,18 @@
+# Probe modules for the blackbox exporter (ops/docker-compose.monitoring.yml).
+# Prometheus asks it to fetch a URL; probe_success is 1 only when the module's checks pass.
+modules:
+  # /health/ready on this host: only 200 counts (503 = database down or migrations pending).
+  http_ready:
+    prober: http
+    timeout: 5s
+    http:
+      valid_status_codes: [200]
+      preferred_ip_protocol: ip4
+  # Public URLs through Cloudflare: any 2xx after redirects.
+  http_2xx:
+    prober: http
+    timeout: 10s
+    http:
+      preferred_ip_protocol: ip4
+      follow_redirects: true
+      valid_status_codes: []  # empty = any 2xx

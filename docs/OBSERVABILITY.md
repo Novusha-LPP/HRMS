@@ -73,9 +73,37 @@ and paths that match no route share the single label `unmatched`.
   default) and scrape every container. If you run `--workers N`, set
   `PROMETHEUS_MULTIPROC_DIR` to an empty directory so counters aggregate across workers.
 
-`ops/prometheus/prometheus.yml` is an example scrape configuration, and
-`ops/prometheus/alerts.yml` holds the alert rules below. Import
-`ops/grafana/dashboards/hrms-api.json` into Grafana (it asks for the Prometheus data source).
+### The monitoring stack (`ops/`)
+
+`ops/docker-compose.monitoring.yml` runs five services on the host network, each bound to
+127.0.0.1 only:
+
+| Service | Address | What it does |
+|---|---|---|
+| Prometheus | `127.0.0.1:9090` | Scrapes `/metrics`, evaluates `ops/prometheus/alerts.yml` |
+| Blackbox exporter | `127.0.0.1:9115` | Probes `/health/ready` locally (`hrms-ready`) and both public URLs through Cloudflare (`hrms-public`) |
+| Node exporter | `127.0.0.1:9100` | Host memory and disk (`hrms-host`), plus the backup-age metrics written as text files to `HRMS_MONITORING_TEXTFILE_DIR` (default `/srv/hrms-monitoring`) |
+| Alertmanager | `127.0.0.1:9093` | Groups alerts and sends them to the receiver in `ops/alertmanager/alertmanager.yml` |
+| Grafana | `127.0.0.1:3100` | The *HRMS → HRMS API* dashboard and both data sources are provisioned from `ops/grafana/` |
+
+Secrets, all gitignored: `ops/.env` (`GRAFANA_ADMIN_PASSWORD`, user `admin`),
+`ops/secrets/<environment>-metrics-token` (each equals that environment's
+`HRMS_METRICS_TOKEN`), and `ops/alertmanager/alertmanager.yml` (receiver credentials;
+template: `alertmanager.yml.example`).
+
+```bash
+docker compose -f ops/docker-compose.monitoring.yml up -d
+```
+
+Prometheus reads its configuration only at start-up: after editing `prometheus.yml` or
+`alerts.yml`, run `docker restart hrms-prometheus`. The same goes for Alertmanager and Grafana.
+Grafana dashboards come from the JSON files; edits made in the UI are not saved.
+
+**Targets follow the environments.** Until the cut-over, the testing jobs point at the dev
+server on 8015; the cut-over switches them to 8115. Production is scraped from
+`ops/prometheus/targets/production.yml`, which is an empty list (`[]`) until production
+exists, because a target that isn't running fires HrmsApiDown. To switch it on, copy
+`production.yml.example` over it; Prometheus picks the change up without a restart.
 
 ## Health
 
@@ -104,6 +132,15 @@ Prometheus can't scrape an API instance.
   first; the API recovers on its own once it answers.
 - `"schema": "migrations pending (…)"`: this code expects a newer migration. Run
   `alembic upgrade head` (the deploy should have done this before rolling out).
+
+## HrmsPublicSiteDown
+A public URL fails from outside while the local checks may still pass, so the problem is
+usually between the user and the host.
+1. Is the Cloudflare tunnel process running, and does its ingress point at the right port
+   (docs/ENVIRONMENTS.md)?
+2. Does the local address answer (`curl -sI http://127.0.0.1:<port>/`)? If not, see
+   HrmsApiDown / HrmsNotReady.
+3. Check Cloudflare's status page and the DNS records for both hostnames.
 
 ## HrmsHighErrorRate
 More than 1% of requests end in 5xx.
