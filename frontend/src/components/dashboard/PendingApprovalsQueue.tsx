@@ -140,7 +140,7 @@ export function PendingApprovalsQueue({ items, isLoading, queryKeyToRefresh, emp
       {items.length > 0 && (
         <div className="flex items-center gap-4 border-t border-line px-5 py-2.5">
           {items.some((i) => i.kind === "LEAVE") && <Link to="/leave?tab=approvals" className="link text-xs">Leave queue →</Link>}
-          {items.some((i) => i.kind === "CORRECTION") && <Link to="/corrections?tab=approvals" className="link text-xs">Corrections queue →</Link>}
+          {items.some((i) => i.kind === "CORRECTION") && <Link to="/approvals?type=CORRECTION" className="link text-xs">Corrections queue →</Link>}
         </div>
       )}
     </div>

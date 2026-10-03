@@ -449,7 +449,9 @@ async def decide(
     principal: CurrentUser,
 ):
     if instance_id.startswith("cor_"):
-        return await policy_corrections.decide(session, tenant_id, scope, principal, instance_id, body)
+        return await policy_corrections.decide(
+            session, tenant_id, scope, principal, instance_id, body
+        )
     instance = await instance_get(session, tenant_id, to_uuid(instance_id))
     # Domain routers lock their business record before locking the approval snapshot.
     if not await may_view(session, tenant_id, scope, principal, instance):

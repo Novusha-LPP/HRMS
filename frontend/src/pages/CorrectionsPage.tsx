@@ -57,7 +57,7 @@ export function CorrectionsPage() {
   const closeNew = () => setNewOpen(false);
 
   const cors = useQuery<AttendanceCorrection[]>({
-    queryKey: ["corrections"],
+    queryKey: ["corrections", "mine", user?.employmentId],
     queryFn: () => correctionsApi.list(user!.employmentId!),
     enabled: !!user?.employmentId,
   });
@@ -299,7 +299,6 @@ function CorrectionDetailSheet({ cor, onClose, actorId }: {
             totalLevels={cor.total_levels}
           />
         </div>
-
 
       </div>
     </Sheet>

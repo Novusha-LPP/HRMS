@@ -12,7 +12,7 @@ from hrms.core.authz import authorize_employment, visible_employment_ids
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.modules.approvals.models import ApprovalInstance
 from hrms.modules.corrections import router as corrections
-from hrms.modules.corrections.models import AttendanceCorrectionRequest, CorrectionStatus
+from hrms.modules.corrections.models import AttendanceCorrectionRequest
 from hrms.modules.corrections.schemas import CorrectionApprovalRequest
 
 PENDING = ("PENDING_L1", "PENDING_L2", "PENDING_L3", "PENDING")
@@ -30,15 +30,19 @@ def without_flow():
 
 async def get(session, tenant_id, scope, principal, request_id):
     cor = (
-        await session.execute(
-            select(AttendanceCorrectionRequest).where(
-                AttendanceCorrectionRequest.tenant_id == tenant_id,
-                AttendanceCorrectionRequest.id == to_uuid(request_id),
-                col(AttendanceCorrectionRequest.archived_at).is_(None),
-                without_flow(),
+        (
+            await session.execute(
+                select(AttendanceCorrectionRequest).where(
+                    AttendanceCorrectionRequest.tenant_id == tenant_id,
+                    AttendanceCorrectionRequest.id == to_uuid(request_id),
+                    col(AttendanceCorrectionRequest.archived_at).is_(None),
+                    without_flow(),
+                )
             )
         )
-    ).scalars().first()
+        .scalars()
+        .first()
+    )
     if cor is None:
         raise HTTPException(404, "Policy correction request not found")
     if principal.employment_id != cor.employment_id:
@@ -60,17 +64,21 @@ async def public(session, tenant_id, scope, principal, cor):
             if exc.status_code not in (403, 409):
                 raise
     person = (
-        await session.execute(
-            text("""
+        (
+            await session.execute(
+                text("""
                 SELECT e.employee_number,
                        p.legal_first_name || ' ' || p.legal_last_name AS employee_name
                 FROM employments e JOIN persons p
                   ON p.tenant_id=e.tenant_id AND p.id=e.person_id
                 WHERE e.tenant_id=:tid AND e.id=:eid
             """),
-            dict(tid=tenant_id, eid=cor.employment_id),
+                dict(tid=tenant_id, eid=cor.employment_id),
+            )
         )
-    ).mappings().one()
+        .mappings()
+        .one()
+    )
     history = await corrections._get_history(session, tenant_id, cor.id)
     return dict(
         approval_mode="POLICY",
@@ -131,14 +139,20 @@ async def inbox(session, tenant_id, scope, principal):
         query = query.where(AttendanceCorrectionRequest.employment_id == principal.employment_id)
     else:
         return []
-    rows = (await session.execute(query.order_by(col(AttendanceCorrectionRequest.submitted_at)))).scalars()
+    rows = (
+        await session.execute(query.order_by(col(AttendanceCorrectionRequest.submitted_at)))
+    ).scalars()
     return [await public(session, tenant_id, scope, principal, cor) for cor in rows]
 
 
 async def decide(session, tenant_id, scope, principal, request_id, body):
     # The domain handler locks the record and rechecks all decision authority.
     await get(session, tenant_id, scope, principal, request_id)
-    handler = corrections.approve_correction if body.action == "APPROVE" else corrections.reject_correction
+    handler = (
+        corrections.approve_correction
+        if body.action == "APPROVE"
+        else corrections.reject_correction
+    )
     await handler(
         request_id,
         CorrectionApprovalRequest(action=body.action, comments=body.comments),
