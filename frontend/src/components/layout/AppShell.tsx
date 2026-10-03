@@ -427,7 +427,7 @@ function useInbox() {
         id: c.id, icon: FilePenLine, tone: "bg-info/10 text-info",
         title: "Attendance correction needs approval",
         detail: `${humanize(c.correction_type)} · ${format(new Date(c.work_date), "d MMM")}`,
-        to: "/corrections?tab=approvals", when: c.submitted_at,
+        to: "/approvals?type=CORRECTION", when: c.submitted_at,
       });
     }
   } else {
