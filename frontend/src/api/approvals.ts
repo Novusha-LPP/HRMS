@@ -1,6 +1,6 @@
 import { api } from "./client";
 
-export type RequestType = "LEAVE" | "LEAVE_CANCELLATION" | "CORRECTION" | "OVERTIME";
+export type RequestType = "LEAVE" | "LEAVE_CANCELLATION" | "CORRECTION" | "OVERTIME" | "JOB_REQUISITION";
 export interface ApprovalStep { id?: string; name: string; approver_ids: string[]; approver_source?: "PEOPLE" | "TEAM_LEAD" | "TEAM_PM"; }
 export interface ApprovalFlow {
   id: string; name: string; request_type: RequestType; org_unit_id: string | null;

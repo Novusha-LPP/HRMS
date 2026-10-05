@@ -139,6 +139,11 @@ async def instance_public(session, tenant_id, scope, principal, instance):
             "SELECT work_date,correction_type,requested_punch_in,requested_punch_out,reason "
             "FROM attendance_correction_requests"
         )
+    elif instance.request_type == "JOB_REQUISITION":
+        query = (
+            "SELECT code,title,positions,priority,employment_type,work_mode,target_start_date,"
+            "status AS opening_status FROM job_openings"
+        )
     else:
         query = (
             "SELECT work_date,first_punch_in,last_punch_out,effective_minutes,ot_minutes,ot_status "
@@ -186,6 +191,7 @@ async def instance_public(session, tenant_id, scope, principal, instance):
                 "LEAVE_CANCELLATION": "leave_application",
                 "CORRECTION": "attendance_correction",
                 "OVERTIME": "attendance_day",
+                "JOB_REQUISITION": "job_opening",
             }[instance.request_type],
             instance.request_id,
         ),
@@ -556,6 +562,17 @@ async def decide(
             tenant_id,
             session,
         )
+    elif kind == "JOB_REQUISITION":
+        from hrms.modules.recruitment import router as recruitment
+        from hrms.modules.recruitment import service as recruitment_service
+
+        opening = await recruitment_service.get_opening(
+            session, tenant_id, to_typed_id("job_opening", instance.request_id), lock=True
+        )
+        await recruitment.decide(
+            session, tenant_id, principal, scope, opening, body.action, body.comments
+        )
+        await session.flush()
     elif kind == "CORRECTION":
         from hrms.modules.corrections import router as corrections
         from hrms.modules.corrections.schemas import CorrectionApprovalRequest

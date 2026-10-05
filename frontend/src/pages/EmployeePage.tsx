@@ -645,7 +645,22 @@ function PlacementFields({ legalEntityId, values, onChange, excludeEmploymentId 
   );
 }
 
-function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => void }) {
+export type AddEmployeeInitial = Partial<{
+  first: string; last: string; hireDate: string; entity: string;
+  orgUnitId: string; jobId: string; locationId: string; managerEmploymentId: string;
+}>;
+
+/**
+ * Hire someone. Also opened from Recruitment with the candidate's details filled in;
+ * `onHired` then receives the new employment so the candidate can be linked to it.
+ */
+export function AddEmployeeSheet({ open, onClose, initial, onHired, title = "Add employee" }: {
+  open: boolean;
+  onClose: () => void;
+  initial?: AddEmployeeInitial;
+  onHired?: (employmentId: string) => Promise<unknown> | void;
+  title?: string;
+}) {
   const qc = useQueryClient();
   const toast = useToast();
   const empty = {
@@ -654,6 +669,15 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
     orgUnitId: "", jobId: "", locationId: "", managerEmploymentId: "",
   };
   const [form, setForm] = useState(empty);
+  const initialKey = open ? JSON.stringify(initial ?? {}) : "";
+  const [lastInitialKey, setLastInitialKey] = useState("");
+  if (initialKey !== lastInitialKey) {
+    setLastInitialKey(initialKey);
+    if (open && initial) {
+      const clean = Object.fromEntries(Object.entries(initial).filter(([, v]) => v)) as AddEmployeeInitial;
+      setForm({ ...empty, ...clean });
+    }
+  }
   const set = (k: "first" | "last" | "number" | "hireDate" | "dob" | "gender" | "entity") => (e: { target: { value: string } }) =>
     setForm((f) => ({ ...f, [k]: e.target.value }));
 
@@ -695,7 +719,14 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
       }
       return employment;
     },
-    onSuccess: (emp) => {
+    onSuccess: async (emp) => {
+      if (onHired) {
+        try {
+          await onHired(emp.id);
+        } catch (e) {
+          toast.error("Employee added, but linking them back failed", errorMessage(e));
+        }
+      }
       qc.invalidateQueries({ queryKey: ["employees"] });
       qc.invalidateQueries({ queryKey: ["persons"] });
       qc.invalidateQueries({ queryKey: ["onboarding-cases-all"] });
@@ -717,7 +748,7 @@ function AddEmployeeSheet({ open, onClose }: { open: boolean; onClose: () => voi
     <Sheet
       open={open}
       onClose={onClose}
-      title="Add employee"
+      title={title}
       description="Creates their record and places them in a department."
       footer={
         <>

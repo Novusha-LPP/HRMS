@@ -1,5 +1,6 @@
 import {
   LayoutGrid, NavigationUsers as Users, Clock, NavigationLeave as Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck, BookOpen,
+  Briefcase,
 } from "../icons/ThemeIcons";
 import type { LucideIcon } from "lucide-react";
 import type { UserRole } from "../../context/AuthContext";
@@ -12,6 +13,8 @@ export interface NavItem {
   roles?: UserRole[];
   /** Gate on a fine-grained permission instead of/in addition to a coarse role. */
   permission?: string;
+  /** Visible when the user holds any one of these permissions. */
+  anyPermission?: string[];
   /** Whether this link points to an external destination (e.g. Swagger API docs). */
   external?: boolean;
 }
@@ -45,6 +48,8 @@ export const NAV_SECTIONS: NavSection[] = [
   {
     label: "Talent",
     items: [
+      // Department heads, team leads and PMs get recruitment.request from /auth/me too.
+      { to: "/recruitment", label: "Recruitment", icon: Briefcase, anyPermission: ["recruitment.request", "recruitment.read", "recruitment.manage"] },
       { to: "/onboarding", label: "Onboarding", icon: ClipboardCheck, permission: "onboarding.read" },
     ],
   },
@@ -72,6 +77,7 @@ interface NavUser {
 function canSee(item: NavItem, user: NavUser): boolean {
   if (item.roles && !item.roles.includes(user.role)) return false;
   if (item.permission && !user.permissions.includes(item.permission) && !user.permissions.includes("*")) return false;
+  if (item.anyPermission && !user.permissions.includes("*") && !item.anyPermission.some((p) => user.permissions.includes(p))) return false;
   return true;
 }
 

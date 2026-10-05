@@ -24,6 +24,7 @@ from hrms.modules.org import models as org  # noqa: F401
 from hrms.modules.people import models as people  # noqa: F401
 from hrms.modules.policy import models as policy  # noqa: F401
 from hrms.modules.preferences import models as preferences  # noqa: F401
+from hrms.modules.recruitment import models as recruitment  # noqa: F401
 from hrms.modules.reports import models as reports  # noqa: F401
 from hrms.modules.time import models as time  # noqa: F401
 
@@ -139,6 +140,29 @@ RELATIONS = {
     "entity_change_log": {"changed_by": "user_accounts"},
     "dashboard_layouts": {"user_account_id": "user_accounts"},
     "user_preferences": {"user_account_id": "user_accounts"},
+    "job_openings": {
+        "legal_entity_id": "legal_entities",
+        "org_unit_id": "org_units",
+        "job_id": "jobs",
+        "location_id": "locations",
+        "hiring_manager_employment_id": "employments",
+        "requested_by": "user_accounts",
+        "requester_employment_id": "employments",
+        "approved_by": "user_accounts",
+    },
+    "candidates": {"created_by": "user_accounts"},
+    "job_applications": {
+        "stage_id": "recruitment_stages",
+        "owner_user_id": "user_accounts",
+        "hired_employment_id": "employments",
+        "created_by": "user_accounts",
+    },
+    "recruitment_events": {"actor_user_id": "user_accounts"},
+}
+# The same tenant-aware references, removed together with their parent row.
+CASCADE_RELATIONS = {
+    "job_applications": {"opening_id": "job_openings", "candidate_id": "candidates"},
+    "recruitment_events": {"opening_id": "job_openings", "application_id": "job_applications"},
 }
 # Bookkeeping timestamps are `NOT NULL` in the Python models (they always carry a
 # default_factory) but nullable-with-a-server-default in the database. The
@@ -159,6 +183,11 @@ _STRICT_TABLES = {
     "entity_change_log",
     "dashboard_layouts",
     "user_preferences",
+    "recruitment_stages",
+    "job_openings",
+    "candidates",
+    "job_applications",
+    "recruitment_events",
 }
 _NULLABLE_TIMESTAMPS = {
     "created_at",
@@ -201,6 +230,19 @@ for table_name, references in RELATIONS.items():
                 ["tenant_id", fk_column],
                 [f"{target}.tenant_id", f"{target}.id"],
                 name=f"fk_{table_name}_{fk_column}",
+                deferrable=True,
+                initially="DEFERRED",
+            )
+        )
+for table_name, references in CASCADE_RELATIONS.items():
+    table = metadata.tables[table_name]
+    for fk_column, target in references.items():
+        table.append_constraint(
+            ForeignKeyConstraint(
+                ["tenant_id", fk_column],
+                [f"{target}.tenant_id", f"{target}.id"],
+                name=f"fk_{table_name}_{fk_column}",
+                ondelete="CASCADE",
                 deferrable=True,
                 initially="DEFERRED",
             )

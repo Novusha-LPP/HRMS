@@ -42,8 +42,11 @@ interface FieldDef {
   options?: { value: string; label: string }[];
   maxLength?: number;
   mono?: boolean;
-  /** Applied to every keystroke (upper-casing, stripping spaces…). */
+  /** Applied to every keystroke (upper-casing, stripping spaces…); maxLength counts after it. */
   normalize?: (v: string) => string;
+  /** Format a changed value must match before it can be saved. */
+  pattern?: RegExp;
+  patternMessage?: string;
   /** Masked in view mode until revealed. */
   sensitive?: boolean;
   display?: (v: string) => string;
@@ -72,8 +75,8 @@ const SECTIONS: SectionDef[] = [
     description: "Government-issued identifiers used for statutory compliance",
     icon: CreditCard,
     fields: [
-      { key: "pan_number", label: "PAN", required: true, placeholder: "ABCDE1234F", hint: "10 characters", maxLength: 10, mono: true, normalize: (v) => upper(noSpaces(v)) },
-      { key: "aadhaar_number", label: "Aadhaar number", required: true, placeholder: "1234 5678 9012", hint: "12 digits", maxLength: 12, mono: true, normalize: digits, sensitive: true, display: group4 },
+      { key: "pan_number", label: "PAN", required: true, placeholder: "ABCDE1234F", hint: "10 characters", maxLength: 10, mono: true, normalize: (v) => upper(noSpaces(v)), pattern: /^[A-Z]{5}[0-9]{4}[A-Z]$/, patternMessage: "A PAN is 5 letters, 4 digits and a letter, e.g. ABCDE1234F" },
+      { key: "aadhaar_number", label: "Aadhaar number", required: true, placeholder: "1234 5678 9012", hint: "12 digits", maxLength: 12, mono: true, normalize: digits, sensitive: true, display: group4, pattern: /^\d{12}$/, patternMessage: "An Aadhaar number has exactly 12 digits" },
       { key: "passport_number", label: "Passport number", placeholder: "Optional", mono: true, maxLength: 50, normalize: upper },
       { key: "driving_license", label: "Driving licence", placeholder: "Optional", mono: true, maxLength: 50, normalize: upper },
       { key: "voter_id", label: "Voter ID (EPIC)", placeholder: "Optional", mono: true, maxLength: 50, normalize: upper },
@@ -88,7 +91,7 @@ const SECTIONS: SectionDef[] = [
       { key: "account_holder_name", label: "Account holder name", placeholder: "As printed on the passbook", maxLength: 255 },
       { key: "bank_name", label: "Bank name", required: true, placeholder: "e.g. HDFC Bank", maxLength: 100 },
       { key: "account_number", label: "Account number", required: true, placeholder: "Account number", mono: true, maxLength: 50, normalize: noSpaces, sensitive: true },
-      { key: "ifsc_code", label: "IFSC code", required: true, placeholder: "HDFC0000123", hint: "11 characters", mono: true, maxLength: 11, normalize: (v) => upper(noSpaces(v)) },
+      { key: "ifsc_code", label: "IFSC code", required: true, placeholder: "HDFC0000123", hint: "11 characters", mono: true, maxLength: 11, normalize: (v) => upper(noSpaces(v)), pattern: /^[A-Z]{4}0[A-Z0-9]{6}$/, patternMessage: "An IFSC is 4 letters, a zero and 6 characters, e.g. HDFC0000123" },
       { key: "branch_name", label: "Branch", placeholder: "Branch / city", maxLength: 100 },
     ],
   },
@@ -98,9 +101,9 @@ const SECTIONS: SectionDef[] = [
     description: "Social-security registrations, if you have them",
     icon: Building2,
     fields: [
-      { key: "uan_number", label: "UAN", placeholder: "12-digit UAN", maxLength: 12, mono: true, normalize: digits },
+      { key: "uan_number", label: "UAN", placeholder: "12-digit UAN", maxLength: 12, mono: true, normalize: digits, pattern: /^\d{12}$/, patternMessage: "A UAN has exactly 12 digits" },
       { key: "pf_number", label: "PF member ID", placeholder: "e.g. MH/BAN/12345/678", maxLength: 50, mono: true, normalize: upper },
-      { key: "esi_number", label: "ESI number", placeholder: "17-digit ESI number", maxLength: 17, mono: true, normalize: digits },
+      { key: "esi_number", label: "ESI number", placeholder: "17-digit ESI number", maxLength: 17, mono: true, normalize: digits, pattern: /^(\d{10}|\d{17})$/, patternMessage: "An ESI number has 10 or 17 digits" },
     ],
   },
   {
@@ -208,6 +211,7 @@ export function KycSection({ isSelf = false, employmentId, employeeName, isHR = 
   const canVerify = isHR && (perms.includes("*") || perms.includes("kyc.verify"));
 
   const [editing, setEditing] = useState<SectionId | null>(null);
+  const [invalidFields, setInvalidFields] = useState<FieldKey[]>([]);
   const [form, setForm] = useState<Record<FieldKey, string>>({} as Record<FieldKey, string>);
 
   const [previewDoc, setPreviewDoc] = useState<KycDocument | null>(null);
@@ -320,16 +324,25 @@ export function KycSection({ isSelf = false, employmentId, employeeName, isHR = 
   const resetsVerification = kyc.status === "VERIFIED" || kyc.status === "SUBMITTED";
 
   const startEdit = (section: SectionDef) => {
+    setInvalidFields([]);
     setForm(formFrom(kyc, section.fields));
     setEditing(section.id);
   };
 
   const saveSection = (section: SectionDef) => {
-    // Only send what changed; blanks clear the field.
+    // Only send what changed; blanks clear the field. Changed values must be well-formed.
     const payload: KycRecordUpdatePayload = {};
+    const invalid: FieldKey[] = [];
     for (const f of section.fields) {
       const next = (form[f.key] ?? "").trim();
-      if (next !== (kyc[f.key] ?? "")) payload[f.key] = next || null;
+      if (next === (kyc[f.key] ?? "")) continue;
+      if (next && f.pattern && !f.pattern.test(next)) invalid.push(f.key);
+      payload[f.key] = next || null;
+    }
+    setInvalidFields(invalid);
+    if (invalid.length) {
+      toast.error("Check the highlighted fields", `${invalid.length === 1 ? "One value isn’t" : "Some values aren’t"} in the expected format.`);
+      return;
     }
     if (Object.keys(payload).length === 0) {
       setEditing(null);
@@ -460,6 +473,7 @@ export function KycSection({ isSelf = false, employmentId, employeeName, isHR = 
                     key={f.key}
                     field={f}
                     value={form[f.key] ?? ""}
+                    error={invalidFields.includes(f.key) && !!f.pattern && !f.pattern.test((form[f.key] ?? "").trim()) ? f.patternMessage : undefined}
                     onChange={(v) => setForm((prev) => ({ ...prev, [f.key]: v }))}
                     autoFocus={f === section.fields[0]}
                     action={f.key === "permanent_address" ? (
@@ -707,9 +721,10 @@ function FieldValue({ field, value }: { field: FieldDef; value: string | null })
   );
 }
 
-function FieldInput({ field, value, onChange, autoFocus, action }: {
+function FieldInput({ field, value, onChange, autoFocus, action, error }: {
   field: FieldDef;
   value: string;
+  error?: string;
   onChange: (v: string) => void;
   autoFocus?: boolean;
   action?: ReactNode;
@@ -719,11 +734,17 @@ function FieldInput({ field, value, onChange, autoFocus, action }: {
     id,
     value,
     autoFocus,
-    maxLength: field.maxLength,
+    // With a normalizer the limit applies after it, so a pasted "1234 5678 9012" keeps all 12 digits.
+    maxLength: field.normalize ? undefined : field.maxLength,
     placeholder: field.placeholder,
-    className: `input ${field.mono ? "font-mono tracking-wide" : ""}`,
+    "aria-invalid": error ? true : undefined,
+    "aria-describedby": error ? `${id}-error` : undefined,
+    className: `input ${field.mono ? "font-mono tracking-wide" : ""} ${error ? "border-danger focus:border-danger focus:ring-danger/15" : ""}`,
   };
-  const change = (v: string) => onChange(field.normalize ? field.normalize(v) : v);
+  const change = (v: string) => {
+    const next = field.normalize ? field.normalize(v) : v;
+    onChange(field.maxLength ? next.slice(0, field.maxLength) : next);
+  };
   return (
     <div className="min-w-0">
       <div className="mb-1.5 flex items-center justify-between gap-2">
@@ -743,7 +764,11 @@ function FieldInput({ field, value, onChange, autoFocus, action }: {
       ) : (
         <input {...common} type={field.type === "tel" ? "tel" : "text"} onChange={(e) => change(e.target.value)} />
       )}
-      {field.hint && <p className="mt-1 text-[11px] text-fg-subtle">{field.hint}</p>}
+      {error ? (
+        <p id={`${id}-error`} className="mt-1 text-[11px] font-medium text-danger" role="alert">{error}</p>
+      ) : field.hint ? (
+        <p className="mt-1 text-[11px] text-fg-subtle">{field.hint}</p>
+      ) : null}
     </div>
   );
 }

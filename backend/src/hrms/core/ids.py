@@ -70,6 +70,12 @@ _PREFIX_MAP: dict[str, str] = {
     # KYC
     "kyc_record": "kyc",
     "kyc_document": "kdoc",
+    # Recruitment
+    "job_opening": "jopn",
+    "recruitment_stage": "rstg",
+    "candidate": "cand",
+    "job_application": "japp",
+    "recruitment_event": "revt",
     # Change audit
     "entity_change": "chg",
 }
