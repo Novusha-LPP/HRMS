@@ -14,7 +14,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, status
 from sqlalchemy import func, text
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.authn import CurrentUser
 from hrms.core.authz import ScopeDep, require_permission
@@ -101,7 +101,7 @@ async def _entity_history(session, tenant_id: UUID, entity_type: str, entity_id:
         .where(EntityChangeLog.tenant_id == tenant_id)
         .where(EntityChangeLog.entity_type == entity_type)
         .where(EntityChangeLog.entity_id == entity_id)
-        .order_by(EntityChangeLog.changed_at.desc())
+        .order_by(col(EntityChangeLog.changed_at).desc())
     )
     return await _history_response(session, tenant_id, list(rows.scalars()))
 
@@ -183,7 +183,7 @@ async def _get_legal_entity(session, tenant_id: UUID, entity_id: str) -> LegalEn
         select(LegalEntity)
         .where(LegalEntity.tenant_id == tenant_id)
         .where(LegalEntity.id == uid)
-        .where(LegalEntity.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(LegalEntity.archived_at).is_(None))
     )
     entity = row.scalars().first()
     if not entity:
@@ -261,13 +261,13 @@ async def list_legal_entities(
     q = (
         select(LegalEntity)
         .where(LegalEntity.tenant_id == tenant_id)
-        .where(LegalEntity.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(LegalEntity.archived_at).is_(None))
     )
     ids = _entity_scope_ids(scope)
     if ids is not None:
         if not ids:
             return []
-        q = q.where(LegalEntity.id.in_(ids))
+        q = q.where(col(LegalEntity.id).in_(ids))
     rows = await session.execute(q)
     return [_le_response(r) for r in rows.scalars()]
 
@@ -361,7 +361,7 @@ async def _get_location(session, tenant_id: UUID, location_id: str) -> Location:
         select(Location)
         .where(Location.tenant_id == tenant_id)
         .where(Location.id == uid)
-        .where(Location.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(Location.archived_at).is_(None))
     )
     loc = row.scalars().first()
     if not loc:
@@ -436,11 +436,12 @@ async def list_locations(
     ids = _entity_scope_ids(scope)
     if ids is not None and not ids:
         return []
+    rows = None
     if ids is None:
         rows = await session.execute(
             select(Location)
             .where(Location.tenant_id == tenant_id)
-            .where(Location.archived_at.is_(None))  # type: ignore[attr-defined]
+            .where(col(Location.archived_at).is_(None))
         )
     else:
         # Tenant-wide locations (legal_entity_id IS NULL) stay visible to everyone.
@@ -454,11 +455,11 @@ async def list_locations(
         )
         loc_ids = [r[0] for r in result]
         rows = (
-            await session.execute(select(Location).where(Location.id.in_(loc_ids)))
+            await session.execute(select(Location).where(col(Location.id).in_(loc_ids)))
             if loc_ids
             else None
         )
-    scalars = rows.scalars() if rows is not None else []
+    scalars: list[Location] = list(rows.scalars()) if rows is not None else []
     return [_loc_response(r) for r in scalars]
 
 
@@ -501,8 +502,8 @@ async def create_org_unit(
             select(OrgUnit).where(
                 OrgUnit.tenant_id == tenant_id,
                 OrgUnit.type == "DEPARTMENT_TEMPLATE",
-                OrgUnit.archived_at.is_(None),  # type: ignore[attr-defined]
-                func.lower(OrgUnit.name) == body.name.strip().lower(),  # type: ignore[attr-defined]
+                col(OrgUnit.archived_at).is_(None),
+                func.lower(col(OrgUnit.name)) == body.name.strip().lower(),
             )
         )
         if duplicate.scalars().first():
@@ -611,7 +612,7 @@ async def _get_org_unit(session, tenant_id: UUID, unit_id: str) -> OrgUnit:
         select(OrgUnit)
         .where(OrgUnit.tenant_id == tenant_id)
         .where(OrgUnit.id == uid)
-        .where(OrgUnit.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(OrgUnit.archived_at).is_(None))
     )
     unit = row.scalars().first()
     if not unit:
@@ -653,7 +654,7 @@ async def assign_departments(
                 OrgUnit.tenant_id == tenant_id,
                 OrgUnit.legal_entity_id == entity_uuid,
                 OrgUnit.department_template_id == template.id,
-                OrgUnit.archived_at.is_(None),  # type: ignore[attr-defined]
+                col(OrgUnit.archived_at).is_(None),
             )
         )
         existing = result.scalars().first()
@@ -727,8 +728,8 @@ async def update_org_unit(
                     OrgUnit.tenant_id == tenant_id,
                     OrgUnit.type == "DEPARTMENT_TEMPLATE",
                     OrgUnit.id != unit.id,
-                    OrgUnit.archived_at.is_(None),  # type: ignore[attr-defined]
-                    func.lower(OrgUnit.name) == name.lower(),  # type: ignore[attr-defined]
+                    col(OrgUnit.archived_at).is_(None),
+                    func.lower(col(OrgUnit.name)) == name.lower(),
                 )
             )
             if duplicate.scalars().first():
@@ -760,7 +761,7 @@ async def update_org_unit(
             select(OrgUnit).where(
                 OrgUnit.tenant_id == tenant_id,
                 OrgUnit.department_template_id == unit.id,
-                OrgUnit.archived_at.is_(None),  # type: ignore[attr-defined]
+                col(OrgUnit.archived_at).is_(None),
             )
         )
         updates = {k: v for k, v in fields.items() if k in ("name", "code")}
@@ -817,9 +818,9 @@ async def list_org_units(
         rows = await session.execute(
             select(OrgUnit)
             .where(OrgUnit.tenant_id == tenant_id)
-            .where(OrgUnit.archived_at.is_(None))  # type: ignore[attr-defined]
+            .where(col(OrgUnit.archived_at).is_(None))
         )
-        scalars = rows.scalars()
+        scalars = list(rows.scalars())
     else:
         result = await session.execute(
             text("""
@@ -831,7 +832,11 @@ async def list_org_units(
         )
         unit_ids = [r[0] for r in result]
         scalars = (
-            (await session.execute(select(OrgUnit).where(OrgUnit.id.in_(unit_ids)))).scalars()
+            list(
+                (
+                    await session.execute(select(OrgUnit).where(col(OrgUnit.id).in_(unit_ids)))
+                ).scalars()
+            )
             if unit_ids
             else []
         )
@@ -894,7 +899,7 @@ async def _get_job(session, tenant_id: UUID, job_id: str) -> Job:
         select(Job)
         .where(Job.tenant_id == tenant_id)
         .where(Job.id == uid)
-        .where(Job.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(Job.archived_at).is_(None))
     )
     job = row.scalars().first()
     if not job:
@@ -908,7 +913,7 @@ async def list_jobs(
     session: SessionDep,
 ) -> list[JobResponse]:
     rows = await session.execute(
-        select(Job).where(Job.tenant_id == tenant_id).where(Job.archived_at.is_(None))  # type: ignore[attr-defined]
+        select(Job).where(col(Job.tenant_id) == tenant_id).where(col(Job.archived_at).is_(None))
     )
     return [_job_response(r) for r in rows.scalars()]
 
@@ -981,9 +986,9 @@ async def list_employee_id_schemes(
 ) -> list[EmployeeIdSchemeResponse]:
     q = (
         select(EmployeeIdScheme, LegalEntity.name)
-        .outerjoin(LegalEntity, LegalEntity.id == EmployeeIdScheme.legal_entity_id)
+        .outerjoin(LegalEntity, col(LegalEntity.id) == col(EmployeeIdScheme.legal_entity_id))
         .where(EmployeeIdScheme.tenant_id == tenant_id)
-        .where(EmployeeIdScheme.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(EmployeeIdScheme.archived_at).is_(None))
     )
     ids = _entity_scope_ids(scope)
     if ids is not None:
@@ -993,8 +998,8 @@ async def list_employee_id_schemes(
         # tenant-wide one (legal_entity_id IS NULL) if it exists — they're
         # affected by it even though they can't create it.
         q = q.where(
-            (EmployeeIdScheme.legal_entity_id.in_(ids))
-            | (EmployeeIdScheme.legal_entity_id.is_(None))
+            (col(EmployeeIdScheme.legal_entity_id).in_(ids))
+            | (col(EmployeeIdScheme.legal_entity_id).is_(None))
         )
     rows = await session.execute(q)
     return [_eis_response(s, name) for s, name in rows]
@@ -1038,7 +1043,7 @@ async def create_employee_id_scheme(
     existing = await session.execute(
         select(EmployeeIdScheme)
         .where(EmployeeIdScheme.tenant_id == tenant_id)
-        .where(EmployeeIdScheme.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(EmployeeIdScheme.archived_at).is_(None))
         .where(EmployeeIdScheme.legal_entity_id == le_uuid)
     )
     if existing.scalars().first():
@@ -1137,7 +1142,7 @@ async def _get_eis(session, tenant_id, scheme_id: str) -> tuple[EmployeeIdScheme
     uid = to_uuid(scheme_id)
     row = await session.execute(
         select(EmployeeIdScheme, LegalEntity.name)
-        .outerjoin(LegalEntity, LegalEntity.id == EmployeeIdScheme.legal_entity_id)
+        .outerjoin(LegalEntity, col(LegalEntity.id) == col(EmployeeIdScheme.legal_entity_id))
         .where(EmployeeIdScheme.tenant_id == tenant_id)
         .where(EmployeeIdScheme.id == uid)
     )

@@ -29,7 +29,9 @@ logger = logging.getLogger(__name__)
 # A user who must change their password (freshly imported, or reset by an
 # admin) may only reach these until they have. Everything else is refused
 # server-side — the frontend redirect is a convenience, not the control.
-PASSWORD_CHANGE_EXEMPT_PATHS = frozenset({"/v1/auth/change-password", "/v1/auth/me"})
+PASSWORD_CHANGE_EXEMPT_PATHS = frozenset(
+    {"/v1/auth/change-password", "/v1/auth/me", "/v1/auth/logout"}
+)
 
 # session.info key: (user_account_id, live role grants) read by get_session in the same
 # round trip as the account checks, so core/authz.resolve_scope needn't query them again.
@@ -73,7 +75,7 @@ async def get_session(
         # Everything "may this token still act?" needs, in one round trip:
         # - Suspension/archival is checked here too, not just at login — a platform admin
         #   suspending a tenant mid-session cuts off its already-issued tokens on their very
-        #   next request, not after an up-to-8h JWT. (tenants has no RLS.)
+        #   next request, not after token expiry. (tenants has no RLS.)
         # - The account and its employment are read live, so a separation locks the person
         #   out from the moment it's applied and a rehire lets them back in, with no account
         #   flag to keep in sync.
@@ -86,7 +88,7 @@ async def get_session(
                     text("""
             SELECT t.status AS tenant_status, t.archived_at AS tenant_archived_at,
                    ua.id IS NOT NULL AS account_found, ua.status, ua.employment_id,
-                   ua.must_change_password, ua.token_epoch, e.employment_state,
+                   ua.must_change_password, ua.token_epoch, ua.mfa_secret, e.employment_state,
                    EXISTS (
                        SELECT 1 FROM personnel_actions pa
                        WHERE pa.tenant_id = t.id AND pa.status = 'SCHEDULED'
@@ -136,7 +138,19 @@ async def get_session(
                 "You must change your password before continuing",
                 code="PASSWORD_CHANGE_REQUIRED",
             )
+        from hrms.core.config import settings
+        from hrms.core.mfa import EXEMPT_PATHS, PRIVILEGED_ROLES
+
         grants = auth["grants"]
+        parsed_grants = json.loads(grants) if isinstance(grants, str) else grants
+        required = bool(auth["mfa_secret"]) or (
+            settings.privileged_mfa_required
+            and any(g[0] in PRIVILEGED_ROLES for g in parsed_grants)
+        )
+        if required and not principal.mfa_verified and request.url.path not in EXEMPT_PATHS:
+            raise CodedHTTPException(
+                403, "Set up your authenticator and sign in again", code="MFA_SETUP_REQUIRED"
+            )
         session.info[GRANTS_KEY] = (
             principal.user_account_id,
             [
@@ -147,12 +161,17 @@ async def get_session(
         try:
             if auth["actions_due"]:
                 await _apply_scheduled_actions(session, tenant_id)
-                state = (await session.execute(text("""
+                state = (
+                    await session.execute(
+                        text("""
                     SELECT ua.status, e.employment_state
                     FROM user_accounts ua LEFT JOIN employments e
                       ON e.tenant_id=ua.tenant_id AND e.id=ua.employment_id
                     WHERE ua.tenant_id=:tid AND ua.id=:uid
-                """), {"tid": tenant_id, "uid": principal.user_account_id})).first()
+                """),
+                        {"tid": tenant_id, "uid": principal.user_account_id},
+                    )
+                ).first()
                 if not state or state.status != "ACTIVE" or state.employment_state == "SEPARATED":
                     raise HTTPException(401, "This account is no longer active; sign in again")
             yield session

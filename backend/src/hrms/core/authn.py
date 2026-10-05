@@ -12,6 +12,7 @@ from uuid import UUID
 
 from fastapi import Depends, HTTPException, Request, status
 
+from hrms.core.browser_sessions import token_from_request
 from hrms.core.logging import set_current_tenant_id, set_current_user_id
 from hrms.core.security import TokenError, decode_access_token, decode_platform_token
 
@@ -26,6 +27,7 @@ class Principal:
     # on tokens from before it existed = 0). A password change or reset bumps
     # the account's epoch, ending every session — see core/database.get_session.
     token_epoch: int = 0
+    mfa_verified: bool = False
 
 
 def _unauthorized(detail: str) -> HTTPException:
@@ -37,11 +39,7 @@ def _unauthorized(detail: str) -> HTTPException:
 
 
 async def get_current_principal(request: Request) -> Principal:
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise _unauthorized("Missing bearer token")
-
-    token = auth_header[len("Bearer ") :].strip()
+    token = token_from_request(request)
     if not token:
         raise _unauthorized("Missing bearer token")
 
@@ -69,6 +67,7 @@ async def get_current_principal(request: Request) -> Principal:
         employment_id=employment_id,
         role_names=frozenset(claims.get("roles") or []),
         token_epoch=token_epoch,
+        mfa_verified=claims.get("mfa") is True,
     )
     request.state.principal = principal
     request.state.tenant_id = tenant_id
@@ -84,6 +83,7 @@ CurrentUser = Annotated[Principal, Depends(get_current_principal)]
 class PlatformPrincipal:
     admin_id: UUID
     token_epoch: int = 0
+    mfa_verified: bool = False
 
 
 async def get_current_platform_principal(request: Request) -> PlatformPrincipal:
@@ -94,11 +94,7 @@ async def get_current_platform_principal(request: Request) -> PlatformPrincipal:
     platform-only route (wrong `typ`, rejected outright) and a platform token
     can never satisfy a tenant-scoped route the same way.
     """
-    auth_header = request.headers.get("Authorization", "")
-    if not auth_header.startswith("Bearer "):
-        raise _unauthorized("Missing bearer token")
-
-    token = auth_header[len("Bearer ") :].strip()
+    token = token_from_request(request, platform=True)
     if not token:
         raise _unauthorized("Missing bearer token")
 
@@ -114,7 +110,8 @@ async def get_current_platform_principal(request: Request) -> PlatformPrincipal:
         raise _unauthorized("Malformed token") from exc
 
     set_current_user_id(str(admin_id))
-    return PlatformPrincipal(admin_id=admin_id, token_epoch=token_epoch)
+    return PlatformPrincipal(admin_id=admin_id, token_epoch=token_epoch,
+                             mfa_verified=claims.get("mfa") is True)
 
 
 CurrentPlatformAdmin = Annotated[PlatformPrincipal, Depends(get_current_platform_principal)]

@@ -71,26 +71,6 @@ warn_redundant_casts = true
 module = ["uuid_extensions", "boto3", "boto3.*", "botocore", "botocore.*"]
 ignore_missing_imports = true
 
-# Legacy: SQLModel declares columns as their Python types (`date`, `datetime | None`), so every
-# `.desc()`, `.is_(None)`, `<=` on a column is a false positive here — hence the many
-# `# type: ignore`s elsewhere. Not yet checked.
-[[tool.mypy.overrides]]
-module = [
-    "hrms.modules.org.router",
-    "hrms.modules.policy.router",
-    "hrms.modules.policy.engine",
-    "hrms.modules.people.router",
-    "hrms.modules.leave.router",
-    "hrms.modules.reports.router",
-    "hrms.modules.corrections.router",
-    "hrms.modules.platform.router",
-    "hrms.modules.time.router",
-    "hrms.modules.time.service",
-    "hrms.modules.onboarding.router",
-    "hrms.modules.kyc.router",
-]
-ignore_errors = true
-
 [tool.pytest.ini_options]
 asyncio_mode = "auto"
 testpaths = ["tests"]

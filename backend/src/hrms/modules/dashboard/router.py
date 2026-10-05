@@ -18,7 +18,7 @@ filtered to the legal entities / employments the caller's scope covers.
 
 import json
 from datetime import UTC, date, datetime, timedelta
-from typing import Literal
+from typing import Any, Literal
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
@@ -389,6 +389,7 @@ async def hr_dashboard(
             raise HTTPException(422, f"Unknown dashboard section(s): {', '.join(sorted(unknown))}")
     today = business_today()
     month_start = today.replace(day=1)
+    prev_month_start = (month_start - timedelta(days=1)).replace(day=1)
     emp_clause, emp_params = scope.employment_filter_sql("e")
     focus = to_uuid(legal_entity_id) if legal_entity_id else None
     if focus is not None:
@@ -410,37 +411,107 @@ async def hr_dashboard(
             computed[name] = await compute()
         return computed[name]
 
-    async def _headcount():
-        hc = await one(f"""
-            SELECT COUNT(*) AS total,
-                   COUNT(*) FILTER (WHERE e.employment_state = 'ACTIVE') AS active,
-                   COUNT(*) FILTER (WHERE e.employment_state = 'PROBATION') AS probation,
-                   COUNT(*) FILTER (WHERE e.employment_state = 'NOTICE') AS on_notice
+    async def _emp_aggregates():
+        return await one(
+            f"""
+            SELECT
+                COUNT(*) FILTER (WHERE e.archived_at IS NULL AND e.employment_state !=
+                'SEPARATED') AS total,
+                COUNT(*) FILTER (WHERE e.archived_at IS NULL AND e.employment_state =
+                'ACTIVE') AS active,
+                COUNT(*) FILTER (WHERE e.archived_at IS NULL AND e.employment_state =
+                'PROBATION') AS probation,
+                COUNT(*) FILTER (WHERE e.archived_at IS NULL AND e.employment_state =
+                'PROBATION') AS on_probation,
+                COUNT(*) FILTER (WHERE e.archived_at IS NULL AND e.employment_state =
+                'NOTICE') AS on_notice,
+                COUNT(*) FILTER (WHERE e.archived_at IS NULL AND e.employment_state =
+                'ON_HOLD') AS on_hold,
+                COUNT(*) FILTER (WHERE e.employment_state = 'SEPARATED') AS separated_count,
+                COUNT(*) FILTER (WHERE e.hire_date >= CAST(:month_start AS date)) AS new_hires,
+                COUNT(*) FILTER (WHERE e.archived_at IS NULL
+                                   AND e.hire_date < CAST(:month_start AS date)
+                                   AND (e.separation_date IS NULL OR e.separation_date >=
+                                   CAST(:month_start AS date)))
+                    AS headcount_last_month,
+                COUNT(*) FILTER (WHERE e.hire_date >= CAST(:prev AS date)
+                                   AND e.hire_date < CAST(:month_start AS date))
+                    AS new_hires_last_month,
+                COUNT(*) FILTER (WHERE e.separation_date IS NOT NULL
+                                   AND e.separation_date <= CAST(:today AS date)
+                                   AND e.separation_date >= CAST(:month_start AS date))
+                    AS exits_this_month,
+                COUNT(*) FILTER (WHERE e.separation_date IS NOT NULL
+                                   AND e.separation_date <= CAST(:today AS date)
+                                   AND e.separation_date >= CAST(:prev AS date)
+                                   AND e.separation_date < CAST(:month_start AS date))
+                    AS exits_last_month,
+                COUNT(*) FILTER (WHERE e.separation_date IS NOT NULL
+                                   AND e.separation_date <= CAST(:today AS date)
+                                   AND e.separation_date > CAST(:today AS date) - 90)
+                    AS exits_last_90_days,
+                COUNT(*) FILTER (WHERE e.separation_date IS NOT NULL
+                                   AND e.separation_date <= CAST(:today AS date)
+                                   AND e.separation_date > CAST(:today AS date) - 365)
+                    AS exits_last_12_months,
+                AVG(CASE WHEN e.employment_state != 'SEPARATED' AND e.hire_date IS NOT NULL
+                         THEN (CURRENT_DATE - e.hire_date) END) / 365.25 AS avg_years,
+                COUNT(*) FILTER (WHERE e.employment_state != 'SEPARATED' AND e.hire_date IS NOT NULL
+                                   AND CURRENT_DATE - e.hire_date >= 3652.5) AS over_10_years,
+                COUNT(*) FILTER (WHERE e.employment_state != 'SEPARATED' AND e.hire_date IS NOT NULL
+                                   AND CURRENT_DATE - e.hire_date >= 1826.25
+                                   AND CURRENT_DATE - e.hire_date < 3652.5) AS tenure_5_to_10,
+                COUNT(*) FILTER (WHERE e.employment_state != 'SEPARATED' AND e.hire_date IS NOT NULL
+                                   AND CURRENT_DATE - e.hire_date < 1826.25) AS tenure_under_5
             FROM employments e
-            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.archived_at IS NULL
-              AND e.employment_state != 'SEPARATED'
-              {emp_clause}
-        """)
-
-        new_hire_count = (
-            await one(
-                f"""
-            SELECT COUNT(*) AS n FROM employments e
-            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.hire_date >= CAST(:month_start AS date)
+            WHERE e.tenant_id = CAST(:tid AS uuid)
               {emp_clause}
         """,
-                month_start=month_start,
-            )
-        )["n"]
+            month_start=month_start,
+            prev=prev_month_start,
+            today=today,
+        )
 
+    async def _action_counts():
+        return await one(f"""
+            SELECT
+                (SELECT COUNT(*) FROM personnel_actions pa
+                 JOIN employments e ON e.tenant_id = pa.tenant_id AND e.id = pa.employment_id
+                 WHERE pa.tenant_id = CAST(:tid AS uuid) AND pa.status = 'PENDING_APPROVAL'
+                 {emp_clause}) AS pending_pa,
+                (SELECT COUNT(*) FROM personnel_actions pa
+                 JOIN employments e ON e.tenant_id = pa.tenant_id AND e.id = pa.employment_id
+                 WHERE pa.tenant_id = CAST(:tid AS uuid) AND pa.status = 'FAILED'
+                 {emp_clause}) AS failed_pa,
+                (SELECT COUNT(*) FROM leave_applications la
+                 JOIN employments e ON e.tenant_id = la.tenant_id AND e.id = la.employment_id
+                 WHERE la.tenant_id = CAST(:tid AS uuid)
+                   AND (la.status LIKE 'PENDING%' OR la.status LIKE 'CANCEL_PENDING%')
+                   {emp_clause}) AS pending_leave,
+                (SELECT COUNT(*) FROM attendance_correction_requests c
+                 JOIN employments e ON e.tenant_id = c.tenant_id AND e.id = c.employment_id
+                 WHERE c.tenant_id = CAST(:tid AS uuid) AND c.status LIKE 'PENDING%'
+                 {emp_clause}) AS pending_corrections,
+                (SELECT COUNT(*) FROM onboarding_cases oc
+                 JOIN employments e ON e.tenant_id = oc.tenant_id AND e.id = oc.employment_id
+                 WHERE oc.tenant_id = CAST(:tid AS uuid) AND oc.status = 'IN_PROGRESS'
+                 {emp_clause}) AS open_ob,
+                (SELECT COUNT(*) FROM attendance_days ad
+                 JOIN employments e ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
+                 WHERE ad.tenant_id = CAST(:tid AS uuid) AND ad.ot_status = 'PENDING'
+                 {emp_clause}) AS pending_ot
+        """)
+
+    async def _headcount():
+        aggs = await once("emp_aggs", _emp_aggregates)
         return {
             "headcount": {
-                "total": hc["total"],
-                "active": hc["active"],
-                "probation": hc["probation"],
-                "on_notice": hc["on_notice"],
+                "total": aggs["total"],
+                "active": aggs["active"],
+                "probation": aggs["probation"],
+                "on_notice": aggs["on_notice"],
             },
-            "month": {"month": month_start.strftime("%B %Y"), "new_hires": new_hire_count},
+            "month": {"month": month_start.strftime("%B %Y"), "new_hires": aggs["new_hires"]},
         }
 
     async def _today():
@@ -484,50 +555,16 @@ async def hr_dashboard(
         return kyc
 
     async def _actions():
-        pending_pa_count = (
-            await one(f"""
-            SELECT COUNT(*) AS n FROM personnel_actions pa
-            JOIN employments e ON e.tenant_id = pa.tenant_id AND e.id = pa.employment_id
-            WHERE pa.tenant_id = CAST(:tid AS uuid) AND pa.status = 'PENDING_APPROVAL'
-              {emp_clause}
-        """)
-        )["n"]
-
-        pending_leave_count = (
-            await one(f"""
-            SELECT COUNT(*) AS n FROM leave_applications la
-            JOIN employments e ON e.tenant_id = la.tenant_id AND e.id = la.employment_id
-            WHERE la.tenant_id = CAST(:tid AS uuid)
-              AND (la.status LIKE 'PENDING%' OR la.status LIKE 'CANCEL_PENDING%')
-              {emp_clause}
-        """)
-        )["n"]
-
-        pending_correction_count = (
-            await one(f"""
-            SELECT COUNT(*) AS n FROM attendance_correction_requests c
-            JOIN employments e ON e.tenant_id = c.tenant_id AND e.id = c.employment_id
-            WHERE c.tenant_id = CAST(:tid AS uuid) AND c.status LIKE 'PENDING%'
-              {emp_clause}
-        """)
-        )["n"]
-
-        open_ob_count = (
-            await one(f"""
-            SELECT COUNT(*) AS n FROM onboarding_cases oc
-            JOIN employments e ON e.tenant_id = oc.tenant_id AND e.id = oc.employment_id
-            WHERE oc.tenant_id = CAST(:tid AS uuid) AND oc.status = 'IN_PROGRESS'
-              {emp_clause}
-        """)
-        )["n"]
-
+        counts = await once("action_counts", _action_counts)
         kyc = await once("kyc", _kyc)
         return {
-            "pending_approvals": pending_pa_count + pending_leave_count + pending_correction_count,
-            "pending_leave": pending_leave_count,
-            "pending_corrections": pending_correction_count,
-            "pending_personnel_actions": pending_pa_count,
-            "open_onboarding": open_ob_count,
+            "pending_approvals": (
+                counts["pending_pa"] + counts["pending_leave"] + counts["pending_corrections"]
+            ),
+            "pending_leave": counts["pending_leave"],
+            "pending_corrections": counts["pending_corrections"],
+            "pending_personnel_actions": counts["pending_pa"],
+            "open_onboarding": counts["open_ob"],
             "pending_kyc": kyc["submitted"],
         }
 
@@ -739,19 +776,13 @@ async def hr_dashboard(
         return recent_joiners
 
     async def _tenure_row():
-        tenure = await one(f"""
-            SELECT AVG(CURRENT_DATE - e.hire_date) / 365.25 AS avg_years,
-                   COUNT(*) FILTER (WHERE CURRENT_DATE - e.hire_date >= 3652.5) AS over_10_years,
-                   COUNT(*) FILTER (WHERE CURRENT_DATE - e.hire_date >= 1826.25
-                                      AND CURRENT_DATE - e.hire_date < 3652.5) AS tenure_5_to_10,
-                   COUNT(*) FILTER (WHERE CURRENT_DATE - e.hire_date < 1826.25) AS tenure_under_5
-            FROM employments e
-            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state != 'SEPARATED'
-              AND e.hire_date IS NOT NULL
-              {emp_clause}
-        """)
-
-        return tenure
+        aggs = await once("emp_aggs", _emp_aggregates)
+        return {
+            "avg_years": aggs["avg_years"],
+            "over_10_years": aggs["over_10_years"],
+            "tenure_5_to_10": aggs["tenure_5_to_10"],
+            "tenure_under_5": aggs["tenure_under_5"],
+        }
 
     async def _tenure():
         tenure = await once("tenure_row", _tenure_row)
@@ -803,13 +834,7 @@ async def hr_dashboard(
             """)
             )["n"]
 
-        separated_count = (
-            await one(f"""
-            SELECT COUNT(*) AS n FROM employments e
-            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.employment_state = 'SEPARATED'
-              {emp_clause}
-        """)
-        )["n"]
+        separated_count = (await once("emp_aggs", _emp_aggregates))["separated_count"]
 
         entity_distribution = await once("entity_distribution", _entities)
         department_distribution = await once("department_distribution", _departments)
@@ -828,62 +853,22 @@ async def hr_dashboard(
             "kyc_compliance": await once("kyc_summary", _kyc_summary),
         }
 
-    prev_month_start = (month_start - timedelta(days=1)).replace(day=1)
-
-    async def _count(sql: str, **params) -> int:
-        return (await one(sql, **params))["n"] or 0
+    async def _exit_counts():
+        aggs = await once("emp_aggs", _emp_aggregates)
+        return {
+            "exits_this_month": aggs["exits_this_month"],
+            "exits_last_month": aggs["exits_last_month"],
+            "exits_last_90_days": aggs["exits_last_90_days"],
+            "exits_last_12_months": aggs["exits_last_12_months"],
+        }
 
     async def _trends():
         """Last month's figures, so KPI cards can say "vs last month"."""
+        aggs = await once("emp_aggs", _emp_aggregates)
         return {
-            "headcount_last_month": await _count(
-                f"""
-                SELECT COUNT(*) AS n FROM employments e
-                WHERE e.tenant_id = CAST(:tid AS uuid) AND e.archived_at IS NULL
-                  AND e.hire_date < CAST(:month_start AS date)
-                  AND (e.separation_date IS NULL OR e.separation_date >= CAST(:month_start AS date))
-                  {emp_clause}
-            """,
-                month_start=month_start,
-            ),
-            "new_hires_last_month": await _count(
-                f"""
-                SELECT COUNT(*) AS n FROM employments e
-                WHERE e.tenant_id = CAST(:tid AS uuid)
-                  AND e.hire_date >= CAST(:prev AS date)
-                  AND e.hire_date < CAST(:month_start AS date)
-                  {emp_clause}
-            """,
-                prev=prev_month_start,
-                month_start=month_start,
-            ),
+            "headcount_last_month": aggs["headcount_last_month"],
+            "new_hires_last_month": aggs["new_hires_last_month"],
             **(await once("exit_counts", _exit_counts)),
-        }
-
-    async def _exit_counts():
-        row = await one(
-            f"""
-            SELECT
-              COUNT(*) FILTER (WHERE e.separation_date >= CAST(:month_start AS date)) AS this_month,
-              COUNT(*) FILTER (WHERE e.separation_date >= CAST(:prev AS date)
-                                 AND e.separation_date < CAST(:month_start AS date)) AS last_month,
-              COUNT(*) FILTER (WHERE e.separation_date > CAST(:today AS date) - 90) AS last_90_days,
-              COUNT(*) FILTER (WHERE e.separation_date > CAST(:today AS date) - 365)
-                  AS last_12_months
-            FROM employments e
-            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.separation_date IS NOT NULL
-              AND e.separation_date <= CAST(:today AS date)
-              {emp_clause}
-        """,
-            month_start=month_start,
-            prev=prev_month_start,
-            today=today,
-        )
-        return {
-            "exits_this_month": row["this_month"],
-            "exits_last_month": row["last_month"],
-            "exits_last_90_days": row["last_90_days"],
-            "exits_last_12_months": row["last_12_months"],
         }
 
     async def _exits():
@@ -900,28 +885,33 @@ async def hr_dashboard(
     async def _attendance_30d():
         """Average daily presence over the last 30 days that have attendance (today excluded)."""
         present = present_sql("ad")
-
-        async def avg_present(start, end):
-            row = await one(
-                f"""
-                SELECT AVG(day.present)::float AS avg_present, COUNT(*) AS days FROM (
-                    SELECT ad.work_date, COUNT(*) FILTER (WHERE {present}) AS present
-                    FROM attendance_days ad
-                    JOIN employments e ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
-                    WHERE ad.tenant_id = CAST(:tid AS uuid)
-                      AND ad.work_date >= CAST(:start AS date) AND ad.work_date < CAST(:end AS date)
-                      {emp_clause}
-                    GROUP BY ad.work_date
-                ) day
-            """,
-                start=start,
-                end=end,
-            )
-            return row["avg_present"], row["days"]
+        start = today - timedelta(days=60)
+        mid = today - timedelta(days=30)
+        row = await one(
+            f"""
+            SELECT
+                AVG(day.present) FILTER (WHERE day.work_date >= CAST(:mid AS date))::float AS
+                now_avg,
+                COUNT(*) FILTER (WHERE day.work_date >= CAST(:mid AS date)) AS days,
+                AVG(day.present) FILTER (WHERE day.work_date < CAST(:mid AS date))::float AS
+                prev_avg
+            FROM (
+                SELECT ad.work_date, COUNT(*) FILTER (WHERE {present}) AS present
+                FROM attendance_days ad
+                JOIN employments e ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
+                WHERE ad.tenant_id = CAST(:tid AS uuid)
+                  AND ad.work_date >= CAST(:start AS date) AND ad.work_date < CAST(:today AS date)
+                  {emp_clause}
+                GROUP BY ad.work_date
+            ) day
+        """,
+            start=start,
+            mid=mid,
+            today=today,
+        )
+        now_avg, days, prev_avg = row["now_avg"], row["days"], row["prev_avg"]
 
         current = (await once("headcount", _headcount))["headcount"]["total"] or 0
-        now_avg, days = await avg_present(today - timedelta(days=30), today)
-        prev_avg, _ = await avg_present(today - timedelta(days=60), today - timedelta(days=30))
 
         def pct(avg):
             return round(avg / current * 100, 1) if avg is not None and current else None
@@ -1047,14 +1037,12 @@ async def hr_dashboard(
         ]
 
     async def _lifecycle():
-        row = await one(f"""
-            SELECT
-              COUNT(*) FILTER (WHERE e.employment_state = 'PROBATION') AS on_probation,
-              COUNT(*) FILTER (WHERE e.employment_state = 'NOTICE') AS on_notice,
-              COUNT(*) FILTER (WHERE e.employment_state = 'ON_HOLD') AS on_hold
-            FROM employments e
-            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.archived_at IS NULL {emp_clause}
-        """)
+        aggs = await once("emp_aggs", _emp_aggregates)
+        row = {
+            "on_probation": aggs["on_probation"],
+            "on_notice": aggs["on_notice"],
+            "on_hold": aggs["on_hold"],
+        }
         moved = {
             r["type"]: r["n"]
             for r in await rows(
@@ -1109,34 +1097,6 @@ async def hr_dashboard(
     async def _highlights_today():
         today_mmdd = today.strftime("%m-%d")
 
-        async def people(where: str, **params):
-            return [
-                {
-                    "name": r["name"],
-                    "department": r["department"] or "General",
-                    "company": r["company"],
-                    "years": r["years"],
-                }
-                for r in await rows(
-                    f"""
-                    SELECT p.legal_first_name || ' ' || p.legal_last_name AS name,
-                           ou.name AS department, le.name AS company,
-                           EXTRACT(YEAR FROM age(CAST(:today AS date), e.hire_date))::int AS years
-                    FROM employments e
-                    JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
-                    JOIN legal_entities le
-                      ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
-                    {_CURRENT_DEPARTMENT}
-                    WHERE e.tenant_id = CAST(:tid AS uuid) AND e.archived_at IS NULL
-                      AND {where}
-                      {emp_clause}
-                    ORDER BY name LIMIT 20
-                """,
-                    today=today,
-                    **params,
-                )
-            ]
-
         current = "e.employment_state != 'SEPARATED'"
         company_clause = ""
         company_params = {}
@@ -1162,18 +1122,63 @@ async def hr_dashboard(
                 today=today, mmdd=today_mmdd, **company_params,
             )
         ]
+
+        people_rows = await rows(
+            f"""
+            SELECT p.legal_first_name || ' ' || p.legal_last_name AS name,
+                   ou.name AS department, le.name AS company,
+                   EXTRACT(YEAR FROM age(CAST(:today AS date), e.hire_date))::int AS years,
+                   (e.hire_date = CAST(:today AS date)) AS is_joining,
+                   (e.separation_date = CAST(:today AS date)) AS is_exiting,
+                   ({current} AND to_char(p.date_of_birth, 'MM-DD') = :mmdd) AS is_birthday,
+                   ({current} AND e.hire_date < CAST(:today AS date) AND to_char(e.hire_date,
+                   'MM-DD') = :mmdd) AS is_anniversary
+            FROM employments e
+            JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+            JOIN legal_entities le
+              ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+            {_CURRENT_DEPARTMENT}
+            WHERE e.tenant_id = CAST(:tid AS uuid) AND e.archived_at IS NULL
+              AND (
+                   e.hire_date = CAST(:today AS date)
+                OR e.separation_date = CAST(:today AS date)
+                OR ({current} AND to_char(p.date_of_birth, 'MM-DD') = :mmdd)
+                OR ({current} AND e.hire_date < CAST(:today AS date) AND to_char(e.hire_date,
+                'MM-DD') = :mmdd)
+              )
+              {emp_clause}
+            ORDER BY name
+        """,
+            today=today,
+            mmdd=today_mmdd,
+        )
+
+        joining: list[dict[str, Any]] = []
+        exiting: list[dict[str, Any]] = []
+        birthdays: list[dict[str, Any]] = []
+        anniversaries: list[dict[str, Any]] = []
+        for r in people_rows:
+            item = {
+                "name": r["name"],
+                "department": r["department"] or "General",
+                "company": r["company"],
+                "years": r["years"],
+            }
+            if r["is_joining"] and len(joining) < 20:
+                joining.append(item)
+            if r["is_exiting"] and len(exiting) < 20:
+                exiting.append(item)
+            if r["is_birthday"] and len(birthdays) < 20:
+                birthdays.append(item)
+            if r["is_anniversary"] and len(anniversaries) < 20:
+                anniversaries.append(item)
+
         return {
             "company_anniversaries": company_anniversaries,
-            "joining": await people("e.hire_date = CAST(:today AS date)"),
-            "exiting": await people("e.separation_date = CAST(:today AS date)"),
-            "birthdays": await people(
-                f"{current} AND to_char(p.date_of_birth, 'MM-DD') = :mmdd", mmdd=today_mmdd
-            ),
-            "anniversaries": await people(
-                f"{current} AND e.hire_date < CAST(:today AS date)"
-                " AND to_char(e.hire_date, 'MM-DD') = :mmdd",
-                mmdd=today_mmdd,
-            ),
+            "joining": joining,
+            "exiting": exiting,
+            "birthdays": birthdays,
+            "anniversaries": anniversaries,
         }
 
     async def _scheduled_changes():
@@ -1211,17 +1216,10 @@ async def hr_dashboard(
     async def _action_centre():
         """Everything waiting on HR, as counts with where to deal with each."""
         actions = await once("actions", _actions)
+        counts = await once("action_counts", _action_counts)
         statutory = await once("statutory", _statutory)
-        overtime = await _count(f"""
-            SELECT COUNT(*) AS n FROM attendance_days ad
-            JOIN employments e ON e.tenant_id = ad.tenant_id AND e.id = ad.employment_id
-            WHERE ad.tenant_id = CAST(:tid AS uuid) AND ad.ot_status = 'PENDING' {emp_clause}
-        """)
-        failed = await _count(f"""
-            SELECT COUNT(*) AS n FROM personnel_actions pa
-            JOIN employments e ON e.tenant_id = pa.tenant_id AND e.id = pa.employment_id
-            WHERE pa.tenant_id = CAST(:tid AS uuid) AND pa.status = 'FAILED' {emp_clause}
-        """)
+        overtime = counts["pending_ot"]
+        failed = counts["failed_pa"]
         missing_statutory = max(
             statutory["missing_uan"], statutory["missing_pf"], statutory["missing_esi"]
         )

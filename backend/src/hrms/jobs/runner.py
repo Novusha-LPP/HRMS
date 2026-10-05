@@ -9,6 +9,7 @@ so one tenant's failure is logged and counted without stopping the others; the r
 - scheduled-actions: applies personnel actions whose effective date has arrived. Requests
   already apply them lazily; this makes sure they land even on a day nobody signs in.
 """
+
 from __future__ import annotations
 
 import logging
@@ -32,24 +33,35 @@ TenantJob = Callable[..., Awaitable[str]]
 async def _accrual(session, tenant_id: UUID) -> str:
     from hrms.modules.leave.router import accrue_period
 
-    timezone = (await session.execute(
-        text("SELECT timezone FROM tenants WHERE id=:tid"), {"tid": tenant_id}
-    )).scalar_one()
+    timezone = (
+        await session.execute(
+            text("SELECT timezone FROM tenants WHERE id=:tid"), {"tid": tenant_id}
+        )
+    ).scalar_one()
     period = now_utc().astimezone(safe_tz(timezone)).strftime("%Y-%m")
-    checkpoint = (await session.execute(text(
-        "SELECT period FROM tenant_job_checkpoints WHERE tenant_id=:tid AND job='accrual'"
-    ), {"tid": tenant_id})).scalar()
+    checkpoint = (
+        await session.execute(
+            text(
+                "SELECT period FROM tenant_job_checkpoints WHERE tenant_id=:tid AND job='accrual'"
+            ),
+            {"tid": tenant_id},
+        )
+    ).scalar()
     start = checkpoint or settings.jobs_accrual_start_period or period
     credited = 0
     for due in _periods(start, period):
-        result = await accrue_period(session, tenant_id, due, recorded_by=SYSTEM_ACTOR,
-                                    current_period=period)
+        result = await accrue_period(
+            session, tenant_id, due, recorded_by=SYSTEM_ACTOR, current_period=period
+        )
         credited += result.balances_credited
-    await session.execute(text("""
+    await session.execute(
+        text("""
         INSERT INTO tenant_job_checkpoints (tenant_id,job,period,completed_at)
         VALUES (:tid,'accrual',:period,now()) ON CONFLICT (tenant_id,job)
         DO UPDATE SET period=EXCLUDED.period, completed_at=EXCLUDED.completed_at
-    """), {"tid": tenant_id, "period": period})
+    """),
+        {"tid": tenant_id, "period": period},
+    )
     return f"{start}..{period}: {credited} credited"
 
 
@@ -57,7 +69,13 @@ async def _scheduled_actions(session, tenant_id: UUID) -> str:
     from hrms.modules.people.router import apply_due_actions
 
     await apply_due_actions(session, tenant_id)
-    return "applied"
+    # Expiry is enforced on reads; reclaim persisted report rows even if their user
+    # never returns. The FK cascades deletion and the tenant predicate preserves RLS.
+    await session.execute(
+        text("DELETE FROM daily_report_snapshots WHERE tenant_id=:tid AND expires_at<=now()"),
+        {"tid": tenant_id},
+    )
+    return "applied; expired reports removed"
 
 
 JOBS: dict[str, TenantJob] = {"scheduled-actions": _scheduled_actions, "accrual": _accrual}
@@ -132,14 +150,17 @@ async def run_job(name: str) -> bool:
     async with database.AsyncSessionLocal() as lease:
         conn = await lease.connection(execution_options={"isolation_level": "AUTOCOMMIT"})
         key = f"hrms-scheduler:{name}"
-        acquired = (await conn.execute(
-            text("SELECT pg_try_advisory_lock(hashtextextended(:key,0))"), {"key": key}
-        )).scalar()
+        acquired = (
+            await conn.execute(
+                text("SELECT pg_try_advisory_lock(hashtextextended(:key,0))"), {"key": key}
+            )
+        ).scalar()
         if not acquired:
             logger.info("job %s already running; leaving it to the lock owner", name)
             return True
         try:
             return await _run_job(name)
         finally:
-            await conn.execute(text("SELECT pg_advisory_unlock(hashtextextended(:key,0))"),
-                               {"key": key})
+            await conn.execute(
+                text("SELECT pg_advisory_unlock(hashtextextended(:key,0))"), {"key": key}
+            )

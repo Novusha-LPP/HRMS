@@ -91,6 +91,8 @@ class EmploymentResponse(BaseModel):
     first_name: str | None = None
     last_name: str | None = None
     full_name: str | None = None
+    email: str | None = None
+    role: str | None = None
     # From the employee's current (open) assignment, if one has been placed
     # yet — null for an employment that's been created but not yet HIREd
     # into a department (see POST /v1/personnel-actions).

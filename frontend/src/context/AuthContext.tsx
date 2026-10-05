@@ -32,6 +32,7 @@ export interface AuthUser {
   legalEntities: LegalEntitySummary[];
   /** True until the person has replaced an imported / admin-issued password. */
   mustChangePassword: boolean;
+  mfaRequired: boolean;
 }
 
 interface MeResponse {
@@ -46,6 +47,7 @@ interface MeResponse {
   is_all_scope: boolean;
   legal_entities: LegalEntitySummary[];
   must_change_password?: boolean;
+  mfa_required?: boolean;
 }
 
 interface LoginResponse {
@@ -58,7 +60,7 @@ interface AuthContextValue {
   user: AuthUser | null;
   loading: boolean;
   /** `company` (the company code) is only needed when the API answers COMPANY_REQUIRED. */
-  login: (identifier: string, password: string, company?: string) => Promise<void>;
+  login: (identifier: string, password: string, company?: string, otp?: string) => Promise<void>;
   /** Replaces the password and swaps in the fresh session the server returns. */
   changePassword: (currentPassword: string, newPassword: string) => Promise<void>;
   registerCompany: (body: { company_name: string; country_code?: string; admin_email: string; admin_password: string }) => Promise<void>;
@@ -89,6 +91,7 @@ function toAuthUser(m: MeResponse): AuthUser {
     isAllScope: m.is_all_scope,
     legalEntities: m.legal_entities,
     mustChangePassword: m.must_change_password ?? false,
+    mfaRequired: m.mfa_required ?? false,
   };
 }
 
@@ -96,12 +99,11 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   const queryClient = useQueryClient();
   const resetCache = () => resetSessionCache(queryClient);
   const [user, setUser] = useState<AuthUser | null>(null);
-  const [loading, setLoading] = useState(() => !!localStorage.getItem(TOKEN_KEY));
+  const [loading, setLoading] = useState(true);
 
   useEffect(() => {
-    const token = localStorage.getItem(TOKEN_KEY);
-    if (!token) return;
-    setAuthToken(token);
+    localStorage.removeItem(TOKEN_KEY); // Remove legacy persisted bearer credentials.
+    const token = getAuthToken();
     api.get<MeResponse>("/v1/auth/me")
       .then((me) => { if (getAuthToken() === token) setUser(toAuthUser(me)); })
       .catch((error: unknown) => {
@@ -109,21 +111,21 @@ export function AuthProvider({ children }: { children: ReactNode }) {
         if (!(error instanceof ApiError) || error.status !== 401) return;
         // Expired/invalid token — drop it silently and fall back to the login page.
         localStorage.removeItem(TOKEN_KEY);
-        setAuthToken(null);
+        setAuthToken();
       })
       .finally(() => setLoading(false));
   }, []);
 
   const startSession = (res: LoginResponse) => {
     resetCache();
-    localStorage.setItem(TOKEN_KEY, res.access_token);
-    setAuthToken(res.access_token);
+    setAuthToken();
     setUser(toAuthUser(res.user));
   };
 
-  const login = async (identifier: string, password: string, company?: string) => {
+  const login = async (identifier: string, password: string, company?: string, otp?: string) => {
     try {
       const body: Record<string, string> = { identifier, password };
+      if (otp?.trim()) body.otp = otp.trim();
       if (company?.trim()) body.tenant = company.trim();
       startSession(await api.post<LoginResponse>("/v1/auth/login", body));
     } catch (e) {
@@ -147,8 +149,7 @@ export function AuthProvider({ children }: { children: ReactNode }) {
     try {
       const res = await api.post<LoginResponse>("/v1/auth/register-company", body);
       resetCache();
-      localStorage.setItem(TOKEN_KEY, res.access_token);
-      setAuthToken(res.access_token);
+      setAuthToken();
       setUser(toAuthUser(res.user));
     } catch (e) {
       throw e instanceof ApiError ? new Error(e.message || "Couldn't register company") : e;
@@ -156,9 +157,10 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   };
 
   const logout = useCallback(() => {
+    void api.post("/v1/auth/logout", {}).catch(() => undefined);
     resetSessionCache(queryClient);
     localStorage.removeItem(TOKEN_KEY);
-    setAuthToken(null);
+    setAuthToken();
     setUser(null);
   }, [queryClient]);
 
@@ -167,9 +169,13 @@ export function AuthProvider({ children }: { children: ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    setUnauthorizedHandler(logout);
+    setUnauthorizedHandler(() => {
+      resetSessionCache(queryClient);
+      setAuthToken();
+      setUser(null);
+    });
     return () => setUnauthorizedHandler(null);
-  }, [logout]);
+  }, [queryClient]);
 
   return (
     <AuthContext.Provider value={{ user, loading, login, changePassword, registerCompany, logout }}>

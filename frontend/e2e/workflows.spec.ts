@@ -1,5 +1,5 @@
 import { test, expect, type APIRequestContext, type Page } from "@playwright/test";
-import { randomUUID } from "node:crypto";
+import { createHmac, randomUUID } from "node:crypto";
 const api = "http://127.0.0.1:18015";
 const scan = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=", "base64");
 const password = "Synthetic-test-password-123";
@@ -84,25 +84,74 @@ test("login, punch, leave approval, correction and encrypted document view", asy
   await page.goto("/profile?tab=kyc");
   await expect(page.getByText("synthetic-pan.png", { exact: true })).toBeVisible();
   const document = page.waitForResponse(r => /\/v1\/kyc\/documents\/.*\/preview/.test(r.url()) && r.request().method() === "GET");
-  await page.getByTitle("Preview document").first().click();
+  await page.getByRole("button", { name: "View", exact: true }).first().click();
   const downloaded = await document;
   expect(downloaded.ok()).toBeTruthy();
   expect(downloaded.headers()["content-length"]).toBe(String(scan.length));
   const image = page.locator('img[src^="blob:"]');
   await expect(image).toBeVisible();
   await expect.poll(() => image.evaluate((img: HTMLImageElement) => img.naturalWidth)).toBe(1);
-  const token = await page.evaluate(() => localStorage.getItem("hrms_token"));
-  const verified = await request.get(downloaded.url(), { headers: { Authorization: `Bearer ${token}` } });
+  expect(await page.evaluate(() => localStorage.getItem("hrms_token"))).toBeNull();
+  expect(await page.evaluate(() => document.cookie)).not.toContain("hrms_session");
+  const verified = await page.request.get(downloaded.url());
   expect((await verified.body()).equals(scan)).toBeTruthy();
 });
-test("a transient /me failure preserves the saved session", async ({ page, request }) => {
+test("a transient /me failure preserves the HttpOnly session", async ({ page, request }) => {
   const data = await seed(request);
   await signIn(page, data.email);
-  const token = await page.evaluate(() => localStorage.getItem("hrms_token"));
+  const before = (await page.context().cookies()).find(c => c.name === "hrms_session");
+  expect(before?.httpOnly).toBeTruthy();
   await page.route("**/v1/auth/me", route => route.fulfill({ status: 503, contentType: "application/json", body: '{"detail":"unavailable"}' }));
   await page.reload();
-  await expect.poll(() => page.evaluate(() => localStorage.getItem("hrms_token"))).toBe(token);
+  const after = (await page.context().cookies()).find(c => c.name === "hrms_session");
+  expect(after?.value).toBe(before?.value);
+  expect(await page.evaluate(() => localStorage.getItem("hrms_token"))).toBeNull();
   await page.unroute("**/v1/auth/me");
   await page.goto("/dashboard");
+  await expect(page).toHaveURL(/dashboard/);
+});
+
+// An independent test authenticator feeds codes into the real enrollment/login UI.
+function authenticatorCode(secret: string, step: number) {
+  const alphabet = "ABCDEFGHIJKLMNOPQRSTUVWXYZ234567";
+  let buffer = 0, bits = 0;
+  const bytes: number[] = [];
+  for (const char of secret) {
+    buffer = (buffer << 5) | alphabet.indexOf(char); bits += 5;
+    if (bits >= 8) { bits -= 8; bytes.push((buffer >>> bits) & 255); }
+  }
+  const counter = Buffer.alloc(8); counter.writeBigUInt64BE(BigInt(step));
+  const digest = createHmac("sha1", Buffer.from(bytes)).update(counter).digest();
+  const offset = digest[digest.length - 1] & 15;
+  return String((digest.readUInt32BE(offset) & 0x7fffffff) % 1_000_000).padStart(6, "0");
+}
+test("authenticator enrollment revokes the old cookie and requires a code on login", async ({ page, request }) => {
+  const email = `e2e-factor-${randomUUID()}@example.com`;
+  await call(request, "POST", "/v1/auth/register-company", {
+    company_name: "Synthetic factor company", admin_email: email, admin_password: password });
+  await signIn(page, email);
+  const old = (await page.context().cookies()).find(c => c.name === "hrms_session")?.value;
+  await page.goto("/security/mfa");
+  await page.getByLabel("Current password").fill(password);
+  await page.getByRole("button", { name: "Create setup key" }).click();
+  const secret = await page.locator("main code").innerText();
+  await page.getByLabel("Six-digit authenticator code").fill(authenticatorCode(secret, Math.floor(Date.now() / 30_000)));
+  await page.getByRole("button", { name: "Confirm authenticator" }).click();
+  await expect(page).toHaveURL(/login\?mfa=enrolled/);
+  expect((await page.context().cookies()).find(c => c.name === "hrms_session")).toBeUndefined();
+  await page.getByLabel("Username, Phone, or Email").fill(email);
+  await page.getByLabel("Password", { exact: true }).fill(password);
+  const missing = page.waitForResponse(r => r.url().endsWith("/v1/auth/login"));
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  expect((await missing).status()).toBe(401);
+  await expect(page).toHaveURL(/login/);
+  // +1 is within allowed clock drift and avoids reusing the just-confirmed code.
+  await page.getByLabel("Authenticator code (if enabled)").fill(authenticatorCode(secret, Math.floor(Date.now() / 30_000) + 1));
+  await page.getByRole("button", { name: "Sign in", exact: true }).click();
+  await expect(page).toHaveURL(/dashboard/);
+  const current = (await page.context().cookies()).find(c => c.name === "hrms_session");
+  expect(current?.httpOnly).toBeTruthy();
+  expect(current?.value).not.toBe(old);
+  await page.reload();
   await expect(page).toHaveURL(/dashboard/);
 });

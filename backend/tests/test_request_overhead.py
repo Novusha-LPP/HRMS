@@ -98,4 +98,13 @@ async def test_directory_and_daily_analysis_query_budgets(api):
     directory = await _statements(client, "/v1/users?limit=1", headers)
     daily = await _statements(client, "/v1/time/daily-analysis?limit=1", headers)
     assert directory.count <= 3, directory.statements
-    assert daily.count <= 12, daily.statements
+    # Building a persisted snapshot adds bounded writes/cleanup to the source queries.
+    assert daily.count <= 20, daily.statements
+    report = (await client.get("/v1/time/daily-analysis?limit=1", headers=headers)).json()
+    cached = await _statements(
+        client,
+        f"/v1/time/daily-analysis?limit=1&snapshot_id={report['snapshot_id']}",
+        headers,
+    )
+    # Subsequent pages must not repeat policy, attendance or snapshot construction.
+    assert cached.count <= 5, cached.statements

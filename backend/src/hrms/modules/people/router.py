@@ -24,7 +24,7 @@ from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import text
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.authn import CurrentUser
 from hrms.core.authz import (
@@ -101,6 +101,8 @@ _EMPLOYEE_SELECT = """
         p.legal_last_name AS last_name,
         COALESCE(NULLIF(p.preferred_name, ''), p.legal_first_name) || ' ' || p.legal_last_name
             AS full_name,
+        ua.email AS email,
+        r.name AS role,
         a.org_unit_id,
         CASE WHEN ou.type = 'TEAM' THEN parent_ou.name ELSE ou.name END AS department,
         CASE WHEN ou.type = 'TEAM' THEN ou.name ELSE NULL END AS team_name,
@@ -111,6 +113,20 @@ _EMPLOYEE_SELECT = """
     FROM employments e
     JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
     JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+    LEFT JOIN user_accounts ua ON ua.tenant_id = e.tenant_id AND ua.employment_id = e.id
+    LEFT JOIN LATERAL (
+        SELECT r.name
+        FROM role_assignments ra
+        JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
+        WHERE ra.tenant_id = ua.tenant_id AND ra.user_account_id = ua.id
+        ORDER BY CASE r.name
+            WHEN 'SUPER_ADMIN' THEN 1
+            WHEN 'HR_MANAGER' THEN 2
+            WHEN 'MANAGER' THEN 3
+            WHEN 'ACCOUNTANT' THEN 4
+            ELSE 5 END
+        LIMIT 1
+    ) r ON TRUE
     LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id AND
     (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE) AND a.effective_from <=
     CURRENT_DATE
@@ -193,6 +209,8 @@ def _employment_row_response(r, *, show_personal: bool = True) -> EmploymentResp
         first_name=r.first_name,
         last_name=r.last_name,
         full_name=r.full_name,
+        email=getattr(r, "email", None),
+        role=getattr(r, "role", None),
         legal_entity_name=r.legal_entity_name,
         org_unit_id=to_typed_id("org_unit", r.org_unit_id) if r.org_unit_id else None,
         department=r.department,
@@ -281,8 +299,8 @@ async def list_persons(
         q = (
             select(Person)
             .where(Person.tenant_id == tenant_id)
-            .where(Person.archived_at.is_(None))  # type: ignore[attr-defined]
-            .order_by(Person.id)  # stable order so offset paging never skips or repeats a row
+            .where(col(Person.archived_at).is_(None))
+            .order_by(col(Person.id))  # stable order so offset paging never skips or repeats a row
             .limit(limit)
             .offset(offset)
         )
@@ -782,7 +800,7 @@ async def _reject_conflicting_schedule(
     """
     scheduled = (
         await session.execute(
-            select(PersonnelAction.type, PersonnelAction.effective_date)
+            select(col(PersonnelAction.type), col(PersonnelAction.effective_date))
             .where(PersonnelAction.tenant_id == tenant_id)
             .where(PersonnelAction.employment_id == employment_id)
             .where(PersonnelAction.status == PersonnelActionStatus.SCHEDULED)
@@ -820,7 +838,10 @@ async def _current_assignment(session, tenant_id: UUID, employment_id: UUID) -> 
         .where(Assignment.tenant_id == tenant_id)
         .where(Assignment.employment_id == employment_id)
         .where(Assignment.effective_from <= business_today())
-        .where((Assignment.effective_to.is_(None)) | (Assignment.effective_to > business_today()))
+        .where(
+            (col(Assignment.effective_to).is_(None))
+            | (col(Assignment.effective_to) > business_today())
+        )
     )
     return row.scalars().first()
 
@@ -833,8 +854,8 @@ async def _current_line_manager(session, tenant_id: UUID, assignment_id: UUID) -
         .where(AssignmentManager.manager_type == "LINE")
         .where(AssignmentManager.effective_from <= business_today())
         .where(
-            (AssignmentManager.effective_to.is_(None))
-            | (AssignmentManager.effective_to > business_today())
+            (col(AssignmentManager.effective_to).is_(None))
+            | (col(AssignmentManager.effective_to) > business_today())
         )
     )
     am = row.scalars().first()
@@ -906,8 +927,8 @@ async def _place_assignment(
             .where(AssignmentManager.assignment_id == current.id)
             .where(AssignmentManager.effective_from <= business_today())
             .where(
-                (AssignmentManager.effective_to.is_(None))
-                | (AssignmentManager.effective_to > business_today())
+                (col(AssignmentManager.effective_to).is_(None))
+                | (col(AssignmentManager.effective_to) > business_today())
             )
         )
         for am in mgr_rows.scalars():
@@ -1071,7 +1092,7 @@ async def apply_due_actions(session, tenant_id):
                 .where(PersonnelAction.tenant_id == tenant_id)
                 .where(PersonnelAction.status == PersonnelActionStatus.SCHEDULED)
                 .where(PersonnelAction.effective_date <= business_today())
-                .order_by(PersonnelAction.effective_date, PersonnelAction.submitted_at)
+                .order_by(col(PersonnelAction.effective_date), col(PersonnelAction.submitted_at))
                 .with_for_update()
             )
         ).scalars()

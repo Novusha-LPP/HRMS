@@ -18,7 +18,7 @@ from datetime import date
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.authz import (
     ScopeDep,
@@ -50,8 +50,9 @@ router = APIRouter(prefix="/v1/policies", tags=["HR Policies"])
 
 @router.get("/templates", response_model=list[PolicyTemplateResponse])
 async def list_templates(
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    *,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> list[PolicyTemplateResponse]:
     rows = await session.execute(
         select(PolicyTemplate)
@@ -70,8 +71,9 @@ async def list_templates(
 )
 async def create_template(
     body: PolicyTemplateCreate,
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    *,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> PolicyTemplateResponse:
     # If this template is default, clear any existing default
     if body.is_default:
@@ -92,8 +94,9 @@ async def create_template(
 @router.get("/templates/{template_id}", response_model=PolicyTemplateResponse)
 async def get_template(
     template_id: str,
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    *,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> PolicyTemplateResponse:
     tpl = await _get_tpl(session, tenant_id, template_id)
     return _tpl_response(tpl)
@@ -107,8 +110,9 @@ async def get_template(
 async def update_template(
     template_id: str,
     body: PolicyTemplateUpdate,
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    *,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> PolicyTemplateResponse:
     tpl = await _get_tpl(session, tenant_id, template_id)
     if body.is_default is True:
@@ -127,8 +131,9 @@ async def update_template(
 )
 async def archive_template(
     template_id: str,
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    *,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> None:
     tpl = await _get_tpl(session, tenant_id, template_id)
     tpl.archived_at = now_utc()
@@ -140,6 +145,7 @@ async def archive_template(
 
 @router.get("/assignments", response_model=list[EmployeePolicyAssignResponse])
 async def list_assignments(
+    *,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
@@ -149,9 +155,14 @@ async def list_assignments(
 ) -> list[EmployeePolicyAssignResponse]:
     q = (
         select(EmployeePolicyAssignment, PolicyTemplate.name, OrgUnit.name, LegalEntity.name)
-        .join(PolicyTemplate, PolicyTemplate.id == EmployeePolicyAssignment.policy_template_id)
-        .outerjoin(OrgUnit, OrgUnit.id == EmployeePolicyAssignment.org_unit_id)
-        .outerjoin(LegalEntity, LegalEntity.id == EmployeePolicyAssignment.legal_entity_id)
+        .join(
+            PolicyTemplate,
+            col(PolicyTemplate.id) == col(EmployeePolicyAssignment.policy_template_id),
+        )
+        .outerjoin(OrgUnit, col(OrgUnit.id) == col(EmployeePolicyAssignment.org_unit_id))
+        .outerjoin(
+            LegalEntity, col(LegalEntity.id) == col(EmployeePolicyAssignment.legal_entity_id)
+        )
         .where(EmployeePolicyAssignment.tenant_id == tenant_id)
         .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
     )
@@ -178,9 +189,9 @@ async def list_assignments(
 
         q = q.where(
             or_(
-                EmployeePolicyAssignment.employment_id.in_(emp_ids),
-                EmployeePolicyAssignment.org_unit_id.in_(scope.org_unit_ids),
-                EmployeePolicyAssignment.legal_entity_id.in_(scope.legal_entity_ids),
+                col(EmployeePolicyAssignment.employment_id).in_(emp_ids),
+                col(EmployeePolicyAssignment.org_unit_id).in_(scope.org_unit_ids),
+                col(EmployeePolicyAssignment.legal_entity_id).in_(scope.legal_entity_ids),
             )
         )
     rows = await session.execute(q)
@@ -216,6 +227,7 @@ async def list_assignments(
 )
 async def assign_policy(
     body: EmployeePolicyAssignCreate,
+    *,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
@@ -308,8 +320,9 @@ async def assign_policy(
 async def remove_assignment(
     assignment_id: str,
     scope: ScopeDep,
-    tenant_id: TenantDep = None,
-    session: SessionDep = None,
+    *,
+    tenant_id: TenantDep,
+    session: SessionDep,
 ) -> None:
     uid = to_uuid(assignment_id)
     row = await session.execute(
@@ -334,6 +347,7 @@ async def remove_assignment(
 @router.get("/employee/{employment_id}/effective")
 async def get_effective_policy(
     employment_id: str,
+    *,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,

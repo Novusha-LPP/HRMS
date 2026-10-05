@@ -1,4 +1,4 @@
-import { api, API_BASE_URL, getAuthToken } from "./client";
+import { api, API_BASE_URL } from "./client";
 
 export type KycStatus =
   | "NOT_SUBMITTED"
@@ -212,11 +212,9 @@ export const kycApi = {
     api.delete(`/v1/kyc/documents/${documentId}`),
 
   async fetchDocumentBlob(relativeUrl: string): Promise<{ blob: Blob; url: string }> {
-    const token = getAuthToken();
-    const headers: Record<string, string> = {};
-    if (token) headers["Authorization"] = `Bearer ${token}`;
+    const headers = { "X-HRMS-Session": "cookie" };
     const res = await fetch(`${API_BASE_URL}${relativeUrl}`, {
-      headers, signal: AbortSignal.timeout(30_000),
+      headers, credentials: "include", signal: AbortSignal.timeout(30_000),
     });
     if (!res.ok) throw new Error("Failed to load document");
     const blob = await res.blob();

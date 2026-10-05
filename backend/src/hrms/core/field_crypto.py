@@ -21,6 +21,7 @@ touching the columns. Testing and production refuse to start without a key of th
 still understand encrypted ones, with the published development key) — so a developer
 database, or one not yet migrated for the longer encrypted values, behaves as before.
 """
+
 from __future__ import annotations
 
 import base64
@@ -45,10 +46,12 @@ def parse_keys(spec: str) -> dict[str, bytes]:
     keys: dict[str, bytes] = {}
     for part in (p.strip() for p in spec.split(",") if p.strip()):
         key_id, sep, encoded = part.partition(":")
-        if not sep or not key_id or ":" in key_id:
+        if not sep or not key_id or ":" in key_id or len(key_id.encode()) > 255:
             raise FieldCryptoError("HRMS_FIELD_ENCRYPTION_KEYS entries are <id>:<base64url key>")
         try:
-            key = base64.urlsafe_b64decode(encoded + "=" * (-len(encoded) % 4))
+            key = base64.b64decode(
+                encoded + "=" * (-len(encoded) % 4), altchars=b"-_", validate=True
+            )
         except ValueError as exc:
             raise FieldCryptoError(f"key {key_id!r} is not base64url") from exc
         if len(key) != 32:
@@ -76,12 +79,14 @@ class FieldCipher:
     def decrypt(self, stored: str, column: str) -> str:
         if not stored.startswith(PREFIX):
             return stored  # written before encryption; encrypt-pii rewrites it
-        key_id, _, token = stored[len(PREFIX):].partition(":")
+        key_id, _, token = stored[len(PREFIX) :].partition(":")
         aead = self._aead.get(key_id)
         if aead is None:
             raise FieldCryptoError(f"value was encrypted with key {key_id!r}: not configured")
-        raw = base64.urlsafe_b64decode(token + "=" * (-len(token) % 4))
         try:
+            raw = base64.b64decode(token + "=" * (-len(token) % 4), altchars=b"-_", validate=True)
+            if len(raw) < 28:
+                raise ValueError("Truncated ciphertext")
             return aead.decrypt(raw[:12], raw[12:], column.encode()).decode()
         except Exception as exc:  # InvalidTag: wrong key, wrong column or tampered
             raise FieldCryptoError(f"{column}: does not decrypt (wrong key or tampered)") from exc

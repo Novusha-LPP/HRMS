@@ -29,17 +29,19 @@ Login hardening (all of it lives here or in core/throttle.py):
 from datetime import UTC, datetime
 from uuid import UUID
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import AsyncSession
 
 from hrms.core import throttle
 from hrms.core.authn import CurrentUser, Principal
 from hrms.core.authz import Scope, resolve_scope
+from hrms.core.browser_sessions import clear_browser_session, issue_browser_session
 from hrms.core.config import settings
 from hrms.core.database import AnonymousSessionDep, SessionDep
 from hrms.core.errors import CodedHTTPException
 from hrms.core.ids import to_typed_id
+from hrms.core.mfa import ConfirmRequest, EnrollRequest
 from hrms.core.security import (
     ahash_password,
     averify_password,
@@ -64,7 +66,7 @@ _MAX_CANDIDATES_CHECKED = 3
 
 @router.post("/login", response_model=LoginResponse, summary="Sign in")
 async def login(
-    body: LoginRequest, request: Request, session: AnonymousSessionDep
+    body: LoginRequest, request: Request, response: Response, session: AnonymousSessionDep
 ) -> LoginResponse:
     identifier = body.identifier.strip()
     ip = throttle.client_ip(request)
@@ -142,7 +144,7 @@ async def login(
         (
             await session.execute(
                 text("""
-                    SELECT ua.token_epoch, e.employment_state
+                    SELECT ua.id,ua.token_epoch,ua.mfa_secret,ua.mfa_last_step,e.employment_state
                     FROM user_accounts ua
                     LEFT JOIN employments e
                       ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
@@ -174,7 +176,16 @@ async def login(
     scope = await resolve_scope(session, tenant_id, principal)
     user = await _build_me_response(session, tenant_id, account_id, employment_id, scope)
 
+    from hrms.core.mfa import verify_login
+
+    try:
+        mfa_verified = await verify_login(session, state, body.otp, tenant_id=tenant_id)
+    except CodedHTTPException:
+        await throttle.record_login_failure(identifier, ip)
+        raise
+    user.mfa_required = user.mfa_required and not mfa_verified
     token = create_access_token(
+        mfa_verified=mfa_verified,
         user_account_id=account_id,
         tenant_id=tenant_id,
         employment_id=employment_id,
@@ -184,7 +195,9 @@ async def login(
     await throttle.record_login_success(identifier, ip)
 
     return LoginResponse(
-        access_token=token,
+        access_token=issue_browser_session(
+            request, response, token, settings.access_token_expire_minutes * 60
+        ),
         expires_in=settings.access_token_expire_minutes * 60,
         user=user,
     )
@@ -196,7 +209,11 @@ async def login(
     summary="Replace your own password",
 )
 async def change_password(
-    body: ChangePasswordRequest, principal: CurrentUser, session: SessionDep
+    body: ChangePasswordRequest,
+    request: Request,
+    response: Response,
+    principal: CurrentUser,
+    session: SessionDep,
 ) -> LoginResponse:
     """
     Works even while a password change is being *required* (imported and
@@ -255,6 +272,7 @@ async def change_password(
 
     scope = await resolve_scope(session, tenant_id, principal)
     user = await _build_me_response(session, tenant_id, account_id, principal.employment_id, scope)
+    user.mfa_required = user.mfa_required and not principal.mfa_verified
     # Carries the new epoch, so it is the one token that survives the change.
     token = create_access_token(
         user_account_id=account_id,
@@ -262,9 +280,14 @@ async def change_password(
         employment_id=principal.employment_id,
         role_names=list(scope.role_names),
         token_epoch=new_epoch,
+        mfa_verified=principal.mfa_verified,
     )
     return LoginResponse(
-        access_token=token, expires_in=settings.access_token_expire_minutes * 60, user=user
+        access_token=issue_browser_session(
+            request, response, token, settings.access_token_expire_minutes * 60
+        ),
+        expires_in=settings.access_token_expire_minutes * 60,
+        user=user,
     )
 
 
@@ -275,7 +298,7 @@ async def change_password(
     summary="Register a brand-new company as its own isolated tenant",
 )
 async def register_company(
-    body: TenantRegister, request: Request, session: AnonymousSessionDep
+    body: TenantRegister, request: Request, response: Response, session: AnonymousSessionDep
 ) -> LoginResponse:
     """
     This is NOT "add a sister company" (POST /v1/org/legal-entities) — that
@@ -321,16 +344,22 @@ async def register_company(
         role_names=list(scope.role_names),
     )
     return LoginResponse(
-        access_token=token, expires_in=settings.access_token_expire_minutes * 60, user=user
+        access_token=issue_browser_session(
+            request, response, token, settings.access_token_expire_minutes * 60
+        ),
+        expires_in=settings.access_token_expire_minutes * 60,
+        user=user,
     )
 
 
 @router.get("/me", response_model=MeResponse, summary="The signed-in user's profile and access")
 async def me(principal: CurrentUser, session: SessionDep) -> MeResponse:
     scope = await resolve_scope(session, principal.tenant_id, principal)
-    return await _build_me_response(
+    result = await _build_me_response(
         session, principal.tenant_id, principal.user_account_id, principal.employment_id, scope
     )
+    result.mfa_required = result.mfa_required and not principal.mfa_verified
+    return result
 
 
 async def _build_me_response(
@@ -344,7 +373,8 @@ async def _build_me_response(
         (
             await session.execute(
                 text(
-                    "SELECT email, employee_code, must_change_password FROM user_accounts "
+                    "SELECT email, employee_code, must_change_password,mfa_secret "
+                    "FROM user_accounts "
                     "WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:uid AS uuid)"
                 ),
                 {"tid": str(tenant_id), "uid": str(account_id)},
@@ -422,6 +452,11 @@ async def _build_me_response(
     ]
 
     return MeResponse(
+        mfa_required=bool(account_row and account_row["mfa_secret"])
+        or (
+            settings.privileged_mfa_required
+            and bool(scope.role_names & {"SUPER_ADMIN", "HR_MANAGER", "ACCOUNTANT"})
+        ),
         id=to_typed_id("user", account_id),
         email=email,
         name=name,
@@ -434,3 +469,34 @@ async def _build_me_response(
         legal_entities=legal_entities,
         must_change_password=bool(account_row["must_change_password"]) if account_row else False,
     )
+
+
+@router.post("/logout", status_code=204)
+async def logout(principal: CurrentUser, session: SessionDep, response: Response) -> None:
+    await session.execute(
+        text("UPDATE user_accounts SET token_epoch=token_epoch+1 WHERE tenant_id=:tid AND id=:uid"),
+        {"tid": principal.tenant_id, "uid": principal.user_account_id},
+    )
+    clear_browser_session(response)
+
+
+@router.post("/mfa/enroll")
+async def enroll_mfa(
+    body: EnrollRequest, principal: CurrentUser, session: SessionDep, response: Response
+):
+    from hrms.core.mfa import enroll
+
+    response.headers["Cache-Control"] = "no-store"
+    return await enroll(
+        session, principal.user_account_id, body.password, tenant_id=principal.tenant_id
+    )
+
+
+@router.post("/mfa/confirm", status_code=204)
+async def confirm_mfa(
+    body: ConfirmRequest, principal: CurrentUser, session: SessionDep, response: Response
+):
+    from hrms.core.mfa import confirm
+
+    await confirm(session, principal.user_account_id, body.code, tenant_id=principal.tenant_id)
+    clear_browser_session(response)

@@ -7,7 +7,7 @@ import { formatDateOnly } from "../lib/dates";
 import {
   Download, Plus, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Users,
   Mail, MapPin, Briefcase, Building2, CalendarDays, Hash, UserRound, SearchX, ArrowLeftRight,
-  Landmark, Cake,
+  Landmark, Cake, Shield,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
@@ -30,6 +30,7 @@ interface Row {
   employeeNumber: string;
   name: string;
   email?: string;
+  role?: string;
   company?: string;
   department?: string;
   team?: string;
@@ -68,6 +69,8 @@ function toRow(e: Employment, name: string, company?: string, dob?: string | nul
     company,
     employeeNumber: e.employee_number,
     name,
+    email: e.email ?? undefined,
+    role: e.role ?? undefined,
     hireDate: e.hire_date,
     dateOfBirth: dob ?? e.date_of_birth ?? undefined,
     gender: gender ?? e.gender ?? undefined,
@@ -91,6 +94,7 @@ function downloadCsv(rows: Row[]) {
     ["Employee ID", (r) => r.employeeNumber],
     ["Name", (r) => r.name],
     ["Email", (r) => r.email ?? ""],
+    ["Role", (r) => r.role ?? ""],
     ["Company", (r) => r.company ?? ""],
     ["Department", (r) => r.department ?? ""],
     ["Team", (r) => r.team ?? ""],
@@ -207,7 +211,7 @@ export function EmployeePage() {
       (!company || r.company === company) &&
       (!dept || r.department === dept) &&
       (!type || r.type === type) &&
-      (!q || [r.name, r.employeeNumber, r.email, r.designation, r.company].some((v) => v?.toLowerCase().includes(q))),
+      (!q || [r.name, r.employeeNumber, r.email, r.role, r.designation, r.company].some((v) => v?.toLowerCase().includes(q))),
     );
     out.sort((a, b) => {
       const cmp = sort.key === "name" ? a.name.localeCompare(b.name) : a.hireDate.localeCompare(b.hireDate);
@@ -472,6 +476,7 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
         { icon: Building2, label: "Department", value: row.department },
         { icon: Users, label: "Team", value: row.team },
         { icon: Briefcase, label: "Designation", value: row.designation },
+        ...(row.role ? [{ icon: Shield, label: "Role", value: row.role }] : []),
         { icon: UserRound, label: "Reports to", value: row.manager },
         { icon: MapPin, label: "Location", value: row.location },
         { icon: CalendarDays, label: "Joined", value: `${format(new Date(row.hireDate), "d MMM yyyy")} · ${tenure(row.hireDate)}` },

@@ -28,14 +28,17 @@ data itself), computed the same RLS-bypassing way as the company count.
 from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Request, status
+from fastapi import APIRouter, HTTPException, Request, Response, status
 from sqlalchemy import text
 
 from hrms.core import throttle
 from hrms.core.audit import record_audit
+from hrms.core.browser_sessions import clear_browser_session, issue_browser_session
 from hrms.core.config import settings
 from hrms.core.database import AnonymousSessionDep
+from hrms.core.errors import CodedHTTPException
 from hrms.core.ids import to_typed_id, to_uuid
+from hrms.core.mfa import ConfirmRequest, EnrollRequest
 from hrms.core.platform_authz import (
     CurrentPlatformAdminCtx,
     PlatformAdminContext,
@@ -80,7 +83,7 @@ PLATFORM_LOGIN_REALM = "platform-login"
 
 @router.post("/login", response_model=PlatformLoginResponse, summary="Platform admin sign-in")
 async def platform_login(
-    body: PlatformLoginRequest, request: Request, session: AnonymousSessionDep
+    body: PlatformLoginRequest, request: Request, response: Response, session: AnonymousSessionDep
 ) -> PlatformLoginResponse:
     # The console that can see and change every tenant: same brute-force protection and
     # timing discipline as tenant sign-in (see modules/kernel/auth/router.py).
@@ -90,7 +93,8 @@ async def platform_login(
         (
             await session.execute(
                 text(
-                    "SELECT id, name, role, password_hash, status, token_epoch "
+                    "SELECT id, name, role, password_hash, status, token_epoch, "
+                    "mfa_secret, mfa_last_step "
                     "FROM platform_admins "
                     "WHERE lower(email) = lower(:email)"
                 ),
@@ -107,9 +111,16 @@ async def platform_login(
     else:
         await spend_verification_time(body.password)
         password_ok = False
-    if not password_ok:
+    if not password_ok or row is None:
         await throttle.record_login_failure(body.email, ip, PLATFORM_LOGIN_REALM)
         raise invalid
+    from hrms.core.mfa import verify_login
+
+    try:
+        mfa_verified = await verify_login(session, row, body.otp, platform=True)
+    except CodedHTTPException:
+        await throttle.record_login_failure(body.email, ip, PLATFORM_LOGIN_REALM)
+        raise
     await throttle.record_login_success(body.email, ip, PLATFORM_LOGIN_REALM)
 
     admin_id: UUID = row["id"]
@@ -118,9 +129,13 @@ async def platform_login(
         {"now": datetime.now(UTC), "id": str(admin_id)},
     )
 
-    token = create_platform_token(admin_id=admin_id, token_epoch=row["token_epoch"])
+    token = create_platform_token(
+        admin_id=admin_id, token_epoch=row["token_epoch"], mfa_verified=mfa_verified
+    )
     return PlatformLoginResponse(
-        access_token=token,
+        access_token=issue_browser_session(
+            request, response, token, settings.platform_token_expire_minutes * 60, platform=True
+        ),
         expires_in=settings.platform_token_expire_minutes * 60,
         name=row["name"],
         email=body.email,
@@ -142,7 +157,9 @@ async def platform_me(admin: CurrentPlatformAdminCtx) -> PlatformMe:
     predates a field being added here, the very next page load reflects the
     current truth instead of a stale login response.
     """
-    return PlatformMe(name=admin.name, email=admin.email, role=admin.role)
+    return PlatformMe(
+        name=admin.name, email=admin.email, role=admin.role, mfa_required=admin.mfa_required
+    )
 
 
 @router.post(
@@ -847,3 +864,40 @@ async def create_company(
         legal_entity_name=body.company_name,
         admin_email=None,
     )
+
+
+@router.post("/logout", status_code=204)
+async def platform_logout(
+    admin: CurrentPlatformAdminCtx, session: AnonymousSessionDep, response: Response
+) -> None:
+    await session.execute(
+        text("UPDATE platform_admins SET token_epoch=token_epoch+1 WHERE id=:id"),
+        {"id": admin.admin_id},
+    )
+    clear_browser_session(response, platform=True)
+
+
+@router.post("/mfa/enroll")
+async def platform_enroll_mfa(
+    body: EnrollRequest,
+    admin: CurrentPlatformAdminCtx,
+    session: AnonymousSessionDep,
+    response: Response,
+):
+    from hrms.core.mfa import enroll
+
+    response.headers["Cache-Control"] = "no-store"
+    return await enroll(session, admin.admin_id, body.password, platform=True)
+
+
+@router.post("/mfa/confirm", status_code=204)
+async def platform_confirm_mfa(
+    body: ConfirmRequest,
+    admin: CurrentPlatformAdminCtx,
+    session: AnonymousSessionDep,
+    response: Response,
+):
+    from hrms.core.mfa import confirm
+
+    await confirm(session, admin.admin_id, body.code, platform=True)
+    clear_browser_session(response, platform=True)

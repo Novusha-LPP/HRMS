@@ -17,6 +17,7 @@ Both are idempotent, so every deploy runs them. And, for the encrypted identifie
     python -m hrms.deploy encrypt-pii --check   exit 1 if any value still needs it
     python -m hrms.deploy decrypt-pii           back to plain text, only to downgrade 0030
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -92,8 +93,15 @@ def migrate() -> None:
 # (tests/test_field_crypto.py checks that it does).
 ENCRYPTED_COLUMNS: dict[str, tuple[str, ...]] = {
     "employee_kyc_records": (
-        "pan_number", "aadhaar_number", "uan_number", "pf_number", "esi_number",
-        "passport_number", "driving_license", "voter_id", "account_number",
+        "pan_number",
+        "aadhaar_number",
+        "uan_number",
+        "pf_number",
+        "esi_number",
+        "passport_number",
+        "driving_license",
+        "voter_id",
+        "account_number",
     ),
     "employee_kyc_documents": ("document_number",),
 }
@@ -154,11 +162,63 @@ async def _rewrite_pii(*, check: bool, decrypt: bool = False) -> int:
                             )
         if not decrypt:
             pending += await _rewrite_documents(engine, tenants, check=check, errors=unreadable)
+            pending += await _rewrite_mfa_seeds(engine, tenants, check=check, errors=unreadable)
     finally:
         await engine.dispose()
     if unreadable:
         # Everything else was handled; these need the key that wrote them put back.
         raise UnreadableValues(unreadable)
+    return pending
+
+
+async def _rewrite_mfa_seeds(engine, tenants, *, check: bool, errors: list[str]) -> int:
+    """Retain MFA through encryption-key rotation; seed contents never enter output."""
+    from hrms.core.field_crypto import FieldCryptoError, cipher
+
+    c = cipher()
+    pending = 0
+    for table, tenant_id in [("user_accounts", tid) for tid in tenants] + [
+        ("platform_admins", None)
+    ]:
+        async with engine.begin() as conn:
+            params = {}
+            where = ""
+            if tenant_id is not None:
+                params = {"tid": tenant_id}
+                where = " WHERE tenant_id=:tid"
+                await conn.execute(
+                    text("SELECT set_config('app.tenant_id',:t,true)"), {"t": str(tenant_id)}
+                )
+            rows = await conn.stream(
+                text(f"SELECT id,mfa_secret,mfa_pending_secret FROM {table}" + where), params
+            )
+            async for row in rows.mappings():
+                for column in ("mfa_secret", "mfa_pending_secret"):
+                    stored = row[column]
+                    if not stored:
+                        continue
+                    try:
+                        # Pending/enabled seeds deliberately use the same associated-data
+                        # name: confirming enrollment transfers ciphertext atomically.
+                        plain = c.decrypt(stored, "mfa_secret")
+                        if c.needs_rewrite(stored):
+                            pending += 1
+                            if not check:
+                                await conn.execute(
+                                    text(
+                                        f"UPDATE {table} SET {column}=:sealed "
+                                        "WHERE id=:id"
+                                        + (" AND tenant_id=:tid" if tenant_id else "")
+                                    ),
+                                    {
+                                        **params,
+                                        "id": row["id"],
+                                        "sealed": c.encrypt(plain, "mfa_secret"),
+                                    },
+                                )
+                    except FieldCryptoError:
+                        errors.append(f"{table}.{column} id={row['id']}")
+            await rows.close()
     return pending
 
 
@@ -204,7 +264,12 @@ async def _rewrite_documents(engine, tenants, *, check: bool, errors: list[str])
                     except store.DocumentMissing:
                         errors.append(f"employee_kyc_documents missing file id={doc_id}")
                         continue
-                    if store.sealed_key_id(blob) == active:
+                    try:
+                        key_id = store.sealed_key_id(blob)
+                    except FieldCryptoError:
+                        errors.append(f"employee_kyc_documents malformed file id={doc_id}")
+                        continue
+                    if key_id == active:
                         try:
                             store.unseal(blob, key)
                         except FieldCryptoError:
@@ -225,8 +290,10 @@ async def _rewrite_documents(engine, tenants, *, check: bool, errors: list[str])
                     continue
                 new_ref = store.save(f"kyc/{tenant_id}/{Path(ref).name}", Path(ref).read_bytes())
                 await conn.execute(
-                    text("UPDATE employee_kyc_documents SET storage_path = :r "
-                         "WHERE tenant_id = :t AND id = :id"),
+                    text(
+                        "UPDATE employee_kyc_documents SET storage_path = :r "
+                        "WHERE tenant_id = :t AND id = :id"
+                    ),
                     {"r": new_ref, "t": str(tenant_id), "id": doc_id},
                 )
                 retired.append(ref)

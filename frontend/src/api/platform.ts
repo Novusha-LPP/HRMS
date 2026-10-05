@@ -78,14 +78,15 @@ export interface AuditLogResponse {
 }
 
 export interface PlatformMe {
+  mfa_required?: boolean;
   name: string;
   email: string;
   role: PlatformRole;
 }
 
 export const platformTenantsApi = {
-  login: (email: string, password: string) =>
-    platformApi.post<PlatformLoginResponse>("/v1/platform/login", { email, password }),
+  login: (email: string, password: string, otp?: string) =>
+    platformApi.post<PlatformLoginResponse>("/v1/platform/login", { email, password, otp }),
   me: () => platformApi.get<PlatformMe>("/v1/platform/me"),
   forgotPassword: (email: string) =>
     platformApi.post<{ message: string; dev_reset_url: string | null }>("/v1/platform/forgot-password", { email }),

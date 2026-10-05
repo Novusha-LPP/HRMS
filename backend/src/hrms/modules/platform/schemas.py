@@ -7,7 +7,7 @@ from pydantic import BaseModel, EmailStr, Field
 class PlatformLoginRequest(BaseModel):
     email: EmailStr
     password: str
-
+    otp: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
 
 class PlatformLoginResponse(BaseModel):
     access_token: str
@@ -19,6 +19,7 @@ class PlatformLoginResponse(BaseModel):
 
 
 class PlatformMe(BaseModel):
+    mfa_required: bool = False
     name: str
     email: str
     role: str

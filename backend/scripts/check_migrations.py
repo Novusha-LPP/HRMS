@@ -54,7 +54,7 @@ def main():
         try:
             command.downgrade(config, "0037")
         except RuntimeError as exc:
-            if "checkpoint" not in str(exc).lower():
+            if not any(word in str(exc).lower() for word in ("checkpoint", "enrollment")):
                 raise
         else:
             raise AssertionError("Data-preserving rollback boundary must reject schema removal")

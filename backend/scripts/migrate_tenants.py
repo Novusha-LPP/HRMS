@@ -202,34 +202,297 @@ SURAJ_EMPLOYEE = Access("EMPLOYEE", "SELF", "Operations Executive", "Operations"
 SURAJ_STAFF_ROLES = {"user", "operation", "driver", ""}
 
 
-def map_suraj_role(legacy_role: str | None) -> tuple[Access, bool]:
-    """(access, recognised). Exact match on the whole legacy role — no substring guessing."""
+def clean_designation(val: str | None) -> str | None:
+    if not val:
+        return None
+    val = re.sub(r"\s+", " ", str(val)).strip()
+    if not val or val.upper() in {"NA", "N/A", "NONE", "NULL", "M QUIA.", ""}:
+        return None
+    fixes = {
+        "ASST.MANAGER": "Assistant Manager",
+        "Asst Manager": "Assistant Manager",
+        "Asst. Manager": "Assistant Manager",
+        "ASSISSTANT MANAGER": "Assistant Manager",
+        "Assistant ": "Assistant",
+        "Assistant Manager Account": "Assistant Manager - Accounts",
+        "Asst. Manager - Accounts": "Assistant Manager - Accounts",
+        "Assistant Manager Operations": "Assistant Manager - Operations",
+        "MANAGER IMPORT OPERATIONS": "Import Operations Manager",
+        "OPRATION MANAGER": "Operations Manager",
+        "SALES MANAGER": "Sales Manager",
+        "Sr Manager": "Senior Manager",
+        "Senior Manager ": "Senior Manager",
+        "Sr. Manager Accounts": "Senior Manager - Accounts",
+        "Sr. Executive": "Senior Executive",
+        "Sr. Executive ": "Senior Executive",
+        "Sr.Executive": "Senior Executive",
+        "Sr Executive ": "Senior Executive",
+        "SENIOR EXECUTIVE": "Senior Executive",
+        "SR  Eexcutive": "Senior Executive",
+        "Sr. Exucative": "Senior Executive",
+        "Seniour Executive": "Senior Executive",
+        "Sr. Executive (Operations)": "Senior Executive - Operations",
+        "Senior Account Executive": "Senior Account Executive",
+        "SENIOR ACCOUNT EXECUTIVE ": "Senior Account Executive",
+        "ACCOUNTS EXECUTIVE": "Accounts Executive",
+        "Account Executive": "Accounts Executive",
+        "ACCOUNT MANAGER": "Account Manager",
+        "JUNIOR EXECUTIVE": "Junior Executive",
+        "JR. EXECUTIVE": "Junior Executive",
+        "Jr. Executive": "Junior Executive",
+        "junior executive": "Junior Executive",
+        "Junior Executive - Import": "Junior Executive - Import",
+        "IMPORT EXECUTIVE": "Import Executive",
+        "IMPORT EXICUTIVE": "Import Executive",
+        "Import executive": "Import Executive",
+        "EXECUTIVE": "Executive",
+        " Executive": "Executive",
+        "EXECUTIVE DOCUMENTATION ": "Documentation Executive",
+        "Executive - Documentation": "Documentation Executive",
+        "Documentation Executive": "Documentation Executive",
+        "IMPORT-DSR DOCUMENTATION": "Import DSR Documentation Executive",
+        "TRAINEE EXPORT DOCUMENTATION": "Export Documentation Trainee",
+        "import documantation trainee": "Import Documentation Trainee",
+        "import documentation trainee": "Import Documentation Trainee",
+        "Trainee-import dsr": "Import DSR Trainee",
+        "FIELD ASSISTANT": "Field Assistant",
+        "FIELD ASSITANT": "Field Assistant",
+        "OPERATION ASSISTANT": "Operations Assistant",
+        "Operation assistant ": "Operations Assistant",
+        "FRONT DESK EXECUTIVE": "Front Desk Executive",
+        "Business Devlopment Exicutive": "Business Development Executive",
+        "Purchase Exceutive": "Purchase Executive",
+        "Social Media & Out reach co-ordinater": "Social Media & Outreach Coordinator",
+        "Software developer ": "Software Developer",
+        "Software developer": "Software Developer",
+        "HARDWARE AND NETWORK ENGINEER ": "Hardware & Network Engineer",
+        "Sales ": "Sales Executive",
+        "Sales Executive ": "Sales Executive",
+        "video editor": "Video Editor",
+        "Hr intern": "HR Intern",
+        "Export assistant": "Export Assistant",
+        "Intern Python Developer": "Python Developer Intern",
+        "ASST.Prod. MANAGER": "Assistant Production Manager",
+        "Store incharge": "Store Incharge",
+        "Logistics & Customer coordinator": "Logistics & Customer Coordinator",
+        "House Keeping": "Housekeeping",
+        "Inspector": "Quality Inspector",
+    }
+    if val in fixes:
+        return fixes[val]
+    words = val.split()
+    return " ".join(
+        w.upper() if w.upper() in {"HR", "QC", "IT", "DSR", "QA", "CEO"} else w.capitalize()
+        for w in words
+    )
+
+
+def clean_department(val: str | None, section: str | None = None) -> str | None:
+    raw = re.sub(r"\s+", " ", str(val or "")).strip()
+    sec = re.sub(r"\s+", " ", str(section or "")).strip()
+    fixes = {
+        "HR": "Human Resources",
+        "HR Admin": "Human Resources",
+        "Admin": "Administration",
+        "Administration": "Administration",
+        "Accounts": "Finance & Accounts",
+        "Finance & Accounts": "Finance & Accounts",
+        "Quality": "Quality Control",
+        "Quality Control": "Quality Control",
+        "Store In charge": "Store & Warehouse",
+        "Store & Warehouse": "Store & Warehouse",
+        "Logistics & Customer coordinator": "Logistics",
+        "Logistics": "Logistics",
+        "Operation-Khodiyar": "Operations",
+        "Operation-Sanand": "Operations",
+        "Software": "Software Development",
+        "Software Development": "Software Development",
+        "Information Technology": "Information Technology",
+        "Paramount": "Operations",
+        "Housekeeping": "Housekeeping",
+        "Production": "Production",
+        "Management": "Management",
+    }
+    if raw in fixes:
+        return fixes[raw]
+    if sec == "QC":
+        return "Quality Control"
+    if sec == "Store":
+        return "Store & Warehouse"
+    if sec in {"Dispatch", "Logistic"}:
+        return "Logistics"
+    if sec == "Accounts":
+        return "Finance & Accounts"
+    if sec == "Admin":
+        return "Administration"
+    if sec == "HR":
+        return "Human Resources"
+    if sec in {"Maintenance", "Tools"}:
+        return "Maintenance"
+    return raw or None
+
+
+def map_suraj_role(
+    legacy_role: str | None,
+    designation: str | None = None,
+    department: str | None = None,
+    is_hod: bool | None = None,
+) -> tuple[Access, bool]:
+    """(access, recognised). Matches role and assigns real designation and department when provided."""
     key = (legacy_role or "").strip().lower()
+    recognised = key in SURAJ_KNOWN_ROLES or key in SURAJ_STAFF_ROLES
     if key in SURAJ_KNOWN_ROLES:
-        return SURAJ_KNOWN_ROLES[key], True
-    return SURAJ_EMPLOYEE, key in SURAJ_STAFF_ROLES
+        base = SURAJ_KNOWN_ROLES[key]
+        role_name, scope_type = base.role_name, base.scope_type
+    elif is_hod or key in {"head_of_department", "head of department"}:
+        role_name, scope_type = "MANAGER", "DIRECT_REPORTS"
+        recognised = True
+    else:
+        role_name, scope_type = "EMPLOYEE", "SELF"
+
+    if designation is None and department is None and not is_hod:
+        if key in SURAJ_KNOWN_ROLES:
+            return SURAJ_KNOWN_ROLES[key], recognised
+        return Access(role_name, scope_type, SURAJ_EMPLOYEE.job, SURAJ_EMPLOYEE.department), recognised
+
+    job = clean_designation(designation)
+    dept = clean_department(department)
+
+    if not job:
+        if role_name == "SUPER_ADMIN":
+            job = "Director"
+        elif role_name == "HR_MANAGER":
+            job = "HR Executive"
+        elif role_name == "MANAGER":
+            job = "Head of Department"
+        elif role_name == "ACCOUNTANT":
+            job = "Accountant"
+        elif dept == "Import":
+            job = "Import Executive"
+        elif dept == "Export":
+            job = "Export Executive"
+        elif dept == "Finance & Accounts":
+            job = "Accountant"
+        elif dept == "Software Development":
+            job = "Software Developer"
+        else:
+            job = "Operations Executive"
+
+    if not dept:
+        if role_name == "SUPER_ADMIN":
+            dept = "Management"
+        elif role_name == "HR_MANAGER":
+            dept = "Human Resources"
+        elif role_name == "ACCOUNTANT":
+            dept = "Finance & Accounts"
+        elif any(k in job for k in ("Developer", "Software", "Tester", "Engineer")):
+            dept = "Software Development"
+        elif "Account" in job:
+            dept = "Finance & Accounts"
+        elif "Import" in job:
+            dept = "Import"
+        elif "Export" in job:
+            dept = "Export"
+        else:
+            dept = "Operations"
+
+    return Access(role_name, scope_type, job, dept), recognised
 
 
-def map_rabs_role(role: str | None, department: str | None) -> Access:
-    """Sharanga's roles are "Department_Job title" strings; match whole words in them."""
+def map_rabs_role(
+    role: str | None,
+    department: str | None = None,
+    designation: str | None = None,
+    section: str | None = None,
+) -> Access:
+    """Sharanga's roles and profiles mapping to HRMS role, designation, and department."""
     words = tokens(role)
     dept_words = tokens(department)
     if {"super", "admin"} <= words:
-        return Access("SUPER_ADMIN", "ALL", "Director", "Management")
-    if "hr" in words or "hr" in dept_words:
-        return Access("HR_MANAGER", "LEGAL_ENTITY", "HR Executive", "Human Resources")
-    if any(w.startswith("account") for w in words | dept_words):
-        return Access("ACCOUNTANT", "LEGAL_ENTITY", "Accountant", "Finance & Accounts")
-    if words & {"head", "manager", "supervisor"}:
-        job = "Production Supervisor" if "supervisor" in words else "Production Manager"
-        return Access("MANAGER", "DIRECT_REPORTS", job, "Production")
-    if "qc" in words or "qc" in dept_words:
-        return Access("EMPLOYEE", "SELF", "QC Engineer", "Quality Control")
-    if "operator" in words:
-        return Access("EMPLOYEE", "SELF", "Machine Operator", "Production")
-    if "helper" in words:
-        return Access("EMPLOYEE", "SELF", "Helper", "Production")
-    return Access("EMPLOYEE", "SELF", "Executive", "Production")
+        role_name, scope_type = "SUPER_ADMIN", "ALL"
+    elif "hr" in words or "hr" in dept_words:
+        role_name, scope_type = "HR_MANAGER", "LEGAL_ENTITY"
+    elif any(w.startswith("account") for w in words | dept_words):
+        role_name, scope_type = "ACCOUNTANT", "LEGAL_ENTITY"
+    elif words & {"head", "manager", "supervisor", "incharge"}:
+        role_name, scope_type = "MANAGER", "DIRECT_REPORTS"
+    else:
+        role_name, scope_type = "EMPLOYEE", "SELF"
+
+    if designation is None and section is None:
+        if {"super", "admin"} <= words:
+            job, dept = "Director", "Management"
+        elif "hr" in words or "hr" in dept_words:
+            job, dept = "HR Executive", "Human Resources"
+        elif any(w.startswith("account") for w in words | dept_words):
+            job, dept = "Accountant", "Finance & Accounts"
+        elif words & {"head", "manager", "supervisor"}:
+            job = "Production Supervisor" if "supervisor" in words else "Production Manager"
+            dept = "Production"
+        elif "qc" in words or "qc" in dept_words:
+            job, dept = "QC Engineer", "Quality Control"
+        elif "operator" in words:
+            job, dept = "Machine Operator", "Production"
+        elif "helper" in words:
+            job, dept = "Helper", "Production"
+        else:
+            job, dept = "Executive", "Production"
+        return Access(role_name, scope_type, job, dept)
+
+    job = clean_designation(designation)
+    dept = clean_department(department, section=section)
+
+    if not job:
+        if role_name == "SUPER_ADMIN":
+            job = "Director"
+        elif role_name == "HR_MANAGER":
+            job = "HR Executive"
+        elif role_name == "ACCOUNTANT":
+            job = "Accountant"
+        elif "marketing" in words:
+            job = "Marketing Coordinator"
+        elif "supervisor" in words:
+            job = "Production Supervisor"
+        elif "manager" in words:
+            job = "Production Manager"
+        elif "head" in words:
+            job = "Production Head"
+        elif "incharge" in words:
+            job = "Store Incharge"
+        elif "operator" in words:
+            job = "Machine Operator"
+        elif "helper" in words:
+            job = "Helper"
+        elif "inspector" in words:
+            job = "Quality Inspector"
+        elif "qc" in words:
+            job = "QC Engineer"
+        else:
+            job = "Executive"
+
+    if not dept:
+        if role_name == "SUPER_ADMIN" or job in {"Director", "CEO"}:
+            dept = "Management"
+        elif role_name == "HR_MANAGER":
+            dept = "Human Resources"
+        elif role_name == "ACCOUNTANT":
+            dept = "Finance & Accounts"
+        elif "Marketing" in job:
+            dept = "Sales & Marketing"
+        elif "QC" in job or "Inspector" in job:
+            dept = "Quality Control"
+        elif "Store" in job:
+            dept = "Store & Warehouse"
+        elif "Dispatch" in job or "Logistic" in job:
+            dept = "Logistics"
+        elif "Maintenance" in job or "Tool" in job:
+            dept = "Maintenance"
+        elif "Housekeeping" in job or "Cleaning" in job:
+            dept = "Housekeeping"
+        else:
+            dept = "Production"
+
+    return Access(role_name, scope_type, job, dept)
 
 
 # ─── One source record, normalised ───────────────────────────────────────────
@@ -282,7 +545,12 @@ def build_suraj_record(u: dict, entity_id: UUID, hash_pw=hash_password) -> Impor
     else:
         # Not a usable bcrypt hash: an unguessable placeholder, and the user must be reset by HR.
         password_hash, must_change = hash_pw(uuid4().hex), True
-    access, _ = map_suraj_role(u.get("role"))
+    access, _ = map_suraj_role(
+        u.get("role"),
+        designation=u.get("designation"),
+        department=u.get("department"),
+        is_hod=u.get("isHod"),
+    )
 
     def part(*keys):
         joined = ", ".join(str(u[k]).strip() for k in keys if u.get(k) and str(u[k]).strip())
@@ -357,7 +625,12 @@ def build_rabs_record(
     first, last = clean_name(parts[0] if parts else "Employee", " ".join(parts[1:]))
     raw_email = (login.get("email") or info.get("email") or "").strip().lower()
     is_deleted = bool(login.get("is_deleted", False))
-    access = map_rabs_role(login.get("role"), info.get("department"))
+    access = map_rabs_role(
+        login.get("role"),
+        department=info.get("department"),
+        designation=info.get("designation"),
+        section=info.get("section"),
+    )
     deleted_at = (profile or {}).get("deleted_at") or login.get("deleted_at")
     address = (info.get("address") or "").strip()
     marital = (info.get("marital_status") or "").strip().title() or None
@@ -408,10 +681,17 @@ class Context:
     stats: dict[str, Any]
     # legal entity -> (its location, {department name: org unit id})
     entity_dirs: dict[UUID, tuple[UUID, dict[str, UUID]]] = field(default_factory=dict)
+    repair: bool = False
 
 
 async def setup_org_structure(
-    session, tenant_id: UUID, entity_id: UUID, entity_name: str, entity_code: str, is_factory=False
+    session,
+    tenant_id: UUID,
+    entity_id: UUID,
+    entity_name: str,
+    entity_code: str,
+    is_factory=False,
+    extra_departments: list[str] | None = None,
 ):
     """Ensure canonical location, company org unit, and standard departments exist."""
     params = {"tid": str(tenant_id), "eid": str(entity_id)}
@@ -488,8 +768,14 @@ async def setup_org_structure(
             "General Administration",
         ]
     )
+    all_depts = list(departments)
+    if extra_departments:
+        for ed in extra_departments:
+            if ed and ed not in all_depts:
+                all_depts.append(ed)
+
     dept_map: dict[str, UUID] = {}
-    for name in departments:
+    for name in all_depts:
         found = (
             await session.execute(
                 text("""
@@ -886,6 +1172,55 @@ async def _update_existing(ctx: Context, rec: ImportRecord, row) -> str:
                 {"tid": tid, "eid": str(employment_id), "hire": rec.hire_date},
             )
             changed += 1
+
+        if may_overwrite or getattr(ctx, "repair", False):
+            location_id, dept_map = ctx.entity_dirs[rec.entity_id]
+            dept_id = dept_map.get(rec.access.department) or next(iter(dept_map.values()))
+            job_id = ctx.jobs.get(rec.access.job)
+            if job_id and dept_id:
+                asgn_res = await s.execute(
+                    text("""
+                        UPDATE assignments
+                        SET job_id = CAST(:job_id AS uuid),
+                            org_unit_id = CAST(:dept_id AS uuid),
+                            location_id = CAST(:loc_id AS uuid)
+                        WHERE tenant_id = :tid AND employment_id = :eid
+                          AND (effective_to IS NULL OR effective_to > CURRENT_DATE)
+                    """),
+                    {
+                        "tid": tid,
+                        "eid": str(employment_id),
+                        "job_id": str(job_id),
+                        "dept_id": str(dept_id),
+                        "loc_id": str(location_id),
+                    },
+                )
+                changed += asgn_res.rowcount or 0
+
+            role_id = ctx.roles.get(rec.access.role_name)
+            if role_id:
+                scope_value = (
+                    json.dumps([to_typed_id("legal_entity", rec.entity_id)])
+                    if rec.access.scope_type == "LEGAL_ENTITY"
+                    else None
+                )
+                ra_res = await s.execute(
+                    text("""
+                        UPDATE role_assignments
+                        SET role_id = CAST(:rid AS uuid),
+                            scope_type = :st,
+                            scope_value = :sv
+                        WHERE tenant_id = :tid AND user_account_id = :uid
+                    """),
+                    {
+                        "tid": tid,
+                        "uid": account_id,
+                        "rid": str(role_id),
+                        "st": rec.access.scope_type,
+                        "sv": scope_value,
+                    },
+                )
+                changed += ra_res.rowcount or 0
     return "updated" if changed else "unchanged"
 
 
@@ -965,7 +1300,9 @@ def _load(path: Path):
         return json.load(f)
 
 
-async def migrate_suraj(session, tenant_id: UUID, data_dir: Path, overwrite: bool) -> dict:
+async def migrate_suraj(
+    session, tenant_id: UUID, data_dir: Path, overwrite: bool, repair: bool = False
+) -> dict:
     """Migrate the usable Suraj Group users from exim.users.json."""
     logger.info("Starting Suraj Group migration...")
     raw_users = _load(data_dir / "exim.users.json")
@@ -994,15 +1331,6 @@ async def migrate_suraj(session, tenant_id: UUID, data_dir: Path, overwrite: boo
         "paramount propack private limited": "Paramount Propack Private Limited",
     }
 
-    entity_dirs: dict[UUID, tuple[UUID, dict[str, UUID]]] = {}
-    for entity_name, entity_id in entities.items():
-        code = "".join(w[0] for w in entity_name.split() if w.isalnum())
-        loc_id, _, depts = await setup_org_structure(
-            session, tenant_id, entity_id, entity_name, code, is_factory=False
-        )
-        entity_dirs[entity_id] = (loc_id, depts)
-
-    job_titles = sorted({a.job for a in SURAJ_KNOWN_ROLES.values()} | {SURAJ_EMPLOYEE.job})
     stats = new_stats(
         total_source=len(raw_users),
         excluded_rabs=0,
@@ -1011,17 +1339,11 @@ async def migrate_suraj(session, tenant_id: UUID, data_dir: Path, overwrite: boo
         usable=0,
         entities_breakdown={},
     )
-    ctx = Context(
-        session=session,
-        tenant_id=tenant_id,
-        overwrite=overwrite,
-        jobs=await ensure_jobs(session, tenant_id, job_titles),
-        roles=await get_roles(session, tenant_id),
-        stats=stats,
-        entity_dirs=entity_dirs,
-    )
 
     records: list[ImportRecord] = []
+    extra_depts_by_entity: dict[UUID, set[str]] = {eid: set() for eid in entities.values()}
+    all_jobs: set[str] = {a.job for a in SURAJ_KNOWN_ROLES.values()} | {SURAJ_EMPLOYEE.job}
+
     for u in raw_users:
         company = (u.get("company") or "").strip().lower()
         if not company:
@@ -1039,7 +1361,8 @@ async def migrate_suraj(session, tenant_id: UUID, data_dir: Path, overwrite: boo
                     stats["unmatched_companies"].get(company, 0) + 1
                 )
                 continue
-            rec = build_suraj_record(u, entities[target])
+            entity_id = entities[target]
+            rec = build_suraj_record(u, entity_id)
             if rec is None:
                 stats["errors"].append({"source_id": source_id(u), "error": "missing _id/username"})
                 continue
@@ -1052,6 +1375,10 @@ async def migrate_suraj(session, tenant_id: UUID, data_dir: Path, overwrite: boo
             stats["usable"] += 1
             stats["entities_breakdown"][target] = stats["entities_breakdown"].get(target, 0) + 1
             records.append(rec)
+            if rec.access.department:
+                extra_depts_by_entity[entity_id].add(rec.access.department)
+            if rec.access.job:
+                all_jobs.add(rec.access.job)
 
     if stats["unmatched_companies"]:
         skipped = sum(stats["unmatched_companies"].values())
@@ -1067,13 +1394,40 @@ async def migrate_suraj(session, tenant_id: UUID, data_dir: Path, overwrite: boo
         if unmapped:
             logger.warning("Companies missing from the mapping table (name_map): %s", unmapped)
 
+    entity_dirs: dict[UUID, tuple[UUID, dict[str, UUID]]] = {}
+    for entity_name, entity_id in entities.items():
+        code = "".join(w[0] for w in entity_name.split() if w.isalnum())
+        loc_id, _, depts = await setup_org_structure(
+            session,
+            tenant_id,
+            entity_id,
+            entity_name,
+            code,
+            is_factory=False,
+            extra_departments=list(extra_depts_by_entity.get(entity_id, [])),
+        )
+        entity_dirs[entity_id] = (loc_id, depts)
+
+    ctx = Context(
+        session=session,
+        tenant_id=tenant_id,
+        overwrite=overwrite,
+        jobs=await ensure_jobs(session, tenant_id, sorted(all_jobs)),
+        roles=await get_roles(session, tenant_id),
+        stats=stats,
+        entity_dirs=entity_dirs,
+        repair=repair,
+    )
+
     stats["duplicate_identifiers"] = duplicate_report(records)
     for rec in records:
         await import_record(ctx, rec)
     return stats
 
 
-async def migrate_rabs(session, tenant_id: UUID, data_dir: Path, overwrite: bool) -> dict:
+async def migrate_rabs(
+    session, tenant_id: UUID, data_dir: Path, overwrite: bool, repair: bool = False
+) -> dict:
     """Migrate the Sharanga / RABS accounts (logins joined to profiles on emp_id)."""
     logger.info("Starting RABS / Sharanga migration...")
     logins = _load(data_dir / "Sharanga_Production.login.json")
@@ -1089,10 +1443,16 @@ async def migrate_rabs(session, tenant_id: UUID, data_dir: Path, overwrite: bool
     if not row:
         raise SystemExit("The RABS tenant has no legal entity — create one first.")
     entity_id, entity_name = row[0], row[1]
-    loc_id, _, dept_map = await setup_org_structure(
-        session, tenant_id, entity_id, entity_name, "RABS", is_factory=True
+
+    stats = new_stats(
+        total_logins=len(logins),
+        joined_profiles=0,
+        system_accounts=0,
+        active_users=0,
+        inactive_users=0,
     )
-    job_titles = [
+
+    base_job_titles = [
         "Helper",
         "Machine Operator",
         "Quality Inspector",
@@ -1104,22 +1464,8 @@ async def migrate_rabs(session, tenant_id: UUID, data_dir: Path, overwrite: bool
         "Director",
         "Executive",
     ]
-    stats = new_stats(
-        total_logins=len(logins),
-        joined_profiles=0,
-        system_accounts=0,
-        active_users=0,
-        inactive_users=0,
-    )
-    ctx = Context(
-        session=session,
-        tenant_id=tenant_id,
-        overwrite=overwrite,
-        jobs=await ensure_jobs(session, tenant_id, job_titles),
-        roles=await get_roles(session, tenant_id),
-        stats=stats,
-        entity_dirs={entity_id: (loc_id, dept_map)},
-    )
+    all_jobs: set[str] = set(base_job_titles)
+    extra_depts: set[str] = set()
 
     records: list[ImportRecord] = []
     for login in logins:
@@ -1132,6 +1478,31 @@ async def migrate_rabs(session, tenant_id: UUID, data_dir: Path, overwrite: bool
             continue
         stats["active_users" if rec.is_active else "inactive_users"] += 1
         records.append(rec)
+        if rec.access.department:
+            extra_depts.add(rec.access.department)
+        if rec.access.job:
+            all_jobs.add(rec.access.job)
+
+    loc_id, _, dept_map = await setup_org_structure(
+        session,
+        tenant_id,
+        entity_id,
+        entity_name,
+        "RABS",
+        is_factory=True,
+        extra_departments=list(extra_depts),
+    )
+
+    ctx = Context(
+        session=session,
+        tenant_id=tenant_id,
+        overwrite=overwrite,
+        jobs=await ensure_jobs(session, tenant_id, sorted(all_jobs)),
+        roles=await get_roles(session, tenant_id),
+        stats=stats,
+        entity_dirs={entity_id: (loc_id, dept_map)},
+        repair=repair,
+    )
 
     stats["duplicate_identifiers"] = duplicate_report(records)
     for rec in records:
@@ -1196,6 +1567,11 @@ async def main(argv: list[str] | None = None) -> int:
         help="Correct existing records from the source — only accounts nobody has signed in to",
     )
     parser.add_argument(
+        "--repair",
+        action="store_true",
+        help="Update jobs (designations), departments, and roles for existing accounts without touching passwords or logging them out",
+    )
+    parser.add_argument(
         "--allow-partial", action="store_true", help="Commit even if some records failed"
     )
     parser.add_argument(
@@ -1239,7 +1615,13 @@ async def main(argv: list[str] | None = None) -> int:
 
         all_stats = []
         for tenant_id, display_name, source, importer in targets:
-            stats = await importer(session, tenant_id, args.data_dir, args.overwrite_existing)
+            stats = await importer(
+                session,
+                tenant_id,
+                args.data_dir,
+                args.overwrite_existing,
+                repair=args.repair,
+            )
             all_stats.append((tenant_id, source, stats))
             logger.info("%s result:\n%s", display_name, json.dumps(stats, indent=2, default=str))
             if stats["super_admins"]:

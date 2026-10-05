@@ -5,7 +5,7 @@ from uuid import uuid4
 
 from fastapi import HTTPException
 from sqlalchemy import and_, or_
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.datetime_utils import (
     apply_punch_rounding,
@@ -79,13 +79,13 @@ async def events_for_day(session, tenant_id, employment_id, day, policy):
                     or_(
                         Punch.work_date == day,
                         and_(
-                            Punch.work_date.is_(None),
+                            col(Punch.work_date).is_(None),
                             Punch.punched_at >= start,
                             Punch.punched_at < end,
                         ),
                     )
                 )
-                .order_by(Punch.punched_at, Punch.recorded_at)
+                .order_by(col(Punch.punched_at), col(Punch.recorded_at))
             )
         ).scalars()
     )

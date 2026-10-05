@@ -1,17 +1,20 @@
 import { useState } from "react";
-import type { FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { KeyRound } from "lucide-react";
+import { format, parseISO } from "date-fns";
+import { Building2, ChevronRight, IdCard, KeyRound, Lock, Mail, Phone, ShieldCheck, UserRound } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 import { PageHeader } from "../components/ui/PageHeader";
 import { NoEmployeeRecord, Skeleton } from "../components/ui/Feedback";
 import { Avatar } from "../components/ui/Avatar";
-import { humanize } from "../components/ui/StatusBadge";
+import { StatusBadge, humanize } from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { Tabs } from "../components/ui/Tabs";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { peopleApi } from "../api/people";
 import { KycSection } from "../components/kyc/KycSection";
+import { kycApi, type KycStatus } from "../api/kyc";
+import { DetailGrid, DetailItem, EditableSection, EmptyValue, FieldGrid } from "../components/ui/EditableSection";
 
 const GENDER_OPTIONS = [
   { value: "", label: "Prefer not to say" },
@@ -88,9 +91,27 @@ function AccountOnlyProfile({ user }: { user: NonNullable<ReturnType<typeof useA
   );
 }
 
+function regionName(code: string) {
+  try {
+    return new Intl.DisplayNames(["en"], { type: "region" }).of(code) ?? code;
+  } catch {
+    return code;
+  }
+}
+
+const KYC_LABEL: Record<KycStatus, string> = {
+  VERIFIED: "KYC verified",
+  SUBMITTED: "KYC under review",
+  REJECTED: "KYC needs changes",
+  ACTION_REQUIRED: "KYC needs changes",
+  DRAFT: "KYC in progress",
+  NOT_SUBMITTED: "KYC not started",
+};
+
 function EmployeeProfile() {
   const qc = useQueryClient();
   const toast = useToast();
+  const { user } = useAuth();
   const [params, setParams] = useSearchParams();
   const activeTab: ProfileTab = params.get("tab") === "kyc" ? "kyc" : "personal";
 
@@ -105,55 +126,71 @@ function EmployeeProfile() {
   };
 
   const profile = useQuery({ queryKey: ["my-profile"], queryFn: () => peopleApi.getMyProfile() });
+  // Same key as KycSection, so switching tabs reuses the cached record.
+  const kyc = useQuery({ queryKey: ["my-kyc"], queryFn: () => kycApi.getMyKyc() });
   const [form, setForm] = useState<FormState | null>(null);
-  const [prevProfileData, setPrevProfileData] = useState(profile.data);
-
-  if (profile.data && profile.data !== prevProfileData && !form) {
-    setPrevProfileData(profile.data);
-    setForm(toForm(profile.data));
-  }
 
   const update = useMutation({
     mutationFn: (body: Parameters<typeof peopleApi.updateMyProfile>[0]) => peopleApi.updateMyProfile(body),
     onSuccess: (p) => {
       qc.setQueryData(["my-profile"], p);
+      setForm(null);
       toast.success("Profile updated");
     },
     onError: (e) => toast.error("Couldn't update profile", errorMessage(e)),
   });
 
+  const header = (
+    <PageHeader
+      title="My profile"
+      description="Your personal details and statutory KYC documents."
+      actions={<ChangePasswordLink />}
+    />
+  );
+
   if (profile.isError) {
     return (
-      <>
-        <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." />
-        <div className="card p-6 text-sm text-danger">Couldn't load your profile. Try refreshing.</div>
-      </>
-    );
-  }
-
-  if (profile.isPending || !form) {
-    return (
-      <>
-        <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." />
-        <div className="card max-w-xl space-y-4 p-6">
-          {[0, 1, 2, 3].map((i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
+      <div>
+        {header}
+        <div className="card p-6 text-center">
+          <p className="text-sm font-medium text-fg">Couldn’t load your profile</p>
+          <p className="mt-1 text-xs text-fg-subtle">{errorMessage(profile.error)}</p>
+          <button type="button" className="btn-secondary btn-sm mt-4" onClick={() => profile.refetch()}>Try again</button>
         </div>
-      </>
+      </div>
     );
   }
 
-  if (!profile.data) return null;
+  if (profile.isPending) {
+    return (
+      <div>
+        {header}
+        <Skeleton className="mb-6 h-24 rounded-xl" />
+        <div className="card space-y-4 p-6">
+          {[0, 1, 2].map((i) => <Skeleton key={i} className="h-10 rounded-lg" />)}
+        </div>
+      </div>
+    );
+  }
 
   const p = profile.data;
-  const dirty = form.preferredName !== (p.preferred_name ?? "")
+  const legalName = `${p.legal_first_name} ${p.legal_last_name}`.trim();
+  const displayName = p.preferred_name?.trim() || legalName;
+  const editing = form !== null;
+  const dirty = !!form && (
+    form.preferredName !== (p.preferred_name ?? "")
     || form.dateOfBirth !== (p.date_of_birth ?? "")
     || form.gender !== (p.gender ?? "")
     || form.nationality !== (p.nationality ?? "")
-    || form.mobile !== (p.mobile ?? "");
+    || form.mobile !== (p.mobile ?? "")
+  );
 
-  const submit = (e: FormEvent) => {
-    e.preventDefault();
-    if (!dirty) return;
+  const save = () => {
+    if (!form) return;
+    if (!dirty) {
+      setForm(null);
+      return;
+    }
     update.mutate({
       preferred_name: form.preferredName.trim() || null,
       date_of_birth: form.dateOfBirth || null,
@@ -163,10 +200,69 @@ function EmployeeProfile() {
     });
   };
 
-  return (
-    <div className="max-w-4xl">
-      <PageHeader title="My profile" description="Update your personal details and statutory KYC documents." actions={<ChangePasswordLink />} />
+  const set = (key: keyof FormState) => (value: string) => setForm((f) => f && ({ ...f, [key]: value }));
 
+  return (
+    <div>
+      {header}
+
+      <div className="grid gap-6 xl:grid-cols-[minmax(0,1fr)_300px] xl:items-start">
+      {/* ── Summary rail: on top below xl, a sticky right column on wide screens.
+           xl:mt-16 matches the tab bar (h-10 + mb-6) so the first cards line up. ── */}
+      <aside className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:sticky xl:top-6 xl:order-2 xl:mt-16 xl:grid-cols-1">
+        <section className="card p-5">
+          <div className="flex items-center gap-4 xl:flex-col xl:text-center">
+            <Avatar name={displayName} size="xl" />
+            <div className="min-w-0">
+              <p className="truncate text-base font-semibold text-fg">{displayName}</p>
+              {displayName !== legalName && <p className="truncate text-xs text-fg-subtle">Legal name: {legalName}</p>}
+              {user?.roles.length ? (
+                <div className="mt-1.5 flex flex-wrap gap-1 xl:justify-center">
+                  {user.roles.map((r) => <span key={r} className="badge badge-brand">{humanize(r)}</span>)}
+                </div>
+              ) : null}
+            </div>
+          </div>
+          <dl className="mt-4 grid gap-3 border-t border-line pt-4 text-[13px] sm:grid-cols-3 xl:grid-cols-1">
+            <RailRow icon={Mail} label="Email" value={p.email} />
+            <RailRow icon={Phone} label="Mobile" value={p.mobile} />
+            <RailRow icon={Building2} label="Organisation" value={user?.tenantName} />
+          </dl>
+        </section>
+
+        {kyc.data && (
+          <section className="card p-5">
+            <div className="flex items-center justify-between gap-2">
+              <p className="flex items-center gap-2 text-[13px] font-semibold text-fg">
+                <ShieldCheck size={15} className={kyc.data.status === "VERIFIED" ? "text-success" : "text-fg-subtle"} />
+                KYC
+              </p>
+              <StatusBadge status={kyc.data.status} />
+            </div>
+            <p className="mt-2 text-xs text-fg-subtle">{KYC_LABEL[kyc.data.status] ?? "KYC"}</p>
+            <div className="mt-3 flex items-center gap-3">
+              <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-muted">
+                <div
+                  className={`h-full rounded-full ${kyc.data.completion_percentage === 100 ? "bg-success" : "bg-brand-500"}`}
+                  style={{ width: `${kyc.data.completion_percentage}%` }}
+                />
+              </div>
+              <span className="text-xs font-semibold tabular-nums text-fg">{kyc.data.completion_percentage}%</span>
+            </div>
+            <p className="mt-2 text-xs text-fg-subtle">
+              {kyc.data.documents.length} document{kyc.data.documents.length === 1 ? "" : "s"} uploaded
+              {kyc.data.documents.length > 0 && ` · ${kyc.data.documents.filter((d) => d.status === "VERIFIED").length} verified`}
+            </p>
+            {activeTab !== "kyc" && (
+              <button type="button" className="btn-secondary btn-sm mt-4 w-full" onClick={() => handleTabChange("kyc")}>
+                {kyc.data.status === "VERIFIED" ? "View KYC & documents" : "Continue KYC"} <ChevronRight size={13} />
+              </button>
+            )}
+          </section>
+        )}
+      </aside>
+
+      <div className="min-w-0 xl:order-1">
       <Tabs<ProfileTab>
         className="mb-6"
         value={activeTab}
@@ -180,85 +276,109 @@ function EmployeeProfile() {
       {activeTab === "kyc" ? (
         <KycSection isSelf={true} />
       ) : (
-        <form onSubmit={submit} className="space-y-6 max-w-2xl">
-          <div className="card p-6">
-          <p className="eyebrow">Legal identity</p>
-          <p className="mt-1 text-xs text-fg-subtle">
-            Your legal name and email are managed by HR — contact them if these need to change.
-          </p>
-          <div className="mt-4 grid grid-cols-2 gap-3">
-            <div>
-              <label className="label">Legal first name</label>
-              <input className="input" value={p.legal_first_name} disabled />
-            </div>
-            <div>
-              <label className="label">Legal last name</label>
-              <input className="input" value={p.legal_last_name} disabled />
-            </div>
-          </div>
-          <div className="mt-3">
-            <label className="label">Email</label>
-            <input className="input" value={p.email ?? "—"} disabled />
-          </div>
-        </div>
+        <div className="space-y-5">
+          <EditableSection
+            icon={UserRound}
+            title="Personal information"
+            description="How you’d like to be addressed and how we can reach you"
+            editing={editing}
+            canEdit={true}
+            onEdit={() => setForm(toForm(p))}
+            onCancel={() => setForm(null)}
+            onSubmit={save}
+            saving={update.isPending}
+            saveDisabled={!dirty}
+          >
+            {form ? (
+              <FieldGrid min={220}>
+                <div>
+                  <label className="label" htmlFor="pf-preferred">Preferred name</label>
+                  <input
+                    id="pf-preferred" className="input" placeholder="What should we call you?" maxLength={100} autoFocus
+                    value={form.preferredName} onChange={(e) => set("preferredName")(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="pf-dob">Date of birth</label>
+                  <input
+                    id="pf-dob" type="date" className="input" max={new Date().toISOString().slice(0, 10)}
+                    value={form.dateOfBirth} onChange={(e) => set("dateOfBirth")(e.target.value)}
+                  />
+                </div>
+                <div>
+                  <label className="label" htmlFor="pf-gender">Gender</label>
+                  <select id="pf-gender" className="input" value={form.gender} onChange={(e) => set("gender")(e.target.value)}>
+                    {GENDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+                  </select>
+                </div>
+                <div>
+                  <label className="label" htmlFor="pf-nationality">Nationality</label>
+                  <input
+                    id="pf-nationality" className="input font-mono uppercase" maxLength={2} placeholder="IN"
+                    value={form.nationality} onChange={(e) => set("nationality")(e.target.value.toUpperCase().replace(/[^A-Z]/g, ""))}
+                  />
+                  <p className="mt-1 text-[11px] text-fg-subtle">
+                    {form.nationality.length === 2 ? regionName(form.nationality) : "Two-letter country code, e.g. IN"}
+                  </p>
+                </div>
+                <div>
+                  <label className="label" htmlFor="pf-mobile">Mobile</label>
+                  <input
+                    id="pf-mobile" type="tel" className="input" placeholder="+91 98765 43210" maxLength={20}
+                    value={form.mobile} onChange={(e) => set("mobile")(e.target.value)}
+                  />
+                </div>
+              </FieldGrid>
+            ) : (
+              <DetailGrid min={220}>
+                <DetailItem label="Preferred name">{p.preferred_name || <EmptyValue />}</DetailItem>
+                <DetailItem label="Date of birth">
+                  {p.date_of_birth ? format(parseISO(p.date_of_birth), "d MMMM yyyy") : <EmptyValue />}
+                </DetailItem>
+                <DetailItem label="Gender">
+                  {p.gender ? (GENDER_OPTIONS.find((o) => o.value === p.gender)?.label ?? humanize(p.gender)) : <EmptyValue />}
+                </DetailItem>
+                <DetailItem label="Nationality">
+                  {p.nationality ? `${regionName(p.nationality)} (${p.nationality})` : <EmptyValue />}
+                </DetailItem>
+                <DetailItem label="Mobile">{p.mobile || <EmptyValue />}</DetailItem>
+              </DetailGrid>
+            )}
+          </EditableSection>
 
-        <div className="card p-6">
-          <p className="eyebrow">Personal details</p>
-          <div className="mt-4 space-y-3.5">
-            <div>
-              <label className="label" htmlFor="pf-preferred">Preferred name</label>
-              <input
-                id="pf-preferred" className="input" placeholder="What should we call you?"
-                value={form.preferredName} onChange={(e) => setForm((f) => f && ({ ...f, preferredName: e.target.value }))}
-              />
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label" htmlFor="pf-dob">Date of birth</label>
-                <input
-                  id="pf-dob" type="date" className="input"
-                  value={form.dateOfBirth} onChange={(e) => setForm((f) => f && ({ ...f, dateOfBirth: e.target.value }))}
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="pf-gender">Gender</label>
-                <select
-                  id="pf-gender" className="input" value={form.gender}
-                  onChange={(e) => setForm((f) => f && ({ ...f, gender: e.target.value }))}
-                >
-                  {GENDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
-                </select>
-              </div>
-            </div>
-            <div className="grid grid-cols-2 gap-3">
-              <div>
-                <label className="label" htmlFor="pf-nationality">Nationality <span className="font-normal text-fg-subtle">(2-letter code)</span></label>
-                <input
-                  id="pf-nationality" className="input" maxLength={2} placeholder="IN"
-                  value={form.nationality} onChange={(e) => setForm((f) => f && ({ ...f, nationality: e.target.value.toUpperCase() }))}
-                />
-              </div>
-              <div>
-                <label className="label" htmlFor="pf-mobile">Mobile</label>
-                <input
-                  id="pf-mobile" type="tel" className="input" placeholder="+91 98765 43210"
-                  value={form.mobile} onChange={(e) => setForm((f) => f && ({ ...f, mobile: e.target.value }))}
-                />
-              </div>
-            </div>
-          </div>
+          <EditableSection
+            icon={IdCard}
+            title="Legal identity"
+            description="Managed by HR. Contact HR if any of these need to change."
+            editing={false}
+            canEdit={false}
+            onEdit={() => {}}
+            onCancel={() => {}}
+            onSubmit={() => {}}
+            headerExtra={<span className="badge badge-neutral"><Lock size={11} /> Read-only</span>}
+          >
+            <DetailGrid min={220}>
+              <DetailItem label="Legal first name">{p.legal_first_name || <EmptyValue />}</DetailItem>
+              <DetailItem label="Legal last name">{p.legal_last_name || <EmptyValue />}</DetailItem>
+              <DetailItem label="Work email">{p.email || <EmptyValue />}</DetailItem>
+            </DetailGrid>
+          </EditableSection>
         </div>
-
-        <div className="flex items-center gap-3">
-          <button type="submit" className="btn-primary" disabled={!dirty || update.isPending}>
-            {update.isPending ? "Saving…" : "Save changes"}
-          </button>
-          {dirty && !update.isPending && (
-            <button type="button" className="btn-ghost" onClick={() => setForm(toForm(p))}>Discard changes</button>
-          )}
-        </div>
-      </form>
       )}
+      </div>
+      </div>
+    </div>
+  );
+}
+
+function RailRow({ icon: Icon, label, value }: { icon: LucideIcon; label: string; value?: string | null }) {
+  return (
+    <div className="flex items-start gap-2.5">
+      <Icon size={14} className="mt-0.5 shrink-0 text-fg-subtle" />
+      <div className="min-w-0">
+        <dt className="text-[11px] text-fg-subtle">{label}</dt>
+        <dd className="truncate font-medium text-fg" title={value ?? undefined}>{value || "—"}</dd>
+      </div>
     </div>
   );
 }

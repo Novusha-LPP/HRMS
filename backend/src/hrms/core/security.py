@@ -107,11 +107,13 @@ def create_access_token(
     role_names: list[str],
     expires_minutes: int | None = None,
     token_epoch: int = 0,
+    mfa_verified: bool = False,
 ) -> str:
     now = datetime.now(UTC)
     expires_minutes = expires_minutes or settings.access_token_expire_minutes
     claims: dict[str, Any] = {
         "typ": TOKEN_TYPE,
+        "mfa": mfa_verified,
         "sub": str(user_account_id),
         "tenant_id": str(tenant_id),
         "employment_id": str(employment_id) if employment_id else None,
@@ -134,12 +136,14 @@ def decode_access_token(token: str) -> dict[str, Any]:
 
 
 def create_platform_token(
-    *, admin_id: UUID, expires_minutes: int | None = None, token_epoch: int = 0
+    *, admin_id: UUID, expires_minutes: int | None = None, token_epoch: int = 0,
+    mfa_verified: bool = False
 ) -> str:
     now = datetime.now(UTC)
     expires_minutes = expires_minutes or settings.platform_token_expire_minutes
     claims: dict[str, Any] = {
         "typ": PLATFORM_TOKEN_TYPE,
+        "mfa": mfa_verified,
         "ep": token_epoch,
         "sub": str(admin_id),
         "iat": int(now.timestamp()),

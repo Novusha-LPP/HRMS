@@ -26,12 +26,17 @@ class Settings(BaseSettings):
     database_max_overflow: int = 20
     database_pool_timeout_seconds: int = 10
 
+    daily_report_max_employees: int = 25_000
+    daily_report_timeout_seconds: int = 30
+
+    privileged_mfa_required: bool = False
+
     # Security
     secret_key: str = "change-me-before-production"
     algorithm: str = "HS256"
     # No refresh-token flow yet, so this is a full work session, not a typical
     # short-lived access token. Re-authenticate after expiry.
-    access_token_expire_minutes: int = 480
+    access_token_expire_minutes: int = 60
 
     # Application
     app_name: str = "HRMS Platform"
@@ -126,7 +131,7 @@ class Settings(BaseSettings):
     mail_from: str | None = None
     mail_region: str | None = None
     platform_reset_base_url: str | None = None
-    platform_token_expire_minutes: int = 60
+    platform_token_expire_minutes: int = 30
     document_timeout_seconds: int = 15
 
 

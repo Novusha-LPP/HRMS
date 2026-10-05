@@ -51,6 +51,10 @@ class UserAccount(SQLModel, table=True):
     # change or reset bumps it, so all earlier tokens stop working at once (see
     # core/database.get_session).
     token_epoch: int = Field(default=0)
+    mfa_secret: str | None = Field(default=None, sa_column=Column(Text))
+    mfa_pending_secret: str | None = Field(default=None, sa_column=Column(Text))
+    mfa_pending_at: datetime | None = Field(default=None)
+    mfa_last_step: int = Field(default=-1)
     # The employment this login IS — drives "my dashboard", "my leave", etc.
     # Separate from role_assignments, which grant visibility into OTHER
     # employees' data (a shared accountant, a group HR manager, ...).
@@ -157,6 +161,10 @@ class PlatformAdmin(SQLModel, table=True):
     name: str = Field(max_length=255)
     password_hash: str = Field(max_length=255)
     token_epoch: int = Field(default=0)
+    mfa_secret: str | None = Field(default=None, sa_column=Column(Text))
+    mfa_pending_secret: str | None = Field(default=None, sa_column=Column(Text))
+    mfa_pending_at: datetime | None = Field(default=None)
+    mfa_last_step: int = Field(default=-1)
     # ADMIN = full read/write. VIEWER = read-only support tier — can see
     # every tenant/admin but every mutating endpoint rejects it.
     role: str = Field(default="ADMIN", max_length=50)
