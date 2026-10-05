@@ -59,7 +59,8 @@ function Card({ app, draggable, onOpen }: { app: Application; draggable: boolean
 function Column({ stage, apps, children, droppable }: { stage: Stage; apps: Application[]; children: React.ReactNode; droppable: boolean }) {
   const { setNodeRef, isOver } = useDroppable({ id: stage.id, disabled: !droppable });
   return (
-    <div className="flex w-[17rem] shrink-0 flex-col rounded-xl border border-line bg-panel">
+    <div role="group" aria-label={`${stage.name} stage, ${apps.length} candidate${apps.length === 1 ? "" : "s"}`}
+      className="flex w-[17rem] shrink-0 flex-col rounded-xl border border-line bg-panel">
       <div className="flex items-center gap-2 px-3 pb-2 pt-3">
         <span className={`h-2 w-2 rounded-full ${STAGE_DOT[stage.color]}`} />
         <span className="truncate text-[13px] font-semibold text-fg">{stage.name}</span>
