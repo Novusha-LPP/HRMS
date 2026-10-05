@@ -33,7 +33,7 @@ from hrms.core.authz import (
     resolve_acting_employment_id,
 )
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import business_today
+from hrms.core.datetime_utils import business_today, now_utc
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
 from hrms.modules.dashboard import widgets
@@ -43,6 +43,7 @@ from hrms.modules.onboarding.models import CaseStatus, OnboardingCase, Onboardin
 from hrms.modules.people.models import PersonnelAction, PersonnelActionStatus
 from hrms.modules.time.models import AttendanceDay, Punch, PunchType
 from hrms.modules.time.presence import classify, is_late, present_sql
+from hrms.modules.time.service import MAX_OPEN_SESSION
 
 router = APIRouter(prefix="/v1/dashboard", tags=["Dashboard"])
 
@@ -76,6 +77,7 @@ async def employee_dashboard(
         select(Punch)
         .where(Punch.tenant_id == tenant_id)
         .where(Punch.employment_id == emp_uuid)
+        .where(Punch.punch_type != "VOID")
         .order_by(Punch.punched_at.desc())  # type: ignore[attr-defined]
         .limit(1)
     )
@@ -118,10 +120,13 @@ async def employee_dashboard(
             "pct": round(done / total * 100) if total else 0,
         }
 
+    # Same rule as the time clock: the last event leaves a session open, and it is recent
+    # enough to still be running (comparing UTC dates with the local business date got
+    # check-ins between midnight and the UTC offset wrong).
     is_punched_in = (
         last_punch is not None
-        and last_punch.punch_type == PunchType.IN
-        and last_punch.punched_at.date() == today
+        and last_punch.punch_type in (PunchType.IN, PunchType.BREAK_END)
+        and now_utc() - last_punch.punched_at <= MAX_OPEN_SESSION
     )
 
     return {

@@ -39,6 +39,8 @@ function fmtMins(m: number) {
   return `${h}h ${mins}m`;
 }
 
+const PRESENT_STATUSES = ["PRESENT", "LATE", "HALF_DAY", "EARLY_DEPARTURE", "MISSED_PUNCH"];
+
 export function AttendancePage() {
   const { user } = useAuth();
   const [month, setMonth] = useState(() => startOfMonth(new Date()));
@@ -71,14 +73,17 @@ export function AttendancePage() {
 
   const days = data ?? [];
   const byDate = new Map(days.map((d) => [d.work_date.slice(0, 10), d]));
-  const count = (...s: string[]) => days.filter((d) => s.includes(d.status)).length;
+  // Same buckets as the dashboard (backend time/presence.py): any day with a check-in is a
+  // present day — including half days and early departures — and a day is late when it
+  // started late, whatever its final status.
+  const present = (d: (typeof days)[number]) => !!d.first_punch_in || PRESENT_STATUSES.includes(d.status);
   const worked = days.reduce((sum, d) => sum + d.effective_minutes, 0);
 
   const stats = [
-    { label: "Present", value: count("PRESENT", "LATE"), icon: CalendarCheck, cls: "text-success" },
-    { label: "Late", value: count("LATE"), icon: Timer, cls: "text-warning" },
-    { label: "Absent", value: count("ABSENT"), icon: CalendarX2, cls: "text-danger" },
-    { label: "On leave", value: count("ON_LEAVE"), icon: Umbrella, cls: "text-info" },
+    { label: "Present", value: days.filter(present).length, icon: CalendarCheck, cls: "text-success" },
+    { label: "Late", value: days.filter((d) => d.status === "LATE" || d.late_by_minutes > 0).length, icon: Timer, cls: "text-warning" },
+    { label: "Absent", value: days.filter((d) => !present(d) && d.status === "ABSENT").length, icon: CalendarX2, cls: "text-danger" },
+    { label: "On leave", value: days.filter((d) => !present(d) && d.status === "ON_LEAVE").length, icon: Umbrella, cls: "text-info" },
   ];
 
   return (

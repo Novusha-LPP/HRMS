@@ -69,6 +69,8 @@ async def test_minimal_policy_recomputed_attendance(
     if check_out:
         events.append(SimpleNamespace(punch_type="OUT", punched_at=stamp(check_out)))
     monkeypatch.setattr(service, "events_for_day", AsyncMock(return_value=events))
+    # Judged on the work day: an open session becomes a missed punch only 24 hours later.
+    monkeypatch.setattr(service, "now_utc", lambda: stamp("20:00"))
     session = SimpleNamespace(add=Mock(), flush=AsyncMock())
     tenant, employment = uuid4(), uuid4()
     ad = AttendanceDay(

@@ -33,7 +33,14 @@ from hrms.core.authz import (
     resolve_acting_employment_id,
 )
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import business_today, calc_lateness, is_working_day, now_utc, to_tz
+from hrms.core.datetime_utils import (
+    apply_punch_rounding,
+    business_today,
+    calc_lateness,
+    is_working_day,
+    now_utc,
+    to_tz,
+)
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
 from hrms.modules.approvals import service as approval_flow
@@ -58,7 +65,14 @@ from hrms.modules.time.schemas import (
     PunchResponse,
     TodayStatusResponse,
 )
-from hrms.modules.time.service import events_for_day, lock_day, recompute_day, work_date_for
+from hrms.modules.time.service import (
+    carried_over_day,
+    events_for_day,
+    lock_day,
+    recompute_day,
+    stale_open_day,
+    work_date_for,
+)
 
 router = APIRouter(prefix="/v1/time", tags=["Time & Attendance"])
 
@@ -91,6 +105,30 @@ async def create_punch(
     policy = await resolve_policy(emp_uuid, punched_at.date(), session, tenant_id)
     day = work_date_for(punched_at, policy)
     policy = await resolve_policy(emp_uuid, day, session, tenant_id)
+    previous_policy = await resolve_policy(emp_uuid, day - timedelta(days=1), session, tenant_id)
+    if body.punch_type != PunchType.IN:
+        # Checking out (or breaking) after midnight ends the session that is still open,
+        # up to 24 hours after it began.
+        carried = await carried_over_day(
+            session, tenant_id, emp_uuid, day, policy, previous_policy, punched_at
+        )
+        if carried is not None:
+            day, policy = carried, previous_policy
+        elif not await events_for_day(session, tenant_id, emp_uuid, day, policy):
+            stale = await stale_open_day(
+                session, tenant_id, emp_uuid, day, previous_policy, punched_at
+            )
+            if stale is not None:
+                raise HTTPException(
+                    409,
+                    f"Missed punch: your check-in on {stale:%d %b %Y} has no check-out within "
+                    "24 hours. Ask HR to correct it, then check in for today.",
+                )
+    else:
+        # Checking in on a new day: a session left open for over 24 hours is a missed punch.
+        stale = await stale_open_day(session, tenant_id, emp_uuid, day, previous_policy, punched_at)
+        if stale is not None:
+            await recompute_day(session, tenant_id, emp_uuid, stale, previous_policy)
     ad = await lock_day(session, tenant_id, emp_uuid, day)
     events = await events_for_day(session, tenant_id, emp_uuid, day, policy)
     previous = events[-1].punch_type if events else None
@@ -149,9 +187,21 @@ async def today_status(
     scope = read_scope(scope, "people.read")
     emp_uuid = resolve_acting_employment_id(principal, employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
-    policy = await resolve_policy(emp_uuid, now_utc().date(), session, tenant_id)
-    target_date = work_date if isinstance(work_date, date) else work_date_for(now_utc(), policy)
+    now = now_utc()
+    policy = await resolve_policy(emp_uuid, now.date(), session, tenant_id)
+    target_date = work_date if isinstance(work_date, date) else work_date_for(now, policy)
     policy = await resolve_policy(emp_uuid, target_date, session, tenant_id)
+    if not isinstance(work_date, date):
+        # After midnight, a session still open from the previous date is "today" until it
+        # ends, so the clock offers Check out rather than a new Check in.
+        previous_policy = await resolve_policy(
+            emp_uuid, target_date - timedelta(days=1), session, tenant_id
+        )
+        carried = await carried_over_day(
+            session, tenant_id, emp_uuid, target_date, policy, previous_policy, now
+        )
+        if carried is not None:
+            target_date, policy = carried, previous_policy
     ad_row = await session.execute(
         select(AttendanceDay)
         .where(AttendanceDay.tenant_id == tenant_id)
@@ -631,10 +681,18 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
         late_by = ad["late_by_minutes"] if ad else 0
         early_dep = ad["early_departure_minutes"] if ad else 0
 
-        # Safety-net: if late_by is 0 and we have first_in and policy, compute lateness
-        if first_in and late_by == 0:
+        # Only when no attendance day has been computed yet (punches without a recompute):
+        # estimate lateness from the first punch, rounded as the policy rounds. A stored day
+        # is authoritative — recomputing from the raw punch here ignored rounding and made
+        # this screen disagree with every other report.
+        if first_in and ad is None:
             live_late = calc_lateness(
-                first_in,
+                apply_punch_rounding(
+                    first_in,
+                    emp_policy.punch_rounding_minutes,
+                    emp_policy.punch_rounding_direction,
+                    emp_policy.timezone,
+                ),
                 emp_policy.expected_start_time,
                 emp_policy.grace_late_minutes,
                 emp_policy.timezone,

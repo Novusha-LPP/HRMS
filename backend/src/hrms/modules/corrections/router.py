@@ -47,6 +47,7 @@ from hrms.modules.corrections.schemas import (
 from hrms.modules.policy.engine import resolve_policy
 from hrms.modules.time.models import Punch
 from hrms.modules.time.service import (
+    MAX_OPEN_SESSION,
     events_for_day,
     lock_day,
     recompute_day,
@@ -261,10 +262,20 @@ async def _apply_correction(session, tenant_id, cor: AttendanceCorrectionRequest
     if cor.correction_type == "MARK_ABSENT":
         replacements = [("VOID", e.punched_at, e.id) for e in events]
     else:
+        first_in = cor.requested_punch_in or next(
+            (e.punched_at for e in events if e.punch_type == "IN"), None
+        )
         for kind, stamp in (("IN", cor.requested_punch_in), ("OUT", cor.requested_punch_out)):
             if stamp:
                 start, end = work_bounds(cor.work_date, policy)
-                if not start <= stamp < end:
+                # A check-out may fall after midnight, up to 24 hours after the check-in —
+                # the same window the time clock accepts.
+                late_out = (
+                    kind == "OUT"
+                    and first_in is not None
+                    and first_in < stamp <= first_in + MAX_OPEN_SESSION
+                )
+                if not (start <= stamp < end or late_out):
                     raise HTTPException(422, "Punch is outside the requested work day")
                 if kind == "IN" and work_date_for(stamp, policy) != cor.work_date:
                     raise HTTPException(422, "Punch IN is outside the requested work date")
