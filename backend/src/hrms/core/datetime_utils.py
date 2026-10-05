@@ -60,14 +60,23 @@ def localize_date(d: date, tz_name: str) -> datetime:
     return datetime(d.year, d.month, d.day, tzinfo=tz)
 
 
-def apply_punch_rounding(dt: datetime, rounding_minutes: int, direction: str) -> datetime:
+def apply_punch_rounding(
+    dt: datetime, rounding_minutes: int, direction: str, tz_name: str | None = None
+) -> datetime:
     """
     Round punch time to the nearest rounding_minutes interval.
 
     direction: NONE | UP | DOWN | NEAREST
+
+    Rounding is done on the local wall clock of `tz_name` (the policy's timezone): a
+    60-minute rounding in IST takes 09:10 to 09:00, not to 09:30 as rounding the UTC
+    instant (03:40 → 04:00 UTC) would. The result keeps dt's timezone.
     """
     if rounding_minutes <= 0 or direction == "NONE":
         return dt
+    if tz_name and dt.tzinfo is not None:
+        local = apply_punch_rounding(to_tz(dt, tz_name), rounding_minutes, direction)
+        return local.astimezone(dt.tzinfo)
     total_secs = dt.hour * 3600 + dt.minute * 60 + dt.second
     interval = rounding_minutes * 60
     remainder = total_secs % interval
@@ -284,8 +293,8 @@ def compute_day(
     Returns gross/effective/OT minutes + lateness + early departure + status.
     All values are derived from the policy — no hard-coded rules.
     """
-    pi = apply_punch_rounding(punch_in, punch_rounding_minutes, punch_rounding_direction)
-    po = apply_punch_rounding(punch_out, punch_rounding_minutes, punch_rounding_direction)
+    pi = apply_punch_rounding(punch_in, punch_rounding_minutes, punch_rounding_direction, tz_name)
+    po = apply_punch_rounding(punch_out, punch_rounding_minutes, punch_rounding_direction, tz_name)
 
     gross = max(0, int((po - pi).total_seconds() / 60))
     break_deducted = break_minutes if break_auto_deduct else 0
@@ -295,6 +304,18 @@ def compute_day(
 
     late_res = calc_lateness(pi, expected_start, grace_late_minutes, tz_name)
     early_res = calc_early_departure(po, expected_end, grace_early_departure_minutes, tz_name)
+    if expected_end > expected_start and to_tz(po, tz_name).date() != to_tz(pi, tz_name).date():
+        # A day shift worked past midnight: the schedule ends on the work date (the date of
+        # the first check-in), not on the date of the check-out.
+        scheduled_end = localize_date(to_tz(pi, tz_name).date(), tz_name).replace(
+            hour=expected_end.hour, minute=expected_end.minute
+        )
+        early = max(
+            0,
+            int((scheduled_end - to_tz(po, tz_name)).total_seconds() / 60)
+            - grace_early_departure_minutes,
+        )
+        early_res = EarlyDepartureResult(early > 0, early)
     if expected_end <= expected_start:
         local_in = to_tz(pi, tz_name)
         boundary = (

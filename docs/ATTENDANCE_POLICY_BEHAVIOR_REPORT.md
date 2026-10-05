@@ -24,21 +24,32 @@ Calculation break modes: no configured break; configured 60-minute break without
 
 The 18 calculation scenarios cover zero and one-minute sessions; below/at half-day threshold; below/at standard hours; overtime threshold minus one, exact and plus one minute; 14-, 15-, 15m59s- and 16-minute arrival delays; 14-, 15- and 16-minute early departures; early arrival; and missing OUT.
 
-## Break setting changes the result
+## How worked time is calculated (rule since 2026-10-05)
 
-**The summary “Break: 60 min” does not reveal whether auto-deduction is enabled.** That toggle changes worked time and overtime.
+**Total** runs from the first check-in to the last check-out. **Deducted** is only the time actually
+spent away — checked out between sessions, or on a recorded break (BREAK_START/BREAK_END).
+**Worked = total − deducted.** A day without a check-out in between counts in full; the policy's break
+is **never deducted automatically** (the old "auto-deduct break" switch has no effect and is no longer
+shown). The configured break still defines the scheduled shift, so a 09:30–18:30 shift with a
+60-minute break is an 8-hour standard day for half-day and overtime.
 
-For an IN at 09:30 and OUT at 18:30:
+For a 09:30–18:30 shift with a 60-minute break and overtime from 40 extra minutes:
 
-| Break configuration | Gross | Deducted break | Worked | Overtime |
+| Punches | Total | Deducted | Worked | Overtime |
 |---|---:|---:|---:|---:|
-| 60 min, auto-deduct on, no break events | 540 min | 60 min | 480 min | 0 |
-| 60 min, auto-deduct off, no break events | 540 min | 0 | 540 min | 60 min, PENDING |
-| Explicit 30-minute break | 540 min | 30 min | 510 min | 0: excess 30 is below threshold 40 |
-| Explicit 60-minute break | 540 min | 60 min | 480 min | 0 |
-| Explicit 90-minute break | 540 min | 90 min | 450 min | 0 |
+| IN 09:30, OUT 18:30 | 540 min | 0 | 540 min | 60 min, PENDING |
+| IN 09:30, OUT 13:30, IN 14:30, OUT 18:30 | 540 min | 60 min | 480 min | 0 |
+| IN 09:30, BREAK 13:00–13:30, OUT 18:30 | 540 min | 30 min | 510 min | 0: excess 30 is below threshold 40 |
+| IN 09:30, OUT 12:00, IN 12:30, OUT 14:00 | 270 min | 30 min | 240 min | 0 (early departure) |
 
-Explicit break events replace the automatic deduction; the system does not subtract both. A short shift clamps deducted break to its gross duration, so worked minutes cannot become negative.
+Present / late / half day / early departure and overtime are derived from worked time, lateness from
+the first check-in and early departure from the last check-out.
+
+**Checking out after midnight / missed punches.** A check-out up to 24 hours after the check-in
+closes that day even when it falls on the next calendar date (the clock keeps showing "Check out"
+after midnight), and corrections accept the same window. After 24 hours the check-out is refused
+with a "Missed punch" message and the day becomes **MISSED_PUNCH** for HR to correct — flagged by the
+employee's next check-in or by the daily `missed-punches` job.
 
 **Removing the configured break while keeping 8h/day changes the derived end to 17:30.** Keeping the end at 18:30 and setting break to zero produces a 9-hour standard day. In the matrix, end time was derived consistently as start + working hours + configured break.
 
@@ -98,9 +109,8 @@ The attendance report currently **does not offer overtime minutes/status, gross 
 Additional observed limits:
 
 - No attendance row means no report row. A never-punched day is omitted rather than synthesized as ABSENT.
-- Missing OUT leaves PRESENT/LATE with zero completed minutes for the first open session. It is not classified as an automatic absence or missing-punch exception.
-- For the requested daytime policy, an OUT after midnight belongs to the next work date and is rejected without an IN on that date. It does not automatically close the prior day's open session. A correction OUT outside the original business-day bounds is also rejected. Overnight policies are separate and have existing regression coverage.
-- Automatic break deduction is taken once from paired work duration. If lunch is represented as OUT/IN instead of BREAK_START/BREAK_END, the off-clock gap is already excluded; enabling auto-deduction subtracts another 60 minutes. Choose a consistent break-recording convention. This behavior was verified by the additional multi-visit tests; the 2,592-case boundary matrix uses one session with optional explicit break events.
+- Missing OUT leaves PRESENT/LATE with zero completed minutes while the session is open; 24 hours after the check-in the day becomes MISSED_PUNCH (see above).
+- Superseded 2026-10-05: an OUT after midnight used to be refused and lunch taken as OUT/IN was deducted twice when auto-deduction was on. See "How worked time is calculated".
 - Omitted optional policy fields retain defaults; omission is not disabling. Defaults include a 60-minute break allowance, overtime enabled, 50% half-day threshold, UTC timezone, and approval required. The tests set optional rules explicitly.
 - Historical rows do not automatically recalculate when a policy is edited or calculation code is fixed. Existing production data was not recomputed.
 - Browser timezone controls displayed timestamp formatting; CSV preserves timestamp offsets. The stored business work date is unchanged.

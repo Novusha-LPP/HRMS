@@ -222,17 +222,17 @@ async def put_stages(
     original_names = {uid: stage.name for uid, stage in existing.items()}
     kept: set[UUID] = set()
     # Free the names first so a rename/swap can't trip the unique name index mid-way.
-    for stage in existing.values():
-        stage.name = f"~{stage.id}"[:60]
-        session.add(stage)
+    for s in existing.values():
+        s.name = f"~{s.id}"[:60]
+        session.add(s)
     await session.flush()
     for i, item in enumerate(body.stages):
         uid = svc.parse_id(item.id, "stage")
         if uid is not None:
-            stage = existing.get(uid)
-            if stage is None:
+            existing_stage = existing.get(uid)
+            if existing_stage is None:
                 raise HTTPException(422, f"Unknown stage “{item.name}”")
-            if stage.category != item.category:
+            if existing_stage.category != item.category:
                 in_use = (
                     await session.execute(
                         text("""SELECT count(*) FROM job_applications
@@ -246,9 +246,16 @@ async def put_stages(
                         f"“{item.name}” has candidates in it, so its outcome can’t change. "
                         "Add a new stage instead.",
                     )
-            stage.version += 1
+            existing_stage.version += 1
+            stage = existing_stage
         else:
-            stage = RecruitmentStage(tenant_id=tenant_id, id=uuid4())
+            stage = RecruitmentStage(
+                tenant_id=tenant_id,
+                id=uuid4(),
+                name=item.name,
+                category=item.category,
+                color=item.color,
+            )
         stage.name, stage.category, stage.color = item.name, item.category, item.color
         stage.sequence, stage.is_active, stage.updated_at = i, item.is_active, _now()
         session.add(stage)
@@ -273,6 +280,8 @@ async def put_stages(
 
 async def _apply_input(session, tenant_id, acc: Access, opening: JobOpening, body: OpeningInput):
     unit = svc.parse_id(body.org_unit_id, "department")
+    if unit is None:
+        raise HTTPException(422, "Invalid department")
     entity = await svc.unit_entity(session, tenant_id, unit)
     if not acc.may_raise_for(unit, entity):
         raise HTTPException(403, "You can only raise openings for teams you lead or recruit for")
@@ -448,7 +457,10 @@ async def get_opening(
     session: SessionDep,
 ) -> dict:
     acc = await _access(session, tenant_id, principal, scope)
-    return await _detail(session, tenant_id, acc, principal, svc.parse_id(opening_id, "opening"))
+    oid = svc.parse_id(opening_id, "opening")
+    if oid is None:
+        raise HTTPException(404, "Opening not found")
+    return await _detail(session, tenant_id, acc, principal, oid)
 
 
 class _OpeningUpdate(OpeningInput):
@@ -796,7 +808,10 @@ async def list_applications(
         session, tenant_id, "AND a.opening_id = :oid", {"oid": opening.id}
     )
     pay = _show_pay(acc) and acc.recruiter_view(opening)
-    return [svc.application_public(*r, stages, pay) for r in rows]
+    return [
+        svc.application_public(app, cand, opn, notes, stages, pay)
+        for app, cand, opn, notes in rows
+    ]
 
 
 def _apply_candidate(candidate: Candidate, body: CandidateInput) -> None:
@@ -1032,7 +1047,8 @@ async def move_application(
     if body.expected_version is not None and body.expected_version != application.version:
         raise HTTPException(409, "Someone else moved this candidate — reload and try again")
     stages = await _stage_map(session, tenant_id)
-    target = stages.get(svc.parse_id(body.stage_id, "stage"))
+    target_stage_id = svc.parse_id(body.stage_id, "stage")
+    target = stages.get(target_stage_id) if target_stage_id else None
     if target is None or not target.is_active:
         raise HTTPException(422, "Pick an active stage")
     current = stages.get(application.stage_id)
@@ -1153,6 +1169,8 @@ async def link_hire(
     if application.hired_employment_id is not None:
         raise HTTPException(409, "This candidate is already linked to an employee")
     employment_id = svc.parse_id(body.employment_id, "employee")
+    if employment_id is None:
+        raise HTTPException(422, "That employee doesn’t exist")
     row = (
         await session.execute(
             text("SELECT legal_entity_id FROM employments WHERE tenant_id = :tid AND id = :id"),
@@ -1417,8 +1435,8 @@ async def delete_candidate(
             select(JobOpening)
             .join(
                 JobApplication,
-                (JobApplication.tenant_id == JobOpening.tenant_id)
-                & (JobApplication.opening_id == JobOpening.id),
+                (col(JobApplication.tenant_id) == col(JobOpening.tenant_id))
+                & (col(JobApplication.opening_id) == col(JobOpening.id)),
             )
             .where(JobOpening.tenant_id == tenant_id, JobApplication.candidate_id == candidate.id)
         )

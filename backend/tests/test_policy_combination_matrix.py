@@ -129,7 +129,8 @@ def expected(events, scheduled_start, scheduled_end, hours, mode, grace, ot):
     if mode.startswith("explicit_"):
         brk = int((events[2][1] - events[1][1]).total_seconds() // 60)
     else:
-        brk = min(gross, 60) if mode == "auto" else 0
+        # Only time actually spent away is deducted; the policy break is never auto-deducted.
+        brk = 0
     effective = max(0, gross - brk)
     excess = effective - hours * 60
     overtime = excess if ot and excess >= 40 else 0
@@ -167,6 +168,8 @@ async def test_policy_arithmetic_matrix(monkeypatch, hours, mode, grace, ot, sce
 
     day = date(2026, 9, 28)
     events, start, end = example(day, hours, mode, scenario)
+    # Judged on the work day itself: a missing check-out is a missed punch only 24 h later.
+    monkeypatch.setattr(service, "now_utc", lambda: end)
     oracle = expected(events, start, end, hours, mode, grace, ot)
     monkeypatch.setattr(
         service,
@@ -192,6 +195,7 @@ async def test_policy_arithmetic_matrix(monkeypatch, hours, mode, grace, ot, sce
 @pytest.mark.database
 async def test_real_api_policy_matrix(api, monkeypatch):
     from hrms.modules.time import router as time_router
+    from hrms.modules.time import service as time_service
     from tests.helpers import bearer, employee, ok, tenant
 
     client, engine = api
@@ -234,6 +238,7 @@ async def test_real_api_policy_matrix(api, monkeypatch):
         oracle = expected(events, start, end, hours, mode, grace, ot)
         for kind, stamp in events:
             monkeypatch.setattr(time_router, "now_utc", lambda stamp=stamp: stamp)
+            monkeypatch.setattr(time_service, "now_utc", lambda stamp=stamp: stamp)
             await ok(client, "POST", "/v1/time/punches", headers=token, json={"punch_type": kind})
 
         async def snapshot(day=day, index=index):
@@ -332,6 +337,7 @@ async def test_real_api_policy_matrix(api, monkeypatch):
 async def test_policy_edge_workflows(api, monkeypatch):
     from hrms.core.ids import to_typed_id
     from hrms.modules.time import router as time_router
+    from hrms.modules.time import service as time_service
     from tests.helpers import bearer, employee, ok, tenant
 
     client, engine = api
@@ -366,6 +372,7 @@ async def test_policy_edge_workflows(api, monkeypatch):
             day, time.fromisoformat(clock), ZoneInfo("Asia/Kolkata")
         ).astimezone(UTC)
         monkeypatch.setattr(time_router, "now_utc", lambda: instant)
+        monkeypatch.setattr(time_service, "now_utc", lambda: instant)
         response = await client.post("/v1/time/punches", headers=token, json={"punch_type": kind})
         assert response.status_code == expected_code, response.text
 
@@ -432,12 +439,13 @@ async def test_policy_edge_workflows(api, monkeypatch):
     cor = await correction(day, "PUNCH_OUT", requested_punch_out=out)
     assert await rows(day) == before
     await ok(client, "POST", f"/v1/corrections/{cor['id']}/approve", json={"action": "APPROVE"})
-    assert (await rows(day))[0]["effective_minutes"] == 480
+    # 09:30-18:30 with no check-out in between counts in full; nothing is auto-deducted.
+    assert (await rows(day))[0]["effective_minutes"] == 540
 
     # Reviewed overtime becomes invalid when a correction changes its minutes.
     day += timedelta(days=1)
     await punch(day, "09:30", "IN")
-    await punch(day, "19:10", "OUT")
+    await punch(day, "18:10", "OUT")
     async with engine.connect() as conn:
         stored = (
             (
@@ -460,7 +468,12 @@ async def test_policy_edge_workflows(api, monkeypatch):
         json={"status": "APPROVED"},
     )
     assert reviewed["ot_status"] == "APPROVED"
-    cor = await correction(day)
+    cor = await correction(
+        day,
+        requested_punch_out=datetime.combine(
+            day, time(17, 30), ZoneInfo("Asia/Kolkata")
+        ).isoformat(),
+    )
     await ok(client, "POST", f"/v1/corrections/{cor['id']}/approve", json={"action": "APPROVE"})
     attendance = await ok(
         client,
@@ -491,19 +504,29 @@ async def test_policy_edge_workflows(api, monkeypatch):
     await punch(day, "09:30", "OUT")
     assert (await rows(day))[0]["status"] == "ABSENT"
 
-    # A daytime policy cannot automatically pair a punch OUT on the next work date.
+    # On a daytime policy a check-out after midnight, within 24 hours of the check-in,
+    # ends that day's open session.
     day += timedelta(days=1)
     await punch(day, "09:30", "IN")
-    await punch(day + timedelta(days=1), "00:30", "OUT", 409)
-    assert (await rows(day))[0]["last_punch_out"] is None
+    await punch(day + timedelta(days=1), "00:30", "OUT")
+    assert (await rows(day))[0]["last_punch_out"].startswith(f"{day}T19:00")
 
-    # Invalid / outside-day corrections cannot alter report rows on approval.
-    before = await rows(day)
+    # A correction may move that check-out within the same 24 hours, but not beyond.
     cor = await correction(
         day,
         "PUNCH_OUT",
         requested_punch_out=datetime.combine(
             day + timedelta(days=1), time(1), ZoneInfo("Asia/Kolkata")
+        ).isoformat(),
+    )
+    await ok(client, "POST", f"/v1/corrections/{cor['id']}/approve", json={"action": "APPROVE"})
+    assert (await rows(day))[0]["last_punch_out"].startswith(f"{day}T19:30")
+    before = await rows(day)
+    cor = await correction(
+        day,
+        "PUNCH_OUT",
+        requested_punch_out=datetime.combine(
+            day + timedelta(days=1), time(10), ZoneInfo("Asia/Kolkata")
         ).isoformat(),
     )
     blocked = await client.post(f"/v1/corrections/{cor['id']}/approve", json={"action": "APPROVE"})
@@ -528,12 +551,13 @@ async def test_policy_edge_workflows(api, monkeypatch):
     )
     cor = await correction(day)
     assert cor["status"] == "APPROVED"
-    assert (await rows(day))[0]["effective_minutes"] == 480
+    assert (await rows(day))[0]["effective_minutes"] == 540
 
 
 @pytest.mark.database
 async def test_eight_hour_api_boundaries(api, monkeypatch):
     from hrms.modules.time import router as time_router
+    from hrms.modules.time import service as time_service
     from tests.helpers import bearer, employee, ok, tenant
 
     client, engine = api
@@ -575,6 +599,7 @@ async def test_eight_hour_api_boundaries(api, monkeypatch):
         oracle = expected(events, start, end, 8, mode, 15, True)
         for kind, stamp in events:
             monkeypatch.setattr(time_router, "now_utc", lambda stamp=stamp: stamp)
+            monkeypatch.setattr(time_service, "now_utc", lambda stamp=stamp: stamp)
             await ok(client, "POST", "/v1/time/punches", headers=token, json={"punch_type": kind})
         report_rows = await ok(
             client,
@@ -627,16 +652,21 @@ async def test_eight_hour_api_boundaries(api, monkeypatch):
         Path(output).write_text(json.dumps(results, indent=2) + "\n")
 
 
+# Total = first IN to last OUT; break = time actually away (checked out, or on a recorded
+# break); worked = total - break. The 12:30-13:30 lunch is taken by checking out, so it is the
+# break whatever the policy's auto-deduct setting, and it is never deducted a second time.
 @pytest.mark.parametrize(
-    "mode,worked,deducted,open_session",
+    "mode,worked,deducted,gross,open_session",
     [
-        ("auto", 420, 60, False),
-        ("configured_only", 480, 0, False),
-        ("explicit_30", 450, 30, False),
-        ("explicit_30", 180, 0, True),
+        ("auto", 480, 60, 540, False),
+        ("configured_only", 480, 60, 540, False),
+        ("explicit_30", 450, 90, 540, False),
+        ("explicit_30", 180, 0, 180, True),
     ],
 )
-async def test_multiple_visits_and_open_breaks(monkeypatch, mode, worked, deducted, open_session):
+async def test_multiple_visits_and_open_breaks(
+    monkeypatch, mode, worked, deducted, gross, open_session
+):
     from hrms.modules.time import service
 
     monkeypatch.setattr(service.approval_flow, "finish", AsyncMock())
@@ -668,5 +698,5 @@ async def test_multiple_visits_and_open_breaks(monkeypatch, mode, worked, deduct
     )
     assert actual.effective_minutes == worked
     assert actual.break_minutes == deducted
-    assert actual.gross_minutes == (180 if open_session else 480)
+    assert actual.gross_minutes == gross
     assert actual.ot_minutes == 0

@@ -141,7 +141,7 @@ def test_explicit_breaks_and_multiple_visits():
             ("OUT", 18, 0),
         ]
     ]
-    assert event_minutes(events) == (480, 30, False)
+    assert event_minutes(events) == (480, 30, False, 540)
 
 
 def test_local_midnight_and_overnight_work_date():

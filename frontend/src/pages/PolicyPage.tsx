@@ -252,7 +252,7 @@ function PolicyCard({ tpl, onEdit, onDelete, onAssign }: { tpl: PolicyTemplate; 
   const satLabel = SATURDAY_PATTERNS.find((p) => p.value === tpl.saturday_pattern)?.label;
   const rows: [typeof Clock, string, string][] = [
     [Clock, "Hours", `${tpl.expected_start_time.slice(0, 5)} – ${tpl.expected_end_time.slice(0, 5)} · ${hours}h/day`],
-    [Coffee, "Break", `${tpl.break_minutes} min${tpl.break_auto_deduct ? " · auto-deducted" : ""}`],
+    [Coffee, "Break", `${tpl.break_minutes} min · from actual check-outs`],
     [Timer, "Grace", `${tpl.grace_late_minutes} min late · ${tpl.grace_early_departure_minutes} min early`],
     [Zap, "Overtime", tpl.ot_enabled ? `After ${tpl.ot_qualifying_minutes} min at ${tpl.ot_rate}×` : "Disabled"],
     [FilePenLine, "Corrections", tpl.correction_requires_approval ? `${tpl.correction_approval_levels}-level approval` : "Auto-approved"],
@@ -504,7 +504,10 @@ function PolicySheet({ open, initial, saving, onSave, onClose }: {
             </div>
             {num("Half-day threshold", "half_day_threshold_pct", "%")}
           </div>
-          <Toggle label="Auto-deduct break" hint="Subtract the break from worked time automatically" checked={!!form.break_auto_deduct} onChange={(v) => set("break_auto_deduct", v)} />
+          <p className="hint">
+            The break sets the scheduled shift length. Worked time is measured from check-in to check-out,
+            minus only the time actually spent checked out in between — nothing is deducted automatically.
+          </p>
         </Section>
 
         <Section title="Grace & rounding">

@@ -36,6 +36,7 @@ class AttendanceStatus(enum.StrEnum):
     HOLIDAY = "HOLIDAY"
     WEEKEND = "WEEKEND"
     PENDING = "PENDING"  # punched in but not yet out
+    MISSED_PUNCH = "MISSED_PUNCH"  # still checked in 24 hours later; needs a correction
 
 
 class OvertimeStatus(enum.StrEnum):

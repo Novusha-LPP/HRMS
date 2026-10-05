@@ -154,7 +154,7 @@ def test_breaks_in_incomplete_session_do_not_reduce_completed_work():
             ("BREAK_END", 14, 30),
         ]
     ]
-    assert event_minutes(events) == (180, 0, True)
+    assert event_minutes(events) == (180, 0, True, 180)
 
 
 def test_event_duration_across_dst_fallback():
@@ -172,7 +172,7 @@ def test_event_duration_across_dst_fallback():
             punch_type="OUT", punched_at=datetime(2026, 11, 1, 1, 30, tzinfo=tz, fold=1)
         ),
     ]
-    assert event_minutes(events) == (60, 0, False)
+    assert event_minutes(events) == (60, 0, False, 60)
 
 
 @pytest.mark.database

@@ -8,6 +8,8 @@ so one tenant's failure is logged and counted without stopping the others; the r
   missed day within the month.
 - scheduled-actions: applies personnel actions whose effective date has arrived. Requests
   already apply them lazily; this makes sure they land even on a day nobody signs in.
+- missed-punches: marks days whose session is still open 24 hours after check-in as
+  MISSED_PUNCH, so reports show them for correction.
 """
 
 from __future__ import annotations
@@ -15,6 +17,7 @@ from __future__ import annotations
 import logging
 import re
 from collections.abc import Awaitable, Callable
+from datetime import timedelta
 from uuid import UUID
 
 from sqlalchemy import text
@@ -78,7 +81,43 @@ async def _scheduled_actions(session, tenant_id: UUID) -> str:
     return "applied; expired reports removed"
 
 
-JOBS: dict[str, TenantJob] = {"scheduled-actions": _scheduled_actions, "accrual": _accrual}
+async def _missed_punches(session, tenant_id: UUID) -> str:
+    """Flag recent days still checked in 24 hours later as MISSED_PUNCH, even if the
+    employee never punches again (a new check-in flags the previous day straight away)."""
+    from hrms.modules.policy.engine import resolve_policy
+    from hrms.modules.time.service import MAX_OPEN_SESSION, recompute_day
+
+    rows = await session.execute(
+        text("""
+        SELECT ad.employment_id, ad.work_date FROM attendance_days ad
+        WHERE ad.tenant_id = :tid AND ad.status <> 'MISSED_PUNCH' AND NOT ad.is_locked
+          AND ad.work_date >= :since AND ad.first_punch_in < :cutoff
+          AND EXISTS (
+              SELECT 1 FROM punches p
+              WHERE p.tenant_id = ad.tenant_id AND p.employment_id = ad.employment_id
+                AND p.work_date = ad.work_date
+                AND p.punch_type IN ('IN', 'BREAK_START', 'BREAK_END')
+                AND (ad.last_punch_out IS NULL OR p.punched_at > ad.last_punch_out))
+    """),
+        {
+            "tid": tenant_id,
+            "cutoff": now_utc() - MAX_OPEN_SESSION,
+            "since": (now_utc() - timedelta(days=14)).date(),
+        },
+    )
+    flagged = 0
+    for employment_id, work_date in rows.all():
+        policy = await resolve_policy(employment_id, work_date, session, tenant_id)
+        day = await recompute_day(session, tenant_id, employment_id, work_date, policy)
+        flagged += day.status == "MISSED_PUNCH"
+    return f"{flagged} missed punch{'' if flagged == 1 else 'es'} flagged"
+
+
+JOBS: dict[str, TenantJob] = {
+    "scheduled-actions": _scheduled_actions,
+    "accrual": _accrual,
+    "missed-punches": _missed_punches,
+}
 
 
 async def _active_tenants() -> list[UUID]:
