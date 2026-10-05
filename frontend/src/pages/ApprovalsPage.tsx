@@ -15,17 +15,17 @@ import { Avatar } from "../components/ui/Avatar";
 import { StatCard } from "../components/ui/StatCard";
 import { useToast, errorMessage } from "../components/ui/Toast";
 
-const TYPES: RequestType[] = ["LEAVE", "LEAVE_CANCELLATION", "CORRECTION", "OVERTIME"];
-const TYPE_LABEL: Record<RequestType, string> = { LEAVE: "Leave", LEAVE_CANCELLATION: "Leave cancellation", CORRECTION: "Attendance correction", OVERTIME: "Overtime" };
+const TYPES: RequestType[] = ["LEAVE", "LEAVE_CANCELLATION", "CORRECTION", "OVERTIME", "JOB_REQUISITION"];
+const TYPE_LABEL: Record<RequestType, string> = { LEAVE: "Leave", LEAVE_CANCELLATION: "Leave cancellation", CORRECTION: "Attendance correction", OVERTIME: "Overtime", JOB_REQUISITION: "Job opening" };
 const label = (s: string) => { const text = s.toLowerCase().replaceAll("_", " "); return text.charAt(0).toUpperCase() + text.slice(1); };
 const localInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 const displayValue = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) ? new Date(v).toLocaleString(undefined, { timeZoneName: "short" }) : String(v);
-const DETAIL_LABEL: Record<string, string> = { ot_minutes: "Overtime", effective_minutes: "Working time", first_punch_in: "Check-in", last_punch_out: "Check-out", requested_punch_in: "Requested check-in", requested_punch_out: "Requested check-out", from_date: "Start date", to_date: "End date", days_requested: "Duration", cancel_reason: "Cancellation reason" };
+const DETAIL_LABEL: Record<string, string> = { ot_minutes: "Overtime", effective_minutes: "Working time", first_punch_in: "Check-in", last_punch_out: "Check-out", requested_punch_in: "Requested check-in", requested_punch_out: "Requested check-out", from_date: "Start date", to_date: "End date", days_requested: "Duration", cancel_reason: "Cancellation reason", code: "Opening", positions: "Positions", target_start_date: "Target start", opening_status: "Opening status", employment_type: "Employment type", work_mode: "Work mode" };
 const detailValue = (field: string, value: unknown) => {
   if (field.endsWith("_minutes") && typeof value === "number") return `${Math.floor(value / 60)}h ${value % 60}m`;
   if (field === "days_requested") return `${value} ${Number(value) === 1 ? "day" : "days"}`;
   if (typeof value === "string" && /^\d{4}-\d{2}-\d{2}$/.test(value)) return new Date(`${value}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short", year: "numeric" });
-  if (field === "correction_type" || field.endsWith("_status")) return label(String(value));
+  if (field === "correction_type" || field.endsWith("_status") || field === "priority" || field === "employment_type" || field === "work_mode") return label(String(value));
   return displayValue(value);
 };
 
@@ -126,7 +126,7 @@ function RequestPanel({ request, close }: { request: ApprovalRequest; close: () 
   const selectedOriginal = stageApprovers.includes(original) ? original : (stageApprovers[0] ?? "");
   const directory = useQuery({ queryKey: ["approval-directory", request.id], queryFn: () => approvalsApi.directory(request.id), enabled: !!current.delegable_levels.length });
   const delegations = useQuery({ queryKey: ["approval-delegations", request.id], queryFn: () => approvalsApi.delegations(request.id), enabled: request.approval_mode !== "POLICY" });
-  const refresh = () => { qc.invalidateQueries({ queryKey: ["approval-inbox"] }); qc.invalidateQueries({ queryKey: ["approval-request", request.id] }); qc.invalidateQueries({ queryKey: ["approval-delegations", request.id] }); qc.invalidateQueries({ queryKey: ["leave"] }); qc.invalidateQueries({ queryKey: ["corrections"] }); qc.invalidateQueries({ queryKey: ["overtime"] }); };
+  const refresh = () => { qc.invalidateQueries({ queryKey: ["approval-inbox"] }); qc.invalidateQueries({ queryKey: ["approval-request", request.id] }); qc.invalidateQueries({ queryKey: ["approval-delegations", request.id] }); qc.invalidateQueries({ queryKey: ["leave"] }); qc.invalidateQueries({ queryKey: ["corrections"] }); qc.invalidateQueries({ queryKey: ["overtime"] }); qc.invalidateQueries({ queryKey: ["recruitment-opening"] }); qc.invalidateQueries({ queryKey: ["recruitment-openings"] }); };
   const decide = useMutation({ mutationFn: (action: "APPROVE" | "REJECT") => approvalsApi.decide(request.id, action, comments), onSuccess: (updated) => { refresh(); toast.success(updated.status === "PENDING" ? "Stage approved" : `Request ${label(updated.status)}`); }, onError: (e) => toast.error("Couldn’t review request", errorMessage(e)) });
   const delegate = useMutation({ mutationFn: () => approvalsApi.delegate({ instance_id: request.id, level: selectedLevel, original_user_id: selectedOriginal, delegate_user_id: replacement, flow_wide: flowWide, valid_from: new Date(from).toISOString(), valid_until: new Date(until).toISOString(), reason }), onSuccess: () => { refresh(); setReason(""); toast.success("Delegation enabled"); }, onError: (e) => toast.error("Couldn’t enable delegation", errorMessage(e)) });
   const revoke = useMutation({ mutationFn: approvalsApi.revoke, onSuccess: refresh, onError: (e) => toast.error("Couldn’t revoke delegation", errorMessage(e)) });
@@ -136,6 +136,7 @@ function RequestPanel({ request, close }: { request: ApprovalRequest; close: () 
   </> : <button className="btn-secondary" onClick={close}>Done</button>}><div className="space-y-6">
     <div data-autofocus tabIndex={-1} className="flex items-center gap-3 outline-none"><Avatar name={current.employee_name} size="lg" /><div className="min-w-0 flex-1"><p className="truncate text-sm font-semibold text-fg">{current.employee_name}</p><p className="text-xs text-fg-subtle">{current.employee_number}</p></div><StatusBadge status={current.status} /></div>
     {detail.isError && <Notice title="Couldn’t refresh request">Reload before taking action.</Notice>}
+    {current.request_type === "JOB_REQUISITION" && <Link className="btn-secondary btn-sm w-full" to={`/recruitment/openings/${current.request_id}?tab=details`}>Read the full job description<ChevronRight size={13} /></Link>}
     <section><h3 className="eyebrow mb-3">Request details</h3><dl className="grid gap-x-4 gap-y-3 rounded-xl border border-line bg-muted/40 p-4 text-[13px] sm:grid-cols-2">{Object.entries(current.request).filter(([, v]) => v != null).map(([k, v]) => <div key={k} className={k.includes("reason") ? "sm:col-span-2" : ""}><dt className="text-xs text-fg-subtle">{DETAIL_LABEL[k] ?? label(k)}</dt><dd className="mt-1 break-words text-fg">{detailValue(k, v)}</dd></div>)}</dl></section>
     <section><div className="mb-3 flex items-center justify-between"><h3 className="eyebrow">Approval progress</h3><span className="text-xs text-fg-subtle">{current.steps.length} {current.steps.length === 1 ? "stage" : "stages"}</span></div>
     <ol className="space-y-2">{current.steps.map((step, i) => {
@@ -168,6 +169,7 @@ function requestSummary(request: ApprovalRequest) {
   const data = request.request;
   const dateText = (v: unknown) => typeof v === "string" ? new Date(`${v}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "—";
   if (request.request_type === "LEAVE" || request.request_type === "LEAVE_CANCELLATION") return `${dateText(data.from_date)}${data.to_date !== data.from_date ? ` – ${dateText(data.to_date)}` : ""} · ${data.days_requested ?? "—"} ${Number(data.days_requested) === 1 ? "day" : "days"}`;
+  if (request.request_type === "JOB_REQUISITION") return `${String(data.code ?? "")} · ${String(data.title ?? "")} · ${data.positions ?? 1} ${Number(data.positions) === 1 ? "position" : "positions"}`;
   if (request.request_type === "OVERTIME") {
     const minutes = Number(data.ot_minutes ?? 0);
     return `${dateText(data.work_date)} · ${Math.floor(minutes / 60)}h ${minutes % 60}m overtime`;

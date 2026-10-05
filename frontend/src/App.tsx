@@ -24,6 +24,8 @@ const OnboardingPage = lazy(() => import("./pages/OnboardingPage").then(m => ({ 
 const ReportsPage = lazy(() => import("./pages/ReportsPage").then(m => ({ default: m.ReportsPage })));
 const OrganizationPage = lazy(() => import("./pages/OrganizationPage").then(m => ({ default: m.OrganizationPage })));
 const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ default: m.ProfilePage })));
+const RecruitmentPage = lazy(() => import("./pages/RecruitmentPage").then(m => ({ default: m.RecruitmentPage })));
+const OpeningDetailPage = lazy(() => import("./pages/OpeningDetailPage").then(m => ({ default: m.OpeningDetailPage })));
 const DailyAnalysisPage = lazy(() => import("./pages/DailyAnalysisPage").then(m => ({ default: m.DailyAnalysisPage })));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage").then(m => ({ default: m.ChangePasswordPage })));
 
@@ -116,6 +118,8 @@ export default function App() {
                               <Route path="/profile" element={<ProfilePage />} />
                               <Route path="/policy" element={<PolicyPage />} />
                               <Route path="/leave-policies" element={<Navigate to="/policy?tab=leave" replace />} />
+                              <Route path="/recruitment" element={<RecruitmentPage />} />
+                              <Route path="/recruitment/openings/:openingId" element={<OpeningDetailPage />} />
                               <Route path="/onboarding" element={<OnboardingPage />} />
                               <Route path="/reports" element={<ReportsPage />} />
                               <Route path="*" element={<Navigate to="/dashboard" replace />} />

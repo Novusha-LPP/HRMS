@@ -450,6 +450,14 @@ async def _build_me_response(
     legal_entities = [
         LegalEntitySummary(id=to_typed_id("legal_entity", r[0]), name=r[1]) for r in entity_rows
     ]
+    permissions = set(scope.permissions)
+    if employment_id and not ({"*", "recruitment.request"} & permissions):
+        # Heads, leads and PMs raise job openings for their units without a dedicated role
+        # (recruitment/access.py); tell the client so it can show them the screen.
+        from hrms.modules.recruitment.access import led_unit_ids
+
+        if await led_unit_ids(session, tenant_id, employment_id):
+            permissions.add("recruitment.request")
 
     return MeResponse(
         mfa_required=bool(account_row and account_row["mfa_secret"])
@@ -464,7 +472,7 @@ async def _build_me_response(
         tenant_id=to_typed_id("tenant", tenant_id),
         tenant_name=tenant_name,
         roles=sorted(scope.role_names),
-        permissions=sorted(scope.permissions),
+        permissions=sorted(permissions),
         is_all_scope=scope.is_all,
         legal_entities=legal_entities,
         must_change_password=bool(account_row["must_change_password"]) if account_row else False,

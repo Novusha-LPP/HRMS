@@ -72,6 +72,10 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "kyc.read",
             "kyc.write",
             "kyc.verify",
+            "recruitment.request",
+            "recruitment.read",
+            "recruitment.manage",
+            "recruitment.approve",
         }
     ),
     "MANAGER": frozenset(
@@ -88,6 +92,7 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "reports.read",
             "dashboard.manager",
             "kyc.read",
+            "recruitment.request",
         }
     ),
     "EMPLOYEE": frozenset(
