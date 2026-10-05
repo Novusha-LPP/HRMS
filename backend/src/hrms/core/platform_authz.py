@@ -19,11 +19,14 @@ from dataclasses import dataclass
 from typing import Annotated
 from uuid import UUID
 
-from fastapi import Depends, HTTPException, status
+from fastapi import Depends, HTTPException, Request, status
 from sqlalchemy import text
 
 from hrms.core.authn import CurrentPlatformAdmin
+from hrms.core.config import settings
 from hrms.core.database import AnonymousSessionDep
+from hrms.core.errors import CodedHTTPException
+from hrms.core.mfa import EXEMPT_PATHS
 
 
 @dataclass(frozen=True)
@@ -32,17 +35,21 @@ class PlatformAdminContext:
     name: str
     email: str
     role: str  # ADMIN | VIEWER
+    mfa_required: bool = False
 
 
 async def get_platform_admin_context(
     principal: CurrentPlatformAdmin,
+    request: Request,
     session: AnonymousSessionDep,
 ) -> PlatformAdminContext:
     row = (
         (
             await session.execute(
-                text("SELECT name, email, role, status, token_epoch "
-                     "FROM platform_admins WHERE id = :id"),
+                text(
+                    "SELECT name, email, role, status, token_epoch, mfa_secret "
+                    "FROM platform_admins WHERE id = :id"
+                ),
                 {"id": str(principal.admin_id)},
             )
         )
@@ -55,8 +62,17 @@ async def get_platform_admin_context(
             "This account is no longer active",
             headers={"WWW-Authenticate": "Bearer"},
         )
+    required = settings.privileged_mfa_required or bool(row["mfa_secret"])
+    if required and not principal.mfa_verified and request.url.path not in EXEMPT_PATHS:
+        raise CodedHTTPException(
+            403, "Set up your authenticator and sign in again", code="MFA_SETUP_REQUIRED"
+        )
     return PlatformAdminContext(
-        admin_id=principal.admin_id, name=row["name"], email=row["email"], role=row["role"]
+        admin_id=principal.admin_id,
+        name=row["name"],
+        email=row["email"],
+        role=row["role"],
+        mfa_required=required and not principal.mfa_verified,
     )
 
 

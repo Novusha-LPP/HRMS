@@ -164,6 +164,7 @@ async def test_dashboard_computes_only_requested_sections(api):
     assert set(some) == {"role", "scope", "headcount", "month", "kyc"}
     assert set(everything) >= {"headcount", "today", "actions", "org_summary", "kyc", "tenure"}
     assert few < all_count, (few, all_count)
+    assert all_count <= 25, f"Expected full HR dashboard to use <= 25 queries, got {all_count}"
 
     bad = await client.get("/v1/dashboard/hr?sections=headcount,salaries")
     assert bad.status_code == 422

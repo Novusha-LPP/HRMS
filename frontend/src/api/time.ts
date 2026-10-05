@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, API_BASE_URL } from "./client";
 
 export interface TodayStatus {
   employment_id: string;
@@ -103,6 +103,8 @@ export interface HourlyArrivalStat {
 }
 
 export interface DailyAnalysisResponse {
+  snapshot_id: string;
+  generated_at: string;
   total_filtered: number;
   work_date: string;
   metrics: DailyMetrics;
@@ -112,6 +114,7 @@ export interface DailyAnalysisResponse {
 }
 
 export interface DailyAnalysisParams {
+  snapshot_id?: string;
   limit?: number;
   offset?: number;
   work_date?: string;
@@ -141,6 +144,7 @@ export const timeApi = {
 
   dailyAnalysis: (params?: DailyAnalysisParams) => {
     const q = new URLSearchParams();
+    if (params?.snapshot_id) q.set("snapshot_id", params.snapshot_id);
     if (params?.limit !== undefined) q.set("limit", String(params.limit));
     if (params?.offset !== undefined) q.set("offset", String(params.offset));
     if (params?.work_date) q.append("work_date", params.work_date);
@@ -149,6 +153,19 @@ export const timeApi = {
     if (params?.search) q.append("search", params.search);
     const qs = q.toString();
     return api.get<DailyAnalysisResponse>(`/v1/time/daily-analysis${qs ? `?${qs}` : ""}`);
+  },
+
+  exportDailyAnalysis: (params: DailyAnalysisParams & { snapshot_id: string; work_date: string }) => {
+    const query = new URLSearchParams();
+    for (const [key, value] of Object.entries(params)) {
+      if (value !== undefined) query.set(key, String(value));
+    }
+    // Content-Disposition performs the download; the HttpOnly cookie authenticates it.
+    const link = document.createElement("a");
+    link.href = `${API_BASE_URL}/v1/time/daily-analysis/export?${query}`;
+    link.target = "_blank";
+    link.rel = "noopener";
+    link.click();
   },
 
   pendingOvertime: (from?: string, to?: string) => {

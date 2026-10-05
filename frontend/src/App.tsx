@@ -6,6 +6,7 @@ import { PlatformAuthProvider, usePlatformAuth } from "./context/PlatformAuthCon
 import { ThemeProvider } from "./context/ThemeContext";
 import { ToastProvider } from "./components/ui/Toast";
 import { AppShell } from "./components/layout/AppShell";
+const MfaSetupPage = lazy(() => import("./pages/MfaSetupPage").then(m => ({ default: m.MfaSetupPage })));
 const LoginPage = lazy(() => import("./pages/LoginPage").then(m => ({ default: m.LoginPage })));
 const RegisterCompanyPage = lazy(() => import("./pages/RegisterCompanyPage").then(m => ({ default: m.RegisterCompanyPage })));
 const PlatformLoginPage = lazy(() => import("./pages/PlatformLoginPage").then(m => ({ default: m.PlatformLoginPage })));
@@ -32,20 +33,22 @@ import { EnvironmentBadge } from "./components/layout/EnvironmentBadge";
 
 const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
-function RequireAuth({ children, allowPasswordChange = false }: { children: ReactNode; allowPasswordChange?: boolean }) {
+function RequireAuth({ children, allowPasswordChange = false, allowMfaSetup = false }: { children: ReactNode; allowPasswordChange?: boolean; allowMfaSetup?: boolean }) {
   const { user, loading } = useAuth();
   if (loading) return null;
   if (!user) return <Navigate to="/login" replace />;
   // An imported / admin-reset account must set its own password before anything else. The API refuses
   // every other request until it has (403 PASSWORD_CHANGE_REQUIRED); this just takes the user there.
   if (user.mustChangePassword && !allowPasswordChange) return <Navigate to="/change-password" replace />;
+  if (user.mfaRequired && !allowMfaSetup && !allowPasswordChange) return <Navigate to="/security/mfa" replace />;
   return <>{children}</>;
 }
 
-function RequirePlatformAuth({ children }: { children: ReactNode }) {
+function RequirePlatformAuth({ children, allowMfaSetup = false }: { children: ReactNode; allowMfaSetup?: boolean }) {
   const { admin, loading } = usePlatformAuth();
   if (loading) return null;
   if (!admin) return <Navigate to="/platform/login" replace />;
+  if (admin.mfa_required && !allowMfaSetup) return <Navigate to="/platform/security/mfa" replace />;
   return <>{children}</>;
 }
 
@@ -74,6 +77,7 @@ export default function App() {
                   <Route path="/docs" element={<ExternalRedirect to={API_DOCS_URL} />} />
                   <Route path="/login" element={<LoginPage />} />
                   <Route path="/register" element={<RegisterCompanyPage />} />
+                  <Route path="/security/mfa" element={<RequireAuth allowMfaSetup><MfaSetupPage /></RequireAuth>} />
                   <Route path="/change-password" element={<RequireAuth allowPasswordChange><ChangePasswordPage /></RequireAuth>} />
                   <Route
                     path="/platform/*"
@@ -81,6 +85,7 @@ export default function App() {
                       <PlatformAuthProvider>
                         <ErrorBoundary variant="card">
                           <Routes>
+                            <Route path="/security/mfa" element={<RequirePlatformAuth allowMfaSetup><MfaSetupPage platform /></RequirePlatformAuth>} />
                             <Route path="/login" element={<PlatformLoginPage />} />
                             <Route path="/forgot-password" element={<PlatformForgotPasswordPage />} />
                             <Route path="/reset-password" element={<PlatformResetPasswordPage />} />

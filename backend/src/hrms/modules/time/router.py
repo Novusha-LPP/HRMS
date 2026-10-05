@@ -15,13 +15,13 @@ the caller's own employment and is checked against their scope if they ask
 for someone else's (a manager checking a direct report's history, say).
 """
 
-from dataclasses import asdict, dataclass
+from dataclasses import dataclass
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
 from sqlalchemy import text
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.authn import CurrentUser
 from hrms.core.authz import (
@@ -37,7 +37,7 @@ from hrms.core.datetime_utils import business_today, calc_lateness, is_working_d
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
 from hrms.modules.approvals import service as approval_flow
-from hrms.modules.policy.engine import PolicyResolver, resolve_policy
+from hrms.modules.policy.engine import resolve_policy
 from hrms.modules.time.models import (
     AttendanceDay,
     AttendanceStatus,
@@ -47,16 +47,11 @@ from hrms.modules.time.models import (
     PunchSource,
     PunchType,
 )
-from hrms.modules.time.presence import classify, is_late
 from hrms.modules.time.schemas import (
     AttendanceDayResponse,
     DailyAnalysisResponse,
-    DailyEmployeeRecord,
-    DailyMetrics,
-    DepartmentAttendanceStat,
     HolidayCreate,
     HolidayResponse,
-    HourlyArrivalStat,
     OvertimeReviewRequest,
     PendingOvertimeItem,
     PunchCreate,
@@ -246,7 +241,7 @@ async def list_holidays(
         q = q.where(Holiday.holiday_date >= date(year, 1, 1)).where(
             Holiday.holiday_date <= date(year, 12, 31)
         )
-    rows = await session.execute(q.order_by(Holiday.holiday_date))  # type: ignore[attr-defined]
+    rows = await session.execute(q.order_by(col(Holiday.holiday_date)))
     return [_holiday_response(h) for h in rows.scalars()]
 
 
@@ -453,33 +448,9 @@ class _DailyRecord:
     is_currently_in: bool = False
 
 
-@router.get(
-    "/daily-analysis",
-    response_model=DailyAnalysisResponse,
-    summary="Daily employee presence, punctuality, and attendance analysis",
-    dependencies=[require_permission("people.read")],
-)
-async def daily_analysis(
-    principal: CurrentUser,
-    scope: ScopeDep,
-    tenant_id: TenantDep,
-    session: SessionDep,
-    work_date: date | None = Query(
-        default=None, description="Target calendar date (defaults to today)"
-    ),
-    department: str | None = Query(default=None, description="Filter by department name"),
-    status: str | None = Query(default=None, description="Filter by attendance status"),
-    search: str | None = Query(default=None, description="Search by employee name or number"),
-    limit: int = Query(default=200, ge=1, le=500),
-    offset: int = Query(default=0, ge=0, le=1_000_000),
-) -> DailyAnalysisResponse:
-    scope = scope.for_permission("people.read")
-    target_date = work_date if isinstance(work_date, date) else business_today()
+async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, policies):
     start_ts = datetime.combine(target_date - timedelta(days=1), datetime.min.time(), tzinfo=UTC)
     end_ts = datetime.combine(target_date + timedelta(days=2), datetime.min.time(), tzinfo=UTC)
-
-    # 1. Query all active employments in scope — the caller's own company/team/self,
-    #    never the whole tenant (an employee of one company must not see another's staff).
     scope_clause, scope_params = scope.employment_filter_sql("e")
     emp_query = text(f"""
         SELECT
@@ -502,12 +473,19 @@ async def daily_analysis(
           AND e.hire_date <= CAST(:target_date AS date)
           AND (e.separation_date IS NULL OR e.separation_date > CAST(:target_date AS date))
           {scope_clause}
-        ORDER BY p.legal_first_name ASC
+        ORDER BY p.legal_first_name ASC, e.id ASC
+        LIMIT 250 OFFSET :batch_offset
     """)
     emp_rows = (
         (
             await session.execute(
-                emp_query, {"tid": str(tenant_id), "target_date": target_date, **scope_params}
+                emp_query,
+                {
+                    "tid": str(tenant_id),
+                    "target_date": target_date,
+                    "batch_offset": batch_offset,
+                    **scope_params,
+                },
             )
         )
         .mappings()
@@ -610,7 +588,6 @@ async def daily_analysis(
     records: list[_DailyRecord] = []
     hourly_counter: dict[str, int] = {f"{h:02d}:00": 0 for h in range(7, 20)}
 
-    policies = PolicyResolver(session, tenant_id, target_date)
     for emp in emp_rows:
         emp_id = str(emp["id"])
         ad = ad_map.get(emp_id)
@@ -714,115 +691,69 @@ async def daily_analysis(
         )
         records.append(record)
 
-    # Calculate overall metrics. Each record lands in exactly one presence bucket
-    # (see time/presence.py), so present + on_leave + absent never exceeds the headcount.
-    def bucket(r: _DailyRecord) -> str:
-        return classify(r.status, r.first_punch_in, on_leave=r.leave_type is not None)
+    return records, hourly_counter, len(emp_rows)
 
-    total_headcount = len(records)
-    present_records = [r for r in records if bucket(r) == "present"]
-    present_count = len(present_records)
-    late_count = len([r for r in present_records if is_late(r.status, r.late_by_minutes)])
-    on_time_count = present_count - late_count
-    absent_count = len([r for r in records if bucket(r) == "absent"])
-    on_leave_count = len([r for r in records if bucket(r) == "on_leave"])
-    half_day_count = len([r for r in records if r.status == "HALF_DAY"])
-    presence_rate = (
-        round((present_count / total_headcount * 100), 1) if total_headcount > 0 else 0.0
+
+@router.get(
+    "/daily-analysis",
+    response_model=DailyAnalysisResponse,
+    dependencies=[require_permission("people.read")],
+)
+async def daily_analysis(
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    work_date: date | None = Query(default=None),
+    department: str | None = Query(default=None, max_length=255),
+    status: str | None = Query(default=None, max_length=30),
+    search: str | None = Query(default=None, max_length=255),
+    limit: int = Query(default=200, ge=1, le=500),
+    offset: int = Query(default=0, ge=0, le=1_000_000),
+    snapshot_id: UUID | None = Query(default=None),
+) -> DailyAnalysisResponse:
+    from hrms.modules.time.snapshots import read_snapshot
+
+    return await read_snapshot(
+        session,
+        tenant_id,
+        principal.user_account_id,
+        scope.for_permission("people.read"),
+        work_date if isinstance(work_date, date) else business_today(),
+        department,
+        status,
+        search,
+        limit,
+        offset,
+        snapshot_id,
+        _daily_batch,
     )
-    avg_minutes = (
-        round(sum(r.effective_minutes for r in present_records) / present_count)
-        if present_count > 0
-        else 0
-    )
-    total_overtime = sum(r.overtime_minutes for r in records)
 
-    # Department breakdown
-    dept_map: dict[str, dict] = {}
-    for r in records:
-        d_name = r.department or "General"
-        if d_name not in dept_map:
-            dept_map[d_name] = {"total": 0, "present": 0, "late": 0, "absent": 0, "on_leave": 0}
-        dept_map[d_name]["total"] += 1
-        kind = bucket(r)
-        if kind == "present":
-            dept_map[d_name]["present"] += 1
-            if is_late(r.status, r.late_by_minutes):
-                dept_map[d_name]["late"] += 1
-        elif kind == "absent":
-            dept_map[d_name]["absent"] += 1
-        elif kind == "on_leave":
-            dept_map[d_name]["on_leave"] += 1
 
-    department_stats = [
-        DepartmentAttendanceStat(
-            department=k,
-            total=v["total"],
-            present=v["present"],
-            late=v["late"],
-            absent=v["absent"],
-            on_leave=v["on_leave"],
-            presence_rate=round((v["present"] / v["total"] * 100), 1) if v["total"] > 0 else 0.0,
-        )
-        for k, v in sorted(dept_map.items())
-    ]
+@router.get("/daily-analysis/export", dependencies=[require_permission("people.read")])
+async def daily_analysis_export(
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    snapshot_id: UUID,
+    work_date: date,
+    department: str | None = Query(default=None, max_length=255),
+    status: str | None = Query(default=None, max_length=30),
+    search: str | None = Query(default=None, max_length=255),
+):
+    from hrms.modules.time.snapshots import export_snapshot
 
-    # Hourly arrivals
-    hourly_arrivals = [HourlyArrivalStat(hour=h, count=c) for h, c in hourly_counter.items()]
-
-    # Apply filters to records if requested
-    filtered_records = records
-    if department:
-        filtered_records = [
-            r
-            for r in filtered_records
-            if r.department and r.department.lower() == department.lower()
-        ]
-    if status:
-        if status.upper() == "PRESENT":
-            filtered_records = [r for r in filtered_records if bucket(r) == "present"]
-        elif status.upper() == "LATE":
-            filtered_records = [
-                r
-                for r in filtered_records
-                if bucket(r) == "present" and is_late(r.status, r.late_by_minutes)
-            ]
-        else:
-            filtered_records = [r for r in filtered_records if r.status.upper() == status.upper()]
-    if search:
-        s_lower = search.strip().lower()
-        filtered_records = [
-            r
-            for r in filtered_records
-            if s_lower in r.name.lower() or s_lower in r.employee_number.lower()
-        ]
-
-    return DailyAnalysisResponse(
-        work_date=target_date,
-        metrics=DailyMetrics(
-            total_headcount=total_headcount,
-            present_count=present_count,
-            on_time_count=on_time_count,
-            late_count=late_count,
-            absent_count=absent_count,
-            on_leave_count=on_leave_count,
-            half_day_count=half_day_count,
-            presence_rate=presence_rate,
-            average_work_minutes=avg_minutes,
-            total_overtime_minutes=total_overtime,
-        ),
-        department_stats=department_stats,
-        hourly_arrivals=hourly_arrivals,
-        total_filtered=len(filtered_records),
-        employees=[
-            DailyEmployeeRecord(
-                **{
-                    **asdict(record),
-                    "employment_id": to_typed_id("employment", record.employment_id),
-                }
-            )
-            for record in filtered_records[offset : offset + limit]
-        ],
+    return await export_snapshot(
+        session,
+        tenant_id,
+        principal.user_account_id,
+        scope.for_permission("people.read"),
+        work_date,
+        department,
+        status,
+        search,
+        snapshot_id,
     )
 
 

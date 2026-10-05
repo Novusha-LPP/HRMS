@@ -1,8 +1,12 @@
 # Combined reliability implementation and acceptance plan
 
-The live checkout is /home/aiserver/HRMS. This work is isolated in the reliability-hardening
-worktree; do not copy code into the live checkout to deploy. Release images are the deployment unit.
+The live checkout is /home/aiserver/HRMS. The previous hardening changes and follow-up
+source fixes are now on main. The user explicitly authorized direct edits and a backed-up
+live schema upgrade through 0042. Changes remain uncommitted. Production releases should
+still use verified immutable images rather than editing a running checkout.
 No 9/10 claim is valid until the operational acceptance gates below have evidence.
+The chosen AWS/self-hosted monitoring design is [AWS_RELIABILITY_PLAN.md](AWS_RELIABILITY_PLAN.md);
+it is plan-only. Current application work is documented in [RELIABILITY_FIXES.md](RELIABILITY_FIXES.md).
 
 ## Gate A: safe release
 
@@ -60,7 +64,7 @@ operator inputs; do not invent them or silently provision billable resources.
 
 | Original step | Delivered code / evidence | Remaining acceptance |
 | --- | --- | --- |
-| 1 | All work in codex/reliability-hardening; live checkout untouched | Deploy immutable images; retire HRMS reload processes during cutover |
+| 1 | Uncommitted follow-up applied directly to main by request; private backup and live additive upgrade through 0042 approved | Deploy immutable images; retire HRMS reload processes during cutover |
 | 2 | 0034–0038 carried forward; 0039 metadata/checkpoints; 0040 encrypted mail outbox | PR CI and review; do not downgrade across irreversible boundaries |
 | 3 | Actual release-please branch checkout; publication depends on all checks | RELEASE_PLEASE_TOKEN configured; merge release; verify GHCR images |
 | 4 | Strict deployed-environment validation and env examples | Provide protected secrets and independent encryption-key custody |
@@ -73,9 +77,9 @@ operator inputs; do not invent them or silently provision billable resources.
 | 13 | Existing tenant admin reset; SES reset outbox with encrypted payload, retries and expiry cleanup | Verified SES sender/IAM and real delivery; keep disabled until configured |
 | 14–15 | Provider-neutral acceptance requirements | Host/account/budget decision, PITR, independent secrets custody and versioned document storage |
 | 16 | CI browser tests: login, punch, leave apply/approve, correction, image preview, transient session failure | CI execution and additional cross-browser coverage where required |
-| 17 | Restrictive CSP, platform tokens shortened, credential epoch revocation | Privileged MFA and secure session architecture remain unfinished |
+| 17 | Restrictive CSP, platform tokens shortened, credential epoch revocation | HttpOnly browser cookies and encrypted authenticator enrollment delivered in the follow-up; verify real HTTPS topology and privileged rollout |
 | 18–19 | Same-image promotion model and explicit RPO/RTO and incident acceptance gates | Separate production infrastructure, incident ownership and measured recovery drills |
-| 20 | Account filtering/pagination in SQL; daily analysis responses paginated | Daily analysis still computes whole-scope summaries; prove capacity or materialize summaries before large tenants |
+| 20 | Account filtering/pagination in SQL; bounded persisted daily snapshots and single-pass CSV in follow-up | Verify concurrent production load, snapshot retention and pool budgets |
 
 Router splitting means internal modules/services, not a demand for distributed microservices.
 A refactor alone does not improve availability; prioritize measured query and recovery failures.
@@ -85,9 +89,9 @@ A refactor alone does not improve availability; prioritize measured query and re
 - The live installation has not been changed by this branch and gains none of these safeguards until cutover.
 - Default accrual recovery starts in the current tenant month. Earlier periods need an explicitly reviewed
   baseline because historical policy versions/rehire semantics may change what should be credited.
-- Daily-analysis pagination bounds network payloads but does not bound aggregate CPU/memory. Full CSV
-  exports request successive 500-row pages, recomputing the summary; benchmark large exports and use
-  persisted summaries/streaming export if this exceeds the agreed request/job budget.
+- Follow-up daily analysis computes once in batches of 250 and persists scoped/user-owned snapshots.
+  Paging/export reuse those rows. The 10,000-employee local sequential check passed; concurrent
+  production load, report write amplification and database pool saturation still require evidence.
 - Account UI can still collect multiple pages. SQL pagination limits each request; it is not a claim that
   the browser can comfortably display arbitrarily large directories.
 - SES delivery is at least once, with single-use reset tokens. A worker crash after sending and before

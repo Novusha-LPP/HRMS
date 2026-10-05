@@ -16,29 +16,28 @@ export class PlatformApiError extends Error {
   }
 }
 
-// Separate from api/client.ts's authToken on purpose — a platform admin is
-// not a tenant user, and the two token types are rejected by each other's
-// endpoints server-side (see core/authn.py), so keeping them in entirely
-// separate variables/storage keys avoids ever mixing them up client-side too.
-let platformToken: string | null = null;
+// A separate identity generation counter for the platform cookie realm.
+let platformToken = 0;
 
-export function setPlatformToken(token: string | null) {
-  platformToken = token;
+export function setPlatformToken() {
+  platformToken += 1;
 }
+
+export function getPlatformSession(): number { return platformToken; }
 
 async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   const headers: Record<string, string> = {
     "Content-Type": "application/json",
     ...(options.headers as Record<string, string>),
   };
-  if (platformToken) headers["Authorization"] = `Bearer ${platformToken}`;
+  headers["X-HRMS-Session"] = "cookie";
 
   const clientRequestId = headers["X-Request-ID"] || generateRequestId();
   headers["X-Request-ID"] = clientRequestId;
 
   const requestToken = platformToken;
   return withRequestDeadline(async (signal) => {
-  const res = await fetch(`${BASE}${path}`, { ...options, headers, signal });
+  const res = await fetch(`${BASE}${path}`, { ...options, headers, signal, credentials: "include" });
   if (requestToken !== platformToken) throw new Error("Session changed");
   if (!res.ok) {
     const body = await res.json().catch(() => ({}));

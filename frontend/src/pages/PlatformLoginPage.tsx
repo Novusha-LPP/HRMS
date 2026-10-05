@@ -10,6 +10,7 @@ export function PlatformLoginPage() {
   const navigate = useNavigate();
   const [email, setEmail] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
 
@@ -19,10 +20,10 @@ export function PlatformLoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await login(email, password);
+      await login(email, password, otp || undefined);
       navigate("/platform");
-    } catch {
-      setError("Invalid email or password");
+    } catch (e) {
+      setError(e instanceof Error ? e.message : "Sign-in failed");
     } finally {
       setBusy(false);
     }
@@ -70,6 +71,11 @@ export function PlatformLoginPage() {
           <div>
             <label className="label" htmlFor="pl-password">Password</label>
             <input id="pl-password" type="password" autoComplete="current-password" className="input" value={password} onChange={(e) => setPassword(e.target.value)} />
+          </div>
+          <div>
+            <label className="label" htmlFor="auth-otp">Authenticator code (if enabled)</label>
+            <input id="auth-otp" className="input" inputMode="numeric" autoComplete="one-time-code"
+              pattern="[0-9]{6}" maxLength={6} value={otp} onChange={e => setOtp(e.target.value)} />
           </div>
           <button type="submit" disabled={!email || !password || busy} className="btn-primary h-10 w-full">
             {busy ? <Loader2 size={15} className="animate-spin" /> : <>Sign in <ArrowRight size={15} /></>}

@@ -1,29 +1,184 @@
 import { useState, useRef, useEffect } from "react";
-import type { FormEvent } from "react";
+import type { DragEvent, FormEvent, ReactNode } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
 import {
-  FileText, Upload, Download, Eye, CheckCircle2,
-  XCircle, Clock, Trash2, Check,
-  FileUp, Sparkles, AlertTriangle, ShieldCheck,
-  Building, Building2, RefreshCw, CreditCard,
-  Users, MapPin, Copy,
+  FileText, Upload, Download, Eye, EyeOff, CheckCircle2, XCircle, Clock, Trash2, Check,
+  FileUp, Sparkles, AlertTriangle, ShieldCheck, Building, Building2, RefreshCw,
+  CreditCard, Users, MapPin, Copy, FolderOpen, ImageIcon, X,
 } from "lucide-react";
+import type { LucideIcon } from "lucide-react";
 
 import {
   kycApi,
   DOCUMENT_TYPE_LABELS,
   type KycDocument,
+  type KycRecord,
+  type KycStatus,
   type DocumentType,
   type KycRecordUpdatePayload,
 } from "../../api/kyc";
+import { useAuth } from "../../context/AuthContext";
 import { StatusBadge, humanize } from "../ui/StatusBadge";
-import { Dialog } from "../ui/Overlay";
+import { ConfirmDialog, Dialog } from "../ui/Overlay";
 import { Skeleton } from "../ui/Feedback";
 import { useToast, errorMessage } from "../ui/Toast";
+import { DetailGrid, DetailItem, EditableSection, EmptyValue, FieldGrid } from "../ui/EditableSection";
 
-const BLOOD_GROUPS = ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"];
-const MARITAL_STATUSES = ["SINGLE", "MARRIED", "DIVORCED", "WIDOWED"];
+const MAX_UPLOAD_MB = 10;
+const PREVIEWABLE = new Set(["application/pdf", "image/png", "image/jpeg"]);
+
+// ─── Field definitions ──────────────────────────────────────────────────────
+
+type FieldKey = Exclude<keyof KycRecordUpdatePayload, "passport_expiry">;
+
+interface FieldDef {
+  key: FieldKey;
+  label: string;
+  required?: boolean;
+  placeholder?: string;
+  hint?: string;
+  type?: "text" | "tel" | "select" | "textarea";
+  options?: { value: string; label: string }[];
+  maxLength?: number;
+  mono?: boolean;
+  /** Applied to every keystroke (upper-casing, stripping spaces…). */
+  normalize?: (v: string) => string;
+  /** Masked in view mode until revealed. */
+  sensitive?: boolean;
+  display?: (v: string) => string;
+}
+
+type SectionId = "identity" | "bank" | "statutory" | "family" | "address";
+
+interface SectionDef {
+  id: SectionId;
+  title: string;
+  description: string;
+  icon: LucideIcon;
+  fields: FieldDef[];
+  min?: number;
+}
+
+const upper = (v: string) => v.toUpperCase();
+const digits = (v: string) => v.replace(/\D/g, "");
+const noSpaces = (v: string) => v.replace(/\s/g, "");
+const group4 = (v: string) => v.replace(/(\d{4})(?=\d)/g, "$1 ");
+
+const SECTIONS: SectionDef[] = [
+  {
+    id: "identity",
+    title: "Identity & tax",
+    description: "Government-issued identifiers used for statutory compliance",
+    icon: CreditCard,
+    fields: [
+      { key: "pan_number", label: "PAN", required: true, placeholder: "ABCDE1234F", hint: "10 characters", maxLength: 10, mono: true, normalize: (v) => upper(noSpaces(v)) },
+      { key: "aadhaar_number", label: "Aadhaar number", required: true, placeholder: "1234 5678 9012", hint: "12 digits", maxLength: 12, mono: true, normalize: digits, sensitive: true, display: group4 },
+      { key: "passport_number", label: "Passport number", placeholder: "Optional", mono: true, maxLength: 50, normalize: upper },
+      { key: "driving_license", label: "Driving licence", placeholder: "Optional", mono: true, maxLength: 50, normalize: upper },
+      { key: "voter_id", label: "Voter ID (EPIC)", placeholder: "Optional", mono: true, maxLength: 50, normalize: upper },
+    ],
+  },
+  {
+    id: "bank",
+    title: "Bank account",
+    description: "Salary is credited to this account",
+    icon: Building,
+    fields: [
+      { key: "account_holder_name", label: "Account holder name", placeholder: "As printed on the passbook", maxLength: 255 },
+      { key: "bank_name", label: "Bank name", required: true, placeholder: "e.g. HDFC Bank", maxLength: 100 },
+      { key: "account_number", label: "Account number", required: true, placeholder: "Account number", mono: true, maxLength: 50, normalize: noSpaces, sensitive: true },
+      { key: "ifsc_code", label: "IFSC code", required: true, placeholder: "HDFC0000123", hint: "11 characters", mono: true, maxLength: 11, normalize: (v) => upper(noSpaces(v)) },
+      { key: "branch_name", label: "Branch", placeholder: "Branch / city", maxLength: 100 },
+    ],
+  },
+  {
+    id: "statutory",
+    title: "Provident fund & ESI",
+    description: "Social-security registrations, if you have them",
+    icon: Building2,
+    fields: [
+      { key: "uan_number", label: "UAN", placeholder: "12-digit UAN", maxLength: 12, mono: true, normalize: digits },
+      { key: "pf_number", label: "PF member ID", placeholder: "e.g. MH/BAN/12345/678", maxLength: 50, mono: true, normalize: upper },
+      { key: "esi_number", label: "ESI number", placeholder: "17-digit ESI number", maxLength: 17, mono: true, normalize: digits },
+    ],
+  },
+  {
+    id: "family",
+    title: "Family & emergency contact",
+    description: "Used for nominee records and in an emergency",
+    icon: Users,
+    fields: [
+      { key: "father_or_spouse_name", label: "Father’s / spouse’s name", placeholder: "Full name", maxLength: 255 },
+      {
+        key: "marital_status", label: "Marital status", type: "select",
+        options: ["SINGLE", "MARRIED", "DIVORCED", "WIDOWED"].map((m) => ({ value: m, label: humanize(m) })),
+        display: humanize,
+      },
+      {
+        key: "blood_group", label: "Blood group", type: "select",
+        options: ["A+", "A-", "B+", "B-", "O+", "O-", "AB+", "AB-"].map((b) => ({ value: b, label: b })),
+      },
+      { key: "emergency_contact_name", label: "Emergency contact", required: true, placeholder: "Contact person", maxLength: 255 },
+      { key: "emergency_contact_relation", label: "Relationship", placeholder: "e.g. Spouse, Father", maxLength: 50 },
+      { key: "emergency_contact_phone", label: "Emergency phone", required: true, type: "tel", placeholder: "+91 98765 43210", maxLength: 20 },
+    ],
+  },
+  {
+    id: "address",
+    title: "Addresses",
+    description: "Where you live now and your permanent address",
+    icon: MapPin,
+    min: 280,
+    fields: [
+      { key: "current_address", label: "Current address", required: true, type: "textarea", placeholder: "House / flat, street, city, state, PIN", maxLength: 500 },
+      { key: "permanent_address", label: "Permanent address", type: "textarea", placeholder: "As on your government ID", maxLength: 500 },
+    ],
+  },
+];
+
+// ─── Document slots ─────────────────────────────────────────────────────────
+
+// "required" mirrors what the backend counts towards completion (kyc/router.py _calc_completion).
+interface DocSlot { type: DocumentType; label: string; hint: string; required?: boolean }
+
+const DOC_SLOTS: DocSlot[] = [
+  { type: "PAN_CARD", label: "PAN card", hint: "Clear scan or photo of the PAN card", required: true },
+  { type: "AADHAAR_FRONT", label: "Aadhaar card", hint: "Front with photo, or the full e-Aadhaar PDF", required: true },
+  { type: "BANK_PROOF", label: "Bank proof", hint: "Passbook first page or a cancelled cheque", required: true },
+  { type: "PHOTO", label: "Photograph", hint: "Passport-style photo on a plain background" },
+  { type: "EDUCATION_CERT", label: "Highest education certificate", hint: "Degree certificate or final marksheet" },
+  { type: "EXPERIENCE_LETTER", label: "Relieving / experience letter", hint: "From your previous employer, if any" },
+  { type: "ADDRESS_PROOF", label: "Address proof", hint: "Utility bill, rental agreement or passport" },
+];
+
+const STATUS_COPY: Record<KycStatus, { title: string; tone: "success" | "info" | "danger" | "brand"; icon: LucideIcon }> = {
+  VERIFIED: { title: "KYC verified", tone: "success", icon: ShieldCheck },
+  SUBMITTED: { title: "Under HR review", tone: "info", icon: Clock },
+  REJECTED: { title: "Changes requested", tone: "danger", icon: AlertTriangle },
+  ACTION_REQUIRED: { title: "Changes requested", tone: "danger", icon: AlertTriangle },
+  DRAFT: { title: "KYC in progress", tone: "brand", icon: Sparkles },
+  NOT_SUBMITTED: { title: "KYC not started", tone: "brand", icon: Sparkles },
+};
+
+const TONE_TILE = {
+  success: "bg-success/10 text-success",
+  info: "bg-info/10 text-info",
+  danger: "bg-danger/10 text-danger",
+  brand: "bg-brand-500/10 text-accent",
+};
+
+function formatBytes(bytes: number) {
+  if (bytes < 1024) return `${bytes} B`;
+  if (bytes < 1024 * 1024) return `${Math.round(bytes / 1024)} KB`;
+  return `${(bytes / (1024 * 1024)).toFixed(1)} MB`;
+}
+
+function formFrom(kyc: KycRecord, fields: FieldDef[]) {
+  return Object.fromEntries(fields.map((f) => [f.key, kyc[f.key] ?? ""])) as Record<FieldKey, string>;
+}
+
+// ─── Main section ───────────────────────────────────────────────────────────
 
 interface KycSectionProps {
   /** If true, this is the employee viewing/editing their own KYC */
@@ -34,89 +189,58 @@ interface KycSectionProps {
   isHR?: boolean;
 }
 
-export function KycSection({
-  isSelf = false,
-  employmentId,
-  employeeName,
-  isHR = false,
-}: KycSectionProps) {
+export function KycSection({ isSelf = false, employmentId, employeeName, isHR = false }: KycSectionProps) {
   const qc = useQueryClient();
   const toast = useToast();
+  const { user } = useAuth();
 
   const queryKey = isSelf ? ["my-kyc"] : ["kyc-employee", employmentId];
-
-  // Fetch KYC record
   const kycQuery = useQuery({
     queryKey,
     queryFn: () => (isSelf ? kycApi.getMyKyc() : kycApi.getEmployeeKyc(employmentId!)),
     enabled: isSelf || !!employmentId,
   });
-
   const kyc = kycQuery.data;
 
-  // Local form state for text fields
-  const [form, setForm] = useState<KycRecordUpdatePayload>({});
-  const [dirty, setDirty] = useState(false);
-  const [prevKyc, setPrevKyc] = useState(kyc);
+  // HR without kyc.write only sees masked numbers and cannot change anything.
+  const perms = user?.permissions ?? [];
+  const canEdit = isSelf || perms.includes("*") || perms.includes("kyc.write") || perms.includes("people.write");
+  const canVerify = isHR && (perms.includes("*") || perms.includes("kyc.verify"));
 
-  if (kyc && kyc !== prevKyc && !dirty) {
-    setPrevKyc(kyc);
-    setForm({
-      pan_number: kyc.pan_number ?? "",
-      aadhaar_number: kyc.aadhaar_number ?? "",
-      uan_number: kyc.uan_number ?? "",
-      pf_number: kyc.pf_number ?? "",
-      esi_number: kyc.esi_number ?? "",
-      passport_number: kyc.passport_number ?? "",
-      driving_license: kyc.driving_license ?? "",
-      voter_id: kyc.voter_id ?? "",
-      bank_name: kyc.bank_name ?? "",
-      account_holder_name: kyc.account_holder_name ?? "",
-      account_number: kyc.account_number ?? "",
-      ifsc_code: kyc.ifsc_code ?? "",
-      branch_name: kyc.branch_name ?? "",
-      father_or_spouse_name: kyc.father_or_spouse_name ?? "",
-      marital_status: kyc.marital_status ?? "",
-      blood_group: kyc.blood_group ?? "",
-      emergency_contact_name: kyc.emergency_contact_name ?? "",
-      emergency_contact_relation: kyc.emergency_contact_relation ?? "",
-      emergency_contact_phone: kyc.emergency_contact_phone ?? "",
-      current_address: kyc.current_address ?? "",
-      permanent_address: kyc.permanent_address ?? "",
-    });
-  }
+  const [editing, setEditing] = useState<SectionId | null>(null);
+  const [form, setForm] = useState<Record<FieldKey, string>>({} as Record<FieldKey, string>);
 
-  // Modals state
   const [previewDoc, setPreviewDoc] = useState<KycDocument | null>(null);
-  const [uploadDocType, setUploadDocType] = useState<DocumentType | null>(null);
+  const [uploadSlot, setUploadSlot] = useState<{ type: DocumentType; label: string } | null>(null);
   const [rejectModalOpen, setRejectModalOpen] = useState(false);
   const [rejectReason, setRejectReason] = useState("");
-  const [verifyDocModal, setVerifyDocModal] = useState<KycDocument | null>(null);
+  const [rejectDoc, setRejectDoc] = useState<KycDocument | null>(null);
   const [docRejectReason, setDocRejectReason] = useState("");
+  const [removeDoc, setRemoveDoc] = useState<KycDocument | null>(null);
 
-  // Mutations
+  const refreshLists = () => {
+    qc.invalidateQueries({ queryKey: ["kyc-employees"] });
+    qc.invalidateQueries({ queryKey: ["kyc-summary"] });
+  };
+
   const saveFieldsMutation = useMutation({
     mutationFn: (payload: KycRecordUpdatePayload) =>
-      isSelf
-        ? kycApi.updateMyKyc(payload)
-        : kycApi.updateEmployeeKyc(employmentId!, payload),
+      isSelf ? kycApi.updateMyKyc(payload) : kycApi.updateEmployeeKyc(employmentId!, payload),
     onSuccess: (data) => {
       qc.setQueryData(queryKey, data);
-      qc.invalidateQueries({ queryKey: ["kyc-employees"] });
-      qc.invalidateQueries({ queryKey: ["kyc-summary"] });
-      setDirty(false);
-      toast.success("KYC details saved successfully");
+      refreshLists();
+      setEditing(null);
+      toast.success("Details saved");
     },
-    onError: (err) => toast.error("Failed to save KYC details", errorMessage(err)),
+    onError: (err) => toast.error("Couldn't save details", errorMessage(err)),
   });
 
   const submitKycMutation = useMutation({
     mutationFn: () => kycApi.submitMyKyc(),
     onSuccess: (data) => {
       qc.setQueryData(queryKey, data);
-      qc.invalidateQueries({ queryKey: ["kyc-employees"] });
-      qc.invalidateQueries({ queryKey: ["kyc-summary"] });
-      toast.success("KYC Submitted", "Your details and documents have been sent to HR for verification.");
+      refreshLists();
+      toast.success("KYC submitted", "HR has been asked to verify your details and documents.");
     },
     onError: (err) => toast.error("Submission failed", errorMessage(err)),
   });
@@ -126,14 +250,10 @@ export function KycSection({
       kycApi.verifyOverallKyc(employmentId!, body),
     onSuccess: (data) => {
       qc.setQueryData(queryKey, data);
-      qc.invalidateQueries({ queryKey: ["kyc-employees"] });
-      qc.invalidateQueries({ queryKey: ["kyc-summary"] });
-      toast.success(
-        data.status === "VERIFIED"
-          ? "KYC Verified Successfully"
-          : "KYC Status Updated"
-      );
+      refreshLists();
+      toast.success(data.status === "VERIFIED" ? "KYC verified" : "Changes requested from employee");
       setRejectModalOpen(false);
+      setRejectReason("");
     },
     onError: (err) => toast.error("Verification failed", errorMessage(err)),
   });
@@ -141,1125 +261,640 @@ export function KycSection({
   const verifyDocMutation = useMutation({
     mutationFn: ({ docId, status, reason }: { docId: string; status: "VERIFIED" | "REJECTED"; reason?: string }) =>
       kycApi.verifyDocument(docId, { status, rejection_reason: reason }),
-    onSuccess: () => {
+    onSuccess: (_, vars) => {
       qc.invalidateQueries({ queryKey });
-      qc.invalidateQueries({ queryKey: ["kyc-employees"] });
-      toast.success("Document verification updated");
-      setVerifyDocModal(null);
+      refreshLists();
+      toast.success(vars.status === "VERIFIED" ? "Document approved" : "Document rejected");
+      setRejectDoc(null);
       setDocRejectReason("");
+      setPreviewDoc(null);
     },
-    onError: (err) => toast.error("Failed to update document status", errorMessage(err)),
+    onError: (err) => toast.error("Couldn't update the document", errorMessage(err)),
   });
 
-  const updateField = (key: keyof KycRecordUpdatePayload, value: string) => {
-    setForm((f) => ({ ...f, [key]: value }));
-    setDirty(true);
-  };
-
-  const handleSaveFields = (e: FormEvent) => {
-    e.preventDefault();
-    saveFieldsMutation.mutate(form);
-  };
+  const deleteDocMutation = useMutation({
+    mutationFn: (id: string) => kycApi.deleteDocument(id),
+    onSuccess: () => {
+      qc.invalidateQueries({ queryKey });
+      refreshLists();
+      toast.success("Document removed");
+      setRemoveDoc(null);
+    },
+    onError: (err) => toast.error("Couldn't remove the document", errorMessage(err)),
+  });
 
   if (kycQuery.isPending) {
     return (
-      <div className="space-y-4 py-4">
-        <Skeleton className="h-24 w-full rounded-2xl" />
-        <Skeleton className="h-44 w-full rounded-2xl" />
-        <Skeleton className="h-44 w-full rounded-2xl" />
+      <div className="space-y-4">
+        <Skeleton className="h-28 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
+        <Skeleton className="h-40 w-full rounded-xl" />
       </div>
     );
   }
 
   if (kycQuery.isError || !kyc) {
     return (
-      <div className="rounded-2xl border border-line bg-surface p-6 text-center text-danger">
-        <AlertTriangle className="mx-auto h-8 w-8 text-danger mb-2" />
-        <p className="font-semibold text-sm">Unable to load KYC information</p>
-        <p className="text-xs text-fg-subtle mt-1">{errorMessage(kycQuery.error)}</p>
+      <div className="card p-6 text-center">
+        <AlertTriangle className="mx-auto mb-2 h-7 w-7 text-danger" />
+        <p className="text-sm font-semibold text-fg">Unable to load KYC information</p>
+        <p className="mt-1 text-xs text-fg-subtle">{errorMessage(kycQuery.error)}</p>
+        <button type="button" className="btn-secondary btn-sm mt-4" onClick={() => kycQuery.refetch()}>
+          <RefreshCw size={12} /> Try again
+        </button>
       </div>
     );
   }
 
-  const findDoc = (type: DocumentType) => kyc.documents.find((d) => d.document_type === type);
+  const status = STATUS_COPY[kyc.status] ?? STATUS_COPY.DRAFT;
+  const StatusIcon = status.icon;
+  const docsByType = new Map(kyc.documents.map((d) => [d.document_type, d]));
+  const extraDocs = kyc.documents.filter((d) => !DOC_SLOTS.some((s) => s.type === d.document_type));
+  const requiredSlots = DOC_SLOTS.filter((s) => s.required);
+  // The backend accepts either side of the Aadhaar card.
+  const hasDoc = (t: DocumentType) => docsByType.has(t) || (t === "AADHAAR_FRONT" && docsByType.has("AADHAAR_BACK"));
+  const requiredUploaded = requiredSlots.filter((s) => hasDoc(s.type)).length;
+  const verifiedDocs = kyc.documents.filter((d) => d.status === "VERIFIED").length;
+  const missingRequiredFields = SECTIONS.flatMap((s) => s.fields).filter((f) => f.required && !kyc[f.key]).length;
+  const canSubmit = isSelf && ["NOT_SUBMITTED", "DRAFT", "REJECTED", "ACTION_REQUIRED"].includes(kyc.status);
+  const resetsVerification = kyc.status === "VERIFIED" || kyc.status === "SUBMITTED";
+
+  const startEdit = (section: SectionDef) => {
+    setForm(formFrom(kyc, section.fields));
+    setEditing(section.id);
+  };
+
+  const saveSection = (section: SectionDef) => {
+    // Only send what changed; blanks clear the field.
+    const payload: KycRecordUpdatePayload = {};
+    for (const f of section.fields) {
+      const next = (form[f.key] ?? "").trim();
+      if (next !== (kyc[f.key] ?? "")) payload[f.key] = next || null;
+    }
+    if (Object.keys(payload).length === 0) {
+      setEditing(null);
+      return;
+    }
+    saveFieldsMutation.mutate(payload);
+  };
+
+  const description = kyc.status === "VERIFIED"
+    ? `All details and documents were approved${kyc.verified_at ? ` on ${format(new Date(kyc.verified_at), "d MMM yyyy")}` : ""}.`
+    : kyc.status === "SUBMITTED"
+    ? `Submitted${kyc.submitted_at ? ` on ${format(new Date(kyc.submitted_at), "d MMM yyyy")}` : ""}. HR will verify it shortly.`
+    : kyc.status === "REJECTED" || kyc.status === "ACTION_REQUIRED"
+    ? "HR asked for corrections. Update the items below, then submit again."
+    : isSelf
+    ? "Fill in the details below and upload the required documents, then submit for verification."
+    : "The employee hasn’t submitted their KYC yet.";
 
   return (
-    <div className="space-y-6">
-      {/* ── Status Banner & Completion Progress ──────────────────────────── */}
-      <div
-        className={`rounded-2xl border p-4 sm:p-5 transition-all ${
-          kyc.status === "VERIFIED"
-            ? "border-emerald-500/30 bg-emerald-500/[0.04]"
-            : kyc.status === "SUBMITTED"
-            ? "border-blue-500/30 bg-blue-500/[0.04]"
-            : kyc.status === "REJECTED" || kyc.status === "ACTION_REQUIRED"
-            ? "border-rose-500/30 bg-rose-500/[0.04]"
-            : "border-brand-500/30 bg-brand-500/[0.03]"
-        }`}
-      >
-        <div className="flex flex-col sm:flex-row sm:items-center justify-between gap-4">
-          <div className="flex items-start gap-3.5 min-w-0">
-            <div
-              className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl text-white shadow-xs ${
-                kyc.status === "VERIFIED"
-                  ? "bg-emerald-600"
-                  : kyc.status === "SUBMITTED"
-                  ? "bg-blue-600"
-                  : kyc.status === "REJECTED" || kyc.status === "ACTION_REQUIRED"
-                  ? "bg-rose-600"
-                  : "bg-brand-600"
-              }`}
-            >
-              {kyc.status === "VERIFIED" ? (
-                <ShieldCheck size={20} />
-              ) : kyc.status === "SUBMITTED" ? (
-                <Clock size={20} />
-              ) : kyc.status === "REJECTED" || kyc.status === "ACTION_REQUIRED" ? (
-                <AlertTriangle size={20} />
-              ) : (
-                <Sparkles size={20} />
-              )}
+    <div className="space-y-5">
+      {/* ── Status overview ─────────────────────────────────────────────── */}
+      <section className="card p-5">
+        <div className="flex flex-col gap-4 sm:flex-row sm:items-start sm:justify-between">
+          <div className="flex min-w-0 items-start gap-3.5">
+            <div className={`grid h-10 w-10 shrink-0 place-items-center rounded-xl ${TONE_TILE[status.tone]}`}>
+              <StatusIcon size={19} />
             </div>
-
-            <div>
-              <div className="flex items-center gap-2 flex-wrap">
-                <h4 className="text-sm font-semibold text-fg">
-                  {employeeName ? `${employeeName} · ` : ""}
-                  {kyc.status === "VERIFIED"
-                    ? "KYC Verified"
-                    : kyc.status === "SUBMITTED"
-                    ? "KYC Submitted — Under HR Verification"
-                    : kyc.status === "ACTION_REQUIRED" || kyc.status === "REJECTED"
-                    ? "Action Required on KYC"
-                    : "KYC Incomplete"}
-                </h4>
+            <div className="min-w-0">
+              <div className="flex flex-wrap items-center gap-2">
+                <h3 className="text-[15px] font-semibold text-fg">
+                  {employeeName ? `${employeeName} · ` : ""}{status.title}
+                </h3>
                 <StatusBadge status={kyc.status} />
               </div>
-
-              <p className="text-xs text-fg-subtle mt-0.5">
-                {kyc.status === "VERIFIED"
-                  ? `Identity, statutory, and banking documents have been approved by compliance.${
-                      kyc.verified_at
-                        ? ` Verified on ${format(new Date(kyc.verified_at), "d MMM yyyy")}.`
-                        : ""
-                    }`
-                  : kyc.status === "SUBMITTED"
-                  ? "Your documents are under review by HR. Updates will be reflected once verified."
-                  : kyc.rejection_reason
-                  ? `Remarks: ${kyc.rejection_reason}`
-                  : "Upload required identity proofs (Aadhaar, PAN) and banking records to verify profile."}
-              </p>
+              <p className="mt-0.5 text-[13px] text-fg-muted">{description}</p>
             </div>
           </div>
 
-          {/* Action buttons depending on role */}
-          <div className="flex items-center gap-2 self-end sm:self-center shrink-0">
-            {isSelf && kyc.status !== "VERIFIED" && (
+          <div className="flex shrink-0 flex-wrap items-center gap-2">
+            {canSubmit && (
               <button
                 type="button"
                 onClick={() => submitKycMutation.mutate()}
-                disabled={submitKycMutation.isPending || kyc.documents.length === 0}
+                disabled={submitKycMutation.isPending || kyc.documents.length === 0 || editing !== null}
+                title={editing !== null ? "Save or cancel your edits first" : kyc.documents.length === 0 ? "Upload at least one document first" : undefined}
                 className="btn-primary btn-sm"
               >
-                {submitKycMutation.isPending ? "Submitting…" : "Submit for Verification"}
+                {submitKycMutation.isPending ? "Submitting…" : "Submit for verification"}
               </button>
             )}
-
-            {isHR && (
-              <div className="flex items-center gap-2">
-                {kyc.status !== "VERIFIED" ? (
-                  <>
-                    <button
-                      type="button"
-                      onClick={() => setRejectModalOpen(true)}
-                      className="btn-danger btn-sm"
-                    >
-                      <XCircle size={13} /> Request Changes
-                    </button>
-                    <button
-                      type="button"
-                      onClick={() => verifyOverallMutation.mutate({ status: "VERIFIED" })}
-                      disabled={verifyOverallMutation.isPending}
-                      className="btn-primary btn-sm"
-                    >
-                      <CheckCircle2 size={13} /> Verify KYC
-                    </button>
-                  </>
-                ) : (
-                  <button
-                    type="button"
-                    onClick={() => setRejectModalOpen(true)}
-                    className="btn-ghost btn-sm text-xs text-fg-subtle hover:text-danger"
-                  >
-                    Revoke Verification
-                  </button>
-                )}
-              </div>
+            {canVerify && kyc.status !== "VERIFIED" && (
+              <>
+                <button type="button" onClick={() => setRejectModalOpen(true)} className="btn-danger-soft btn-sm">
+                  <XCircle size={13} /> Request changes
+                </button>
+                <button
+                  type="button"
+                  onClick={() => verifyOverallMutation.mutate({ status: "VERIFIED" })}
+                  disabled={verifyOverallMutation.isPending}
+                  className="btn-primary btn-sm"
+                >
+                  <CheckCircle2 size={13} /> Verify KYC
+                </button>
+              </>
+            )}
+            {canVerify && kyc.status === "VERIFIED" && (
+              <button type="button" onClick={() => setRejectModalOpen(true)} className="btn-secondary btn-sm">
+                Revoke verification
+              </button>
             )}
           </div>
         </div>
 
-        {/* Completion Progress Bar */}
-        <div className="mt-4 border-t border-line/50 pt-3 flex items-center justify-between gap-4">
-          <span className="text-[11px] font-medium text-fg-subtle">
-            Completion Score ({kyc.completion_percentage}%)
-          </span>
-          <div className="flex items-center gap-2 w-48">
-            <div className="h-1.5 flex-1 overflow-hidden rounded-full bg-line">
+        {(kyc.status === "REJECTED" || kyc.status === "ACTION_REQUIRED") && kyc.rejection_reason && (
+          <div className="mt-4 rounded-lg border border-danger/20 bg-danger/[0.05] px-3.5 py-2.5 text-[13px]">
+            <span className="font-medium text-danger">HR remarks: </span>
+            <span className="text-fg-muted">{kyc.rejection_reason}</span>
+          </div>
+        )}
+
+        <div className="mt-4 grid gap-x-8 gap-y-3 border-t border-line pt-4 sm:grid-cols-3">
+          <div>
+            <div className="flex items-center justify-between text-xs">
+              <span className="text-fg-subtle">Completion</span>
+              <span className="font-semibold tabular-nums text-fg">{kyc.completion_percentage}%</span>
+            </div>
+            <div className="mt-1.5 h-1.5 overflow-hidden rounded-full bg-muted">
               <div
-                className={`h-full transition-all duration-300 ${
-                  kyc.completion_percentage === 100
-                    ? "bg-emerald-500"
-                    : kyc.completion_percentage >= 50
-                    ? "bg-amber-500"
-                    : "bg-brand-500"
-                }`}
+                className={`h-full rounded-full transition-all duration-300 ${kyc.completion_percentage === 100 ? "bg-success" : "bg-brand-500"}`}
                 style={{ width: `${kyc.completion_percentage}%` }}
               />
             </div>
-            <span className="text-[11px] font-mono font-bold text-fg">
-              {kyc.completion_percentage}%
-            </span>
           </div>
+          <Metric label="Required documents" value={`${requiredUploaded} / ${requiredSlots.length}`} ok={requiredUploaded === requiredSlots.length} />
+          <Metric
+            label="Required details"
+            value={missingRequiredFields === 0 ? "Complete" : `${missingRequiredFields} missing`}
+            ok={missingRequiredFields === 0}
+            extra={kyc.documents.length > 0 ? `${verifiedDocs} of ${kyc.documents.length} documents verified` : undefined}
+          />
         </div>
-      </div>
+      </section>
 
-      <form onSubmit={handleSaveFields} className="space-y-6">
-        {/* ── 1. STATUTORY TAX & NATIONAL IDENTITY (PAN & AADHAAR) ──────── */}
-        <div className="card p-5 space-y-5">
-          <div className="flex items-center justify-between border-b border-line pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500/10 text-brand-500">
-                <CreditCard size={15} />
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-fg">Statutory Tax & National Identity</h4>
-                <p className="text-xs text-fg-subtle">Mandatory tax and identity proofs required for legal onboarding</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Row 1: PAN Number + PAN Card Document */}
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">
-                  PAN Number <span className="text-danger">*</span>
-                </label>
-              </div>
-              <input
-                type="text"
-                maxLength={10}
-                placeholder="ABCDE1234F"
-                value={form.pan_number ?? ""}
-                onChange={(e) => updateField("pan_number", e.target.value.toUpperCase())}
-                className="input font-mono uppercase tracking-wider text-sm h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">10-character alphanumeric income tax identifier</p>
-            </div>
-
-            <DocumentSlot
-              docType="PAN_CARD"
-              label="PAN Card Document"
-              required
-              hint="Clear scan or photo of PAN card (PDF, PNG, JPG)"
-              document={findDoc("PAN_CARD")}
-              onUpload={() => setUploadDocType("PAN_CARD")}
-              onPreview={(doc) => setPreviewDoc(doc)}
-              isHR={isHR}
-              onVerify={(docId) => verifyDocMutation.mutate({ docId, status: "VERIFIED" })}
-              onReject={(doc) => setVerifyDocModal(doc)}
-              canDelete={isHR || kyc.status !== "VERIFIED"}
-              queryKey={queryKey}
-            />
-          </div>
-
-          {/* Row 2: Aadhaar Number + Aadhaar Front Document */}
-          <div className="border-t border-line/60 pt-4 grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">
-                  Aadhaar Number <span className="text-danger">*</span>
-                </label>
-              </div>
-              <input
-                type="text"
-                maxLength={12}
-                placeholder="123456789012"
-                value={form.aadhaar_number ?? ""}
-                onChange={(e) => updateField("aadhaar_number", e.target.value.replace(/\D/g, ""))}
-                className="input font-mono text-sm h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">12-digit UIDAI unique identification number</p>
-            </div>
-
-            <DocumentSlot
-              docType="AADHAAR_FRONT"
-              label="Aadhaar Card (Front / e-Aadhaar)"
-              required
-              hint="Front page with photo or full e-Aadhaar PDF copy"
-              document={findDoc("AADHAAR_FRONT")}
-              onUpload={() => setUploadDocType("AADHAAR_FRONT")}
-              onPreview={(doc) => setPreviewDoc(doc)}
-              isHR={isHR}
-              onVerify={(docId) => verifyDocMutation.mutate({ docId, status: "VERIFIED" })}
-              onReject={(doc) => setVerifyDocModal(doc)}
-              canDelete={isHR || kyc.status !== "VERIFIED"}
-              queryKey={queryKey}
-            />
-          </div>
-        </div>
-
-        {/* ── 2. BANK ACCOUNT & DIRECT SALARY DEPOSIT ────────────────────── */}
-        <div className="card p-5 space-y-5">
-          <div className="flex items-center justify-between border-b border-line pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500/10 text-brand-500">
-                <Building size={15} />
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-fg">Bank Account & Direct Salary Deposit</h4>
-                <p className="text-xs text-fg-subtle">Designated salary bank account with verified passbook or cheque proof</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-            {/* Left Column: Bank Name & Branch */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col">
-                <div className="flex items-center justify-between mb-1.5 h-5">
-                  <label className="text-xs font-medium text-fg-muted truncate">
-                    Bank Name <span className="text-danger">*</span>
-                  </label>
-                </div>
-                <input
-                  type="text"
-                  placeholder="e.g. HDFC Bank, SBI"
-                  value={form.bank_name ?? ""}
-                  onChange={(e) => updateField("bank_name", e.target.value)}
-                  className="input text-xs h-9"
-                />
-                <p className="text-[11px] text-fg-subtle mt-1">Bank organization</p>
-              </div>
-
-              <div className="flex flex-col">
-                <div className="flex items-center justify-between mb-1.5 h-5">
-                  <label className="text-xs font-medium text-fg-muted truncate">Branch Name</label>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Branch location"
-                  value={form.branch_name ?? ""}
-                  onChange={(e) => updateField("branch_name", e.target.value)}
-                  className="input text-xs h-9"
-                />
-                <p className="text-[11px] text-fg-subtle mt-1">Branch / City</p>
-              </div>
-            </div>
-
-            {/* Right Column: Account Number & IFSC Code */}
-            <div className="grid grid-cols-2 gap-3">
-              <div className="flex flex-col">
-                <div className="flex items-center justify-between mb-1.5 h-5">
-                  <label className="text-xs font-medium text-fg-muted truncate">
-                    Account Number <span className="text-danger">*</span>
-                  </label>
-                </div>
-                <input
-                  type="text"
-                  placeholder="Account number"
-                  value={form.account_number ?? ""}
-                  onChange={(e) => updateField("account_number", e.target.value.replace(/\s/g, ""))}
-                  className="input font-mono text-xs h-9"
-                />
-                <p className="text-[11px] text-fg-subtle mt-1">Savings or salary A/C</p>
-              </div>
-
-              <div className="flex flex-col">
-                <div className="flex items-center justify-between mb-1.5 h-5">
-                  <label className="text-xs font-medium text-fg-muted truncate">
-                    IFSC Code <span className="text-danger">*</span>
-                  </label>
-                </div>
-                <input
-                  type="text"
-                  maxLength={11}
-                  placeholder="e.g. HDFC0000123"
-                  value={form.ifsc_code ?? ""}
-                  onChange={(e) => updateField("ifsc_code", e.target.value.toUpperCase())}
-                  className="input font-mono uppercase text-xs h-9"
-                />
-                <p className="text-[11px] text-fg-subtle mt-1">11-character code</p>
-              </div>
-            </div>
-          </div>
-
-          {/* Sub-row: Account Holder Name + Bank Proof Upload */}
-          <div className="border-t border-line/60 pt-4 grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">
-                  Account Holder Name <span className="text-danger">*</span>
-                </label>
-              </div>
-              <input
-                type="text"
-                placeholder="Exact name as in bank records"
-                value={form.account_holder_name ?? ""}
-                onChange={(e) => updateField("account_holder_name", e.target.value)}
-                className="input text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Must match employee legal name</p>
-            </div>
-
-            <DocumentSlot
-              docType="BANK_PROOF"
-              label="Bank Proof (Passbook / Cancelled Cheque)"
-              required
-              hint="Passbook first page or cancelled cheque showing A/C and IFSC"
-              document={findDoc("BANK_PROOF")}
-              onUpload={() => setUploadDocType("BANK_PROOF")}
-              onPreview={(doc) => setPreviewDoc(doc)}
-              isHR={isHR}
-              onVerify={(docId) => verifyDocMutation.mutate({ docId, status: "VERIFIED" })}
-              onReject={(doc) => setVerifyDocModal(doc)}
-              canDelete={isHR || kyc.status !== "VERIFIED"}
-              queryKey={queryKey}
-            />
-          </div>
-        </div>
-
-        {/* ── 3. PROVIDENT FUND (PF) & STATUTORY IDENTIFIERS ─────────────── */}
-        <div className="card p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-line pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500/10 text-brand-500">
-                <Building2 size={15} />
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-fg">Statutory Provident Fund & Identity Numbers</h4>
-                <p className="text-xs text-fg-subtle">Social security registrations and optional secondary identity identifiers</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-start">
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">UAN Number (PF)</label>
-              </div>
-              <input
-                type="text"
-                maxLength={12}
-                placeholder="12-digit UAN"
-                value={form.uan_number ?? ""}
-                onChange={(e) => updateField("uan_number", e.target.value.replace(/\D/g, ""))}
-                className="input font-mono text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Universal Account Number</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">PF Member ID</label>
-              </div>
-              <input
-                type="text"
-                placeholder="e.g. MH/BAN/12345/678"
-                value={form.pf_number ?? ""}
-                onChange={(e) => updateField("pf_number", e.target.value.toUpperCase())}
-                className="input font-mono uppercase text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Previous or current PF ID</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">ESI Number</label>
-              </div>
-              <input
-                type="text"
-                maxLength={17}
-                placeholder="17-digit ESI number"
-                value={form.esi_number ?? ""}
-                onChange={(e) => updateField("esi_number", e.target.value.replace(/\D/g, ""))}
-                className="input font-mono text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">State Insurance registration</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Passport Number</label>
-              </div>
-              <input
-                type="text"
-                placeholder="Passport number"
-                value={form.passport_number ?? ""}
-                onChange={(e) => updateField("passport_number", e.target.value.toUpperCase())}
-                className="input font-mono uppercase text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">For travel & compliance</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Driving License</label>
-              </div>
-              <input
-                type="text"
-                placeholder="Driving license number"
-                value={form.driving_license ?? ""}
-                onChange={(e) => updateField("driving_license", e.target.value.toUpperCase())}
-                className="input font-mono uppercase text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Secondary identity proof</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Voter ID (EPIC)</label>
-              </div>
-              <input
-                type="text"
-                placeholder="Voter ID number"
-                value={form.voter_id ?? ""}
-                onChange={(e) => updateField("voter_id", e.target.value.toUpperCase())}
-                className="input font-mono uppercase text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Election commission identifier</p>
-            </div>
-          </div>
-        </div>
-
-        {/* ── 4. REQUIRED CREDENTIALS & SUPPORTING DOCUMENTS ────────────── */}
-        <div className="card p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-line pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500/10 text-brand-500">
-                <FileText size={15} />
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-fg">Supporting Credentials & Documents</h4>
-                <p className="text-xs text-fg-subtle">Formal photograph, education degree, and previous employment service letter</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-            <DocumentSlot
-              docType="PHOTO"
-              label="Profile Photograph"
-              required
-              hint="Formal passport-style photo with plain background"
-              document={findDoc("PHOTO")}
-              onUpload={() => setUploadDocType("PHOTO")}
-              onPreview={(doc) => setPreviewDoc(doc)}
-              isHR={isHR}
-              onVerify={(docId) => verifyDocMutation.mutate({ docId, status: "VERIFIED" })}
-              onReject={(doc) => setVerifyDocModal(doc)}
-              canDelete={isHR || kyc.status !== "VERIFIED"}
-              queryKey={queryKey}
-            />
-
-            <DocumentSlot
-              docType="EDUCATION_CERT"
-              label="Highest Education Degree / Marksheet"
-              required
-              hint="Degree certificate or final semester marksheet"
-              document={findDoc("EDUCATION_CERT")}
-              onUpload={() => setUploadDocType("EDUCATION_CERT")}
-              onPreview={(doc) => setPreviewDoc(doc)}
-              isHR={isHR}
-              onVerify={(docId) => verifyDocMutation.mutate({ docId, status: "VERIFIED" })}
-              onReject={(doc) => setVerifyDocModal(doc)}
-              canDelete={isHR || kyc.status !== "VERIFIED"}
-              queryKey={queryKey}
-            />
-
-            <DocumentSlot
-              docType="EXPERIENCE_LETTER"
-              label="Previous Relieving / Service Letter"
-              hint="Relieving letter or experience certificate from last employer"
-              document={findDoc("EXPERIENCE_LETTER")}
-              onUpload={() => setUploadDocType("EXPERIENCE_LETTER")}
-              onPreview={(doc) => setPreviewDoc(doc)}
-              isHR={isHR}
-              onVerify={(docId) => verifyDocMutation.mutate({ docId, status: "VERIFIED" })}
-              onReject={(doc) => setVerifyDocModal(doc)}
-              canDelete={isHR || kyc.status !== "VERIFIED"}
-              queryKey={queryKey}
-            />
-
-            <DocumentSlot
-              docType="ADDRESS_PROOF"
-              label="Permanent Address Proof"
-              hint="Electricity bill, rental agreement, or passport copy"
-              document={findDoc("ADDRESS_PROOF")}
-              onUpload={() => setUploadDocType("ADDRESS_PROOF")}
-              onPreview={(doc) => setPreviewDoc(doc)}
-              isHR={isHR}
-              onVerify={(docId) => verifyDocMutation.mutate({ docId, status: "VERIFIED" })}
-              onReject={(doc) => setVerifyDocModal(doc)}
-              canDelete={isHR || kyc.status !== "VERIFIED"}
-              queryKey={queryKey}
-            />
-          </div>
-        </div>
-
-        {/* ── 5. PERSONAL, FAMILY & EMERGENCY CONTACTS ───────────────────── */}
-        <div className="card p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-line pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500/10 text-brand-500">
-                <Users size={15} />
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-fg">Family & Emergency Contacts</h4>
-                <p className="text-xs text-fg-subtle">Family records for statutory nominee records and emergency contacts</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 gap-4 items-start">
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Father's / Spouse's Name</label>
-              </div>
-              <input
-                type="text"
-                placeholder="Full name"
-                value={form.father_or_spouse_name ?? ""}
-                onChange={(e) => updateField("father_or_spouse_name", e.target.value)}
-                className="input text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">As per statutory records</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Marital Status</label>
-              </div>
-              <select
-                value={form.marital_status ?? ""}
-                onChange={(e) => updateField("marital_status", e.target.value)}
-                className="input text-xs h-9"
-              >
-                <option value="">Select status</option>
-                {MARITAL_STATUSES.map((m) => (
-                  <option key={m} value={m}>
-                    {humanize(m)}
-                  </option>
+      {/* ── Details (view first, edit on demand) ────────────────────────── */}
+      {SECTIONS.map((section) => {
+        const isEditing = editing === section.id;
+        return (
+          <EditableSection
+            key={section.id}
+            icon={section.icon}
+            title={section.title}
+            description={section.description}
+            editing={isEditing}
+            canEdit={canEdit}
+            editDisabled={editing !== null && !isEditing}
+            onEdit={() => startEdit(section)}
+            onCancel={() => setEditing(null)}
+            onSubmit={() => saveSection(section)}
+            saving={saveFieldsMutation.isPending}
+            editNotice={resetsVerification
+              ? <span className="text-warning">Saving will send this KYC back for verification.</span>
+              : <span>Fields marked <span className="text-danger">*</span> are required for verification.</span>}
+          >
+            {isEditing ? (
+              <FieldGrid min={section.min}>
+                {section.fields.map((f) => (
+                  <FieldInput
+                    key={f.key}
+                    field={f}
+                    value={form[f.key] ?? ""}
+                    onChange={(v) => setForm((prev) => ({ ...prev, [f.key]: v }))}
+                    autoFocus={f === section.fields[0]}
+                    action={f.key === "permanent_address" ? (
+                      <button
+                        type="button"
+                        disabled={!form.current_address}
+                        onClick={() => setForm((prev) => ({ ...prev, permanent_address: prev.current_address }))}
+                        className="inline-flex items-center gap-1 text-[11px] font-medium text-accent hover:underline disabled:opacity-50 disabled:no-underline"
+                      >
+                        <Copy size={11} /> Same as current
+                      </button>
+                    ) : undefined}
+                  />
                 ))}
-              </select>
-              <p className="text-[11px] text-fg-subtle mt-1">Marital status</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Blood Group</label>
-              </div>
-              <select
-                value={form.blood_group ?? ""}
-                onChange={(e) => updateField("blood_group", e.target.value)}
-                className="input text-xs h-9"
-              >
-                <option value="">Select blood group</option>
-                {BLOOD_GROUPS.map((b) => (
-                  <option key={b} value={b}>
-                    {b}
-                  </option>
+              </FieldGrid>
+            ) : (
+              <DetailGrid min={section.min}>
+                {section.fields.map((f) => (
+                  <DetailItem key={f.key} label={f.label} required={f.required}>
+                    <FieldValue field={f} value={kyc[f.key]} />
+                  </DetailItem>
                 ))}
-              </select>
-              <p className="text-[11px] text-fg-subtle mt-1">Medical records</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Emergency Contact Name</label>
-              </div>
-              <input
-                type="text"
-                placeholder="Contact person"
-                value={form.emergency_contact_name ?? ""}
-                onChange={(e) => updateField("emergency_contact_name", e.target.value)}
-                className="input text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Emergency contact person</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Relationship</label>
-              </div>
-              <input
-                type="text"
-                placeholder="e.g. Spouse, Father, Mother"
-                value={form.emergency_contact_relation ?? ""}
-                onChange={(e) => updateField("emergency_contact_relation", e.target.value)}
-                className="input text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Relation to employee</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Emergency Phone</label>
-              </div>
-              <input
-                type="tel"
-                placeholder="+91 98765 43210"
-                value={form.emergency_contact_phone ?? ""}
-                onChange={(e) => updateField("emergency_contact_phone", e.target.value)}
-                className="input text-xs h-9"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Direct contact mobile number</p>
-            </div>
-          </div>
-        </div>
-
-        {/* ── 6. RESIDENTIAL ADDRESSES ───────────────────────────────────── */}
-        <div className="card p-5 space-y-4">
-          <div className="flex items-center justify-between border-b border-line pb-3">
-            <div className="flex items-center gap-2.5">
-              <div className="grid h-7 w-7 place-items-center rounded-lg bg-brand-500/10 text-brand-500">
-                <MapPin size={15} />
-              </div>
-              <div>
-                <h4 className="text-sm font-semibold text-fg">Residential Addresses</h4>
-                <p className="text-xs text-fg-subtle">Current residing address and permanent hometown address</p>
-              </div>
-            </div>
-          </div>
-
-          <div className="grid grid-cols-1 md:grid-cols-2 gap-5 items-start">
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Current Residential Address</label>
-              </div>
-              <textarea
-                rows={3}
-                placeholder="House/flat number, street, city, state, pin code"
-                value={form.current_address ?? ""}
-                onChange={(e) => updateField("current_address", e.target.value)}
-                className="input text-xs py-2 leading-relaxed"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Current residing location</p>
-            </div>
-
-            <div className="flex flex-col">
-              <div className="flex items-center justify-between mb-1.5 h-5">
-                <label className="text-xs font-medium text-fg-muted">Permanent Address</label>
-                <button
-                  type="button"
-                  onClick={() => {
-                    if (form.current_address) {
-                      updateField("permanent_address", form.current_address);
-                      toast.info("Copied current address to permanent address");
-                    }
-                  }}
-                  className="text-[11px] text-brand-500 hover:text-brand-600 font-medium inline-flex items-center gap-1"
-                >
-                  <Copy size={11} /> Same as current
-                </button>
-              </div>
-              <textarea
-                rows={3}
-                placeholder="Hometown address, district, state, pin code"
-                value={form.permanent_address ?? ""}
-                onChange={(e) => updateField("permanent_address", e.target.value)}
-                className="input text-xs py-2 leading-relaxed"
-              />
-              <p className="text-[11px] text-fg-subtle mt-1">Permanent hometown address as per government ID</p>
-            </div>
-          </div>
-        </div>
-
-        {/* ── Sticky Save Changes Bar ────────────────────────────────────── */}
-        <div className="sticky bottom-3 z-10 flex items-center justify-between rounded-xl border border-line bg-surface/95 backdrop-blur-md p-3.5 shadow-pop">
-          <span className="text-xs text-fg-subtle">
-            {dirty ? "You have unsaved changes in the fields above." : "All details are saved."}
-          </span>
-          <div className="flex items-center gap-2">
-            {dirty && (
-              <button
-                type="button"
-                onClick={() => {
-                  setForm({
-                    pan_number: kyc.pan_number ?? "",
-                    aadhaar_number: kyc.aadhaar_number ?? "",
-                    uan_number: kyc.uan_number ?? "",
-                    bank_name: kyc.bank_name ?? "",
-                    account_number: kyc.account_number ?? "",
-                    ifsc_code: kyc.ifsc_code ?? "",
-                    father_or_spouse_name: kyc.father_or_spouse_name ?? "",
-                    emergency_contact_name: kyc.emergency_contact_name ?? "",
-                    emergency_contact_phone: kyc.emergency_contact_phone ?? "",
-                    current_address: kyc.current_address ?? "",
-                    permanent_address: kyc.permanent_address ?? "",
-                  });
-                  setDirty(false);
-                }}
-                className="btn-ghost btn-sm text-xs"
-              >
-                Discard
-              </button>
+              </DetailGrid>
             )}
-            <button
-              type="submit"
-              disabled={!dirty || saveFieldsMutation.isPending}
-              className="btn-primary btn-sm"
-            >
-              {saveFieldsMutation.isPending ? "Saving…" : "Save Details"}
-            </button>
-          </div>
-        </div>
-      </form>
+          </EditableSection>
+        );
+      })}
 
-      {/* Upload Document Modal */}
-      {uploadDocType && (
+      {/* ── Documents ───────────────────────────────────────────────────── */}
+      <section className="card">
+        <div className="flex items-start justify-between gap-3 border-b border-line px-5 py-3.5">
+          <div className="flex min-w-0 items-start gap-3">
+            <div className="mt-0.5 grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-brand-500/10 text-accent">
+              <FolderOpen size={15} />
+            </div>
+            <div className="min-w-0">
+              <h3 className="card-title">Documents</h3>
+              <p className="card-desc">PDF, PNG or JPG, up to {MAX_UPLOAD_MB} MB each. Select <span className="font-medium text-fg-muted">View</span> to open a file.</p>
+            </div>
+          </div>
+          <span className="badge badge-neutral shrink-0 tabular-nums">{kyc.documents.length} uploaded</span>
+        </div>
+        <ul className="divide-y divide-line">
+          {DOC_SLOTS.map((slot) => (
+            <DocumentRow
+              key={slot.type}
+              label={slot.label}
+              hint={slot.hint}
+              required={slot.required}
+              document={docsByType.get(slot.type)}
+              canManage={canEdit}
+              canVerify={canVerify}
+              isSelf={isSelf}
+              onUpload={() => setUploadSlot({ type: slot.type, label: slot.label })}
+              onPreview={setPreviewDoc}
+              onApprove={(d) => verifyDocMutation.mutate({ docId: d.id, status: "VERIFIED" })}
+              onReject={setRejectDoc}
+              onRemove={setRemoveDoc}
+            />
+          ))}
+          {extraDocs.map((d) => (
+            <DocumentRow
+              key={d.id}
+              label={d.document_title || DOCUMENT_TYPE_LABELS[d.document_type]}
+              hint=""
+              document={d}
+              canManage={canEdit}
+              canVerify={canVerify}
+              isSelf={isSelf}
+              onUpload={() => setUploadSlot({ type: d.document_type, label: d.document_title || DOCUMENT_TYPE_LABELS[d.document_type] })}
+              onPreview={setPreviewDoc}
+              onApprove={(doc) => verifyDocMutation.mutate({ docId: doc.id, status: "VERIFIED" })}
+              onReject={setRejectDoc}
+              onRemove={setRemoveDoc}
+            />
+          ))}
+        </ul>
+      </section>
+
+      {uploadSlot && (
         <UploadDocumentDialog
           employmentId={employmentId}
-          presetType={uploadDocType}
+          type={uploadSlot.type}
+          label={uploadSlot.label}
+          replacing={docsByType.has(uploadSlot.type)}
           isHR={isHR}
-          onClose={() => setUploadDocType(null)}
+          onClose={() => setUploadSlot(null)}
           onSuccess={() => {
-            setUploadDocType(null);
+            setUploadSlot(null);
             qc.invalidateQueries({ queryKey });
-            qc.invalidateQueries({ queryKey: ["kyc-employees"] });
+            refreshLists();
           }}
         />
       )}
 
-      {/* Document Preview Modal */}
       {previewDoc && (
         <DocumentPreviewDialog
           doc={previewDoc}
           onClose={() => setPreviewDoc(null)}
+          actions={canVerify ? (
+            <>
+              {previewDoc.status !== "REJECTED" && (
+                <button type="button" className="btn-danger-soft btn-sm" onClick={() => { setRejectDoc(previewDoc); setPreviewDoc(null); }}>
+                  <XCircle size={13} /> Reject
+                </button>
+              )}
+              {previewDoc.status !== "VERIFIED" && (
+                <button
+                  type="button"
+                  className="btn-primary btn-sm"
+                  disabled={verifyDocMutation.isPending}
+                  onClick={() => verifyDocMutation.mutate({ docId: previewDoc.id, status: "VERIFIED" })}
+                >
+                  <Check size={13} /> Approve
+                </button>
+              )}
+            </>
+          ) : undefined}
         />
       )}
 
-      {/* Overall Reject Dialog */}
-      {rejectModalOpen && (
-        <Dialog open={true} onClose={() => setRejectModalOpen(false)}>
-          <div className="p-6 space-y-4">
-            <div className="flex items-center gap-3">
-              <div className="grid h-10 w-10 place-items-center rounded-xl bg-rose-500/10 text-rose-500">
-                <AlertTriangle size={20} />
-              </div>
-              <div>
-                <h3 className="text-sm font-semibold text-fg">Request KYC Corrections</h3>
-                <p className="text-xs text-fg-subtle">
-                  Specify what information or document needs to be corrected by the employee.
-                </p>
-              </div>
+      <ConfirmDialog
+        open={!!removeDoc}
+        onClose={() => setRemoveDoc(null)}
+        onConfirm={() => removeDoc && deleteDocMutation.mutate(removeDoc.id)}
+        title="Remove this document?"
+        description={removeDoc ? `“${removeDoc.file_name}” will be deleted. ${resetsVerification ? "The KYC will need to be verified again." : ""}` : undefined}
+        confirmLabel="Remove"
+        loading={deleteDocMutation.isPending}
+      />
+
+      <Dialog open={rejectModalOpen} onClose={() => setRejectModalOpen(false)}>
+        <div className="space-y-4 p-6">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-danger/10 text-danger">
+              <AlertTriangle size={18} />
             </div>
-
-            <textarea
-              className="input w-full min-h-[90px] text-xs py-2"
-              placeholder="e.g. Please provide a clear scan of Aadhaar Card and updated passbook."
-              value={rejectReason}
-              onChange={(e) => setRejectReason(e.target.value)}
-            />
-
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
-              <button
-                type="button"
-                onClick={() => setRejectModalOpen(false)}
-                className="btn-secondary btn-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  verifyOverallMutation.mutate({
-                    status: "ACTION_REQUIRED",
-                    rejection_reason:
-                      rejectReason.trim() || "Documents or details require correction",
-                  })
-                }
-                disabled={verifyOverallMutation.isPending}
-                className="btn-danger btn-sm"
-              >
-                {verifyOverallMutation.isPending ? "Sending…" : "Send to Employee"}
-              </button>
+            <div>
+              <h3 className="text-[15px] font-semibold text-fg">Request KYC corrections</h3>
+              <p className="mt-0.5 text-[13px] text-fg-muted">Tell the employee what needs to be corrected.</p>
             </div>
           </div>
-        </Dialog>
-      )}
+          <textarea
+            className="input min-h-[96px]"
+            placeholder="e.g. Please upload a clearer scan of your Aadhaar card."
+            value={rejectReason}
+            onChange={(e) => setRejectReason(e.target.value)}
+            data-autofocus
+          />
+        </div>
+        <div className="flex justify-end gap-2 border-t border-line bg-panel px-6 py-3.5">
+          <button type="button" onClick={() => setRejectModalOpen(false)} className="btn-secondary">Cancel</button>
+          <button
+            type="button"
+            onClick={() => verifyOverallMutation.mutate({
+              status: "ACTION_REQUIRED",
+              rejection_reason: rejectReason.trim() || "Documents or details require correction",
+            })}
+            disabled={verifyOverallMutation.isPending}
+            className="btn-danger"
+          >
+            {verifyOverallMutation.isPending ? "Sending…" : "Send to employee"}
+          </button>
+        </div>
+      </Dialog>
 
-      {/* Individual Document Reject Dialog */}
-      {verifyDocModal && (
-        <Dialog open={true} onClose={() => setVerifyDocModal(null)}>
-          <div className="p-6 space-y-4">
-            <h3 className="text-sm font-semibold text-fg">
-              Reject Document: {verifyDocModal.document_title}
-            </h3>
-            <p className="text-xs text-fg-subtle">
-              Provide feedback for the employee on why this document is rejected.
-            </p>
-            <input
-              type="text"
-              className="input text-xs"
-              placeholder="e.g. Document copy is blurry or unreadable"
-              value={docRejectReason}
-              onChange={(e) => setDocRejectReason(e.target.value)}
-            />
-            <div className="flex items-center justify-end gap-2 pt-2 border-t border-line">
-              <button
-                type="button"
-                onClick={() => setVerifyDocModal(null)}
-                className="btn-secondary btn-sm"
-              >
-                Cancel
-              </button>
-              <button
-                type="button"
-                onClick={() =>
-                  verifyDocMutation.mutate({
-                    docId: verifyDocModal.id,
-                    status: "REJECTED",
-                    reason:
-                      docRejectReason.trim() ||
-                      "Document does not meet verification requirements",
-                  })
-                }
-                className="btn-danger btn-sm"
-              >
-                Reject Document
-              </button>
-            </div>
+      <Dialog open={!!rejectDoc} onClose={() => setRejectDoc(null)}>
+        <div className="space-y-4 p-6">
+          <div>
+            <h3 className="text-[15px] font-semibold text-fg">Reject {rejectDoc?.document_title}</h3>
+            <p className="mt-0.5 text-[13px] text-fg-muted">The employee will see this reason next to the document.</p>
           </div>
-        </Dialog>
-      )}
+          <input
+            type="text"
+            className="input"
+            placeholder="e.g. The scan is blurry or cut off"
+            value={docRejectReason}
+            onChange={(e) => setDocRejectReason(e.target.value)}
+            data-autofocus
+          />
+        </div>
+        <div className="flex justify-end gap-2 border-t border-line bg-panel px-6 py-3.5">
+          <button type="button" onClick={() => setRejectDoc(null)} className="btn-secondary">Cancel</button>
+          <button
+            type="button"
+            disabled={verifyDocMutation.isPending}
+            onClick={() => rejectDoc && verifyDocMutation.mutate({
+              docId: rejectDoc.id,
+              status: "REJECTED",
+              reason: docRejectReason.trim() || "Document does not meet verification requirements",
+            })}
+            className="btn-danger"
+          >
+            Reject document
+          </button>
+        </div>
+      </Dialog>
     </div>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// COMPACT FIELD-ATTACHED DOCUMENT SLOT (100% HORIZONTALLY & VERTICALLY ALIGNED)
-// ─────────────────────────────────────────────────────────────────────────────
+function Metric({ label, value, ok, extra }: { label: string; value: string; ok: boolean; extra?: string }) {
+  return (
+    <div className="min-w-0">
+      <p className="text-xs text-fg-subtle">{label}</p>
+      <p className={`mt-0.5 flex items-center gap-1.5 text-[13px] font-semibold ${ok ? "text-success" : "text-fg"}`}>
+        {ok && <CheckCircle2 size={13} />}
+        {value}
+      </p>
+      {extra && <p className="truncate text-[11px] text-fg-subtle">{extra}</p>}
+    </div>
+  );
+}
 
-function DocumentSlot({
-  docType,
-  label,
-  required = false,
-  hint,
-  document,
-  onUpload,
-  onPreview,
-  isHR,
-  onVerify,
-  onReject,
-  canDelete = true,
-  queryKey,
-}: {
-  docType: DocumentType;
-  label: string;
-  required?: boolean;
-  hint?: string;
-  document?: KycDocument;
-  onUpload: () => void;
-  onPreview: (doc: KycDocument) => void;
-  isHR: boolean;
-  onVerify: (id: string) => void;
-  onReject: (doc: KycDocument) => void;
-  canDelete?: boolean;
-  queryKey: unknown[];
-}) {
-  const qc = useQueryClient();
-  const toast = useToast();
+// ─── Field view / input ─────────────────────────────────────────────────────
 
-  const deleteMutation = useMutation({
-    mutationFn: (id: string) => kycApi.deleteDocument(id),
-    onSuccess: () => {
-      qc.invalidateQueries({ queryKey });
-      toast.success("Document removed");
-    },
-    onError: (err) => toast.error("Could not remove document", errorMessage(err)),
-  });
+function FieldValue({ field, value }: { field: FieldDef; value: string | null }) {
+  const [revealed, setRevealed] = useState(false);
+  if (!value) return <EmptyValue required={field.required} />;
+
+  // Callers without full KYC access already get "••••1234" from the API.
+  const serverMasked = value.includes("•");
+  const canReveal = field.sensitive && !serverMasked;
+  const shown = canReveal && !revealed
+    ? `•••• ${value.slice(-4)}`
+    : field.display && !serverMasked ? field.display(value) : value;
 
   return (
-    <div className="flex flex-col">
-      <div className="flex items-center justify-between mb-1.5 h-5">
-        <label className="text-xs font-medium text-fg-muted truncate">
-          {label} {required && <span className="text-danger">*</span>}
+    <span className="inline-flex max-w-full items-center gap-1.5">
+      <span className={`${field.mono ? "font-mono tracking-wide" : ""} ${field.type === "textarea" ? "whitespace-pre-line font-normal leading-relaxed" : ""}`}>
+        {shown}
+      </span>
+      {canReveal && (
+        <button
+          type="button"
+          onClick={() => setRevealed((r) => !r)}
+          className="btn-icon h-6 w-6"
+          aria-label={revealed ? `Hide ${field.label}` : `Show ${field.label}`}
+          title={revealed ? "Hide" : "Show"}
+        >
+          {revealed ? <EyeOff size={13} /> : <Eye size={13} />}
+        </button>
+      )}
+    </span>
+  );
+}
+
+function FieldInput({ field, value, onChange, autoFocus, action }: {
+  field: FieldDef;
+  value: string;
+  onChange: (v: string) => void;
+  autoFocus?: boolean;
+  action?: ReactNode;
+}) {
+  const id = `kyc-${field.key}`;
+  const common = {
+    id,
+    value,
+    autoFocus,
+    maxLength: field.maxLength,
+    placeholder: field.placeholder,
+    className: `input ${field.mono ? "font-mono tracking-wide" : ""}`,
+  };
+  const change = (v: string) => onChange(field.normalize ? field.normalize(v) : v);
+  return (
+    <div className="min-w-0">
+      <div className="mb-1.5 flex items-center justify-between gap-2">
+        <label htmlFor={id} className="text-xs font-medium text-fg-muted">
+          {field.label}
+          {field.required && <span className="ml-0.5 text-danger">*</span>}
         </label>
-        {document && <StatusBadge status={document.status} />}
+        {action}
       </div>
+      {field.type === "select" ? (
+        <select {...common} onChange={(e) => change(e.target.value)}>
+          <option value="">Select…</option>
+          {field.options?.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
+        </select>
+      ) : field.type === "textarea" ? (
+        <textarea {...common} rows={3} onChange={(e) => change(e.target.value)} />
+      ) : (
+        <input {...common} type={field.type === "tel" ? "tel" : "text"} onChange={(e) => change(e.target.value)} />
+      )}
+      {field.hint && <p className="mt-1 text-[11px] text-fg-subtle">{field.hint}</p>}
+    </div>
+  );
+}
 
-      <div
-        className={`flex h-9 w-full items-center justify-between gap-2 rounded-lg border px-3 text-xs transition-colors ${
-          document
-            ? document.status === "VERIFIED"
-              ? "border-emerald-500/40 bg-emerald-500/[0.03]"
-              : document.status === "REJECTED"
-              ? "border-rose-500/40 bg-rose-500/[0.03]"
-              : "border-line bg-surface"
-            : "border-dashed border-line bg-surface/50 hover:border-brand-500/60 hover:bg-brand-500/[0.02] cursor-pointer"
-        }`}
-        onClick={document ? undefined : onUpload}
-      >
+// ─── Document row ───────────────────────────────────────────────────────────
+
+function DocumentRow({
+  label, hint, required, document, canManage, canVerify, isSelf,
+  onUpload, onPreview, onApprove, onReject, onRemove,
+}: {
+  label: string;
+  hint: string;
+  required?: boolean;
+  document?: KycDocument;
+  canManage: boolean;
+  canVerify: boolean;
+  isSelf: boolean;
+  onUpload: () => void;
+  onPreview: (doc: KycDocument) => void;
+  onApprove: (doc: KycDocument) => void;
+  onReject: (doc: KycDocument) => void;
+  onRemove: (doc: KycDocument) => void;
+}) {
+  const tile = !document
+    ? "border border-dashed border-line-strong text-fg-subtle"
+    : document.status === "VERIFIED"
+    ? "bg-success/10 text-success"
+    : document.status === "REJECTED"
+    ? "bg-danger/10 text-danger"
+    : "bg-brand-500/10 text-accent";
+  const Icon = !document ? Upload : document.mime_type.startsWith("image/") ? ImageIcon : FileText;
+  // Employees can't change a verified document; HR with write access can.
+  const canChange = canManage && !!document && (!isSelf || document.status !== "VERIFIED");
+
+  return (
+    <li className="flex flex-wrap items-center gap-x-3 gap-y-2 px-5 py-3">
+      <div className={`grid h-9 w-9 shrink-0 place-items-center rounded-lg ${tile}`}>
+        <Icon size={16} />
+      </div>
+      <div className="min-w-0 flex-1 basis-48">
+        <p className="flex items-center gap-1.5 text-[13px] font-medium text-fg">
+          <span className="truncate">{label}</span>
+          {required && <span className="text-danger">*</span>}
+        </p>
         {document ? (
-          <>
-            <div className="flex items-center gap-2 min-w-0">
-              <FileText
-                size={14}
-                className={`shrink-0 ${
-                  document.status === "VERIFIED"
-                    ? "text-emerald-500"
-                    : document.status === "REJECTED"
-                    ? "text-rose-500"
-                    : "text-brand-500"
-                }`}
-              />
-              <span className="truncate font-medium text-fg text-xs" title={document.file_name}>
-                {document.file_name}
-              </span>
-              <span className="shrink-0 text-[10px] text-fg-subtle font-mono">
-                ({(document.file_size / 1024).toFixed(0)} KB)
-              </span>
-            </div>
-
-            <div className="flex items-center gap-0.5 shrink-0">
-              <button
-                type="button"
-                onClick={() => onPreview(document)}
-                className="btn-ghost btn-sm h-7 px-1.5 text-xs"
-                title="Preview document"
-              >
-                <Eye size={12} />
-              </button>
-              <DocumentDownload document={document}
-                className="btn-ghost btn-sm h-7 px-1.5 text-xs"
-                title="Download file"
-              >
-                <Download size={12} />
-              </DocumentDownload>
-
-              {isHR && document.status !== "VERIFIED" && (
-                <button
-                  type="button"
-                  onClick={() => onVerify(document.id)}
-                  className="btn-ghost btn-sm h-7 px-2 text-[11px] text-emerald-600 dark:text-emerald-400 hover:bg-emerald-500/10 font-medium"
-                  title="Approve document"
-                >
-                  <Check size={12} /> Approve
-                </button>
-              )}
-              {isHR && document.status !== "REJECTED" && (
-                <button
-                  type="button"
-                  onClick={() => onReject(document)}
-                  className="btn-ghost btn-sm h-7 px-2 text-[11px] text-rose-600 dark:text-rose-400 hover:bg-rose-500/10 font-medium"
-                  title="Reject document"
-                >
-                  <XCircle size={12} /> Reject
-                </button>
-              )}
-
-              {canDelete && document.status !== "VERIFIED" && (
-                <>
-                  <button
-                    type="button"
-                    onClick={onUpload}
-                    className="btn-ghost btn-sm h-7 px-1.5 text-brand-500"
-                    title="Replace file"
-                  >
-                    <RefreshCw size={11} />
-                  </button>
-                  <button
-                    type="button"
-                    onClick={() => deleteMutation.mutate(document.id)}
-                    className="btn-icon h-7 w-7 text-fg-subtle hover:text-danger"
-                    title="Remove file"
-                  >
-                    <Trash2 size={12} />
-                  </button>
-                </>
-              )}
-            </div>
-          </>
+          <p className="truncate text-xs text-fg-subtle" title={document.file_name}>
+            <span>{document.file_name}</span> · {formatBytes(document.file_size)} · {format(new Date(document.uploaded_at), "d MMM yyyy")}
+          </p>
         ) : (
-          <>
-            <div className="flex items-center gap-2 min-w-0">
-              <Upload size={13} className="text-brand-500 shrink-0" />
-              <span className="truncate text-fg-subtle">
-                Upload {DOCUMENT_TYPE_LABELS[docType] || label}
-              </span>
-            </div>
-            <span className="shrink-0 rounded bg-muted px-1.5 py-0.5 text-[10px] font-medium text-fg-muted">
-              Attach
-            </span>
-          </>
+          <p className="truncate text-xs text-fg-subtle">{hint || "Not uploaded"}</p>
+        )}
+        {document?.status === "REJECTED" && document.rejection_reason && (
+          <p className="mt-0.5 text-xs font-medium text-danger">Rejected: {document.rejection_reason}</p>
         )}
       </div>
 
-      {document?.status === "REJECTED" && document.rejection_reason ? (
-        <p className="text-[11px] text-rose-600 dark:text-rose-400 font-medium mt-1">
-          Rejected: {document.rejection_reason}
-        </p>
-      ) : hint ? (
-        <p className="text-[11px] text-fg-subtle mt-1">{hint}</p>
-      ) : (
-        <p className="text-[11px] text-transparent mt-1 select-none pointer-events-none">—</p>
-      )}
-    </div>
+      <div className="flex shrink-0 items-center gap-1.5">
+        {document ? <StatusBadge status={document.status} /> : <StatusBadge tone={required ? "warning" : "neutral"} label={required ? "Missing" : "Optional"} />}
+      </div>
+
+      <div className="ml-auto flex shrink-0 items-center gap-1">
+        {document ? (
+          <>
+            <button type="button" className="btn-secondary btn-sm" onClick={() => onPreview(document)}>
+              <Eye size={13} /> View
+            </button>
+            <DocumentDownload document={document} className="btn-icon" title="Download">
+              <Download size={14} />
+            </DocumentDownload>
+            {canVerify && document.status !== "VERIFIED" && (
+              <button type="button" className="btn-icon text-success hover:bg-success/10 hover:text-success" title="Approve" aria-label={`Approve ${label}`} onClick={() => onApprove(document)}>
+                <Check size={15} />
+              </button>
+            )}
+            {canVerify && document.status !== "REJECTED" && (
+              <button type="button" className="btn-icon text-danger hover:bg-danger/10 hover:text-danger" title="Reject" aria-label={`Reject ${label}`} onClick={() => onReject(document)}>
+                <XCircle size={15} />
+              </button>
+            )}
+            {canChange && (
+              <>
+                <button type="button" className="btn-icon" title="Replace file" aria-label={`Replace ${label}`} onClick={onUpload}>
+                  <RefreshCw size={14} />
+                </button>
+                <button type="button" className="btn-icon hover:text-danger" title="Remove" aria-label={`Remove ${label}`} onClick={() => onRemove(document)}>
+                  <Trash2 size={14} />
+                </button>
+              </>
+            )}
+          </>
+        ) : canManage ? (
+          <button type="button" className="btn-secondary btn-sm" onClick={onUpload}>
+            <Upload size={13} /> Upload
+          </button>
+        ) : null}
+      </div>
+    </li>
   );
 }
 
-// ─────────────────────────────────────────────────────────────────────────────
-// DIALOGS: UPLOAD & PREVIEW
-// ─────────────────────────────────────────────────────────────────────────────
+// ─── Dialogs ────────────────────────────────────────────────────────────────
 
-function UploadDocumentDialog({
-  employmentId,
-  presetType,
-  isHR,
-  onClose,
-  onSuccess,
-}: {
+function UploadDocumentDialog({ employmentId, type, label, replacing, isHR, onClose, onSuccess }: {
   employmentId?: string;
-  presetType: DocumentType;
+  type: DocumentType;
+  label: string;
+  replacing: boolean;
   isHR: boolean;
   onClose: () => void;
   onSuccess: () => void;
-  }) {
+}) {
   const toast = useToast();
   const fileInputRef = useRef<HTMLInputElement>(null);
-
   const [file, setFile] = useState<File | null>(null);
   const [docNumber, setDocNumber] = useState("");
   const [uploading, setUploading] = useState(false);
+  const [dragging, setDragging] = useState(false);
+  const [error, setError] = useState<string | null>(null);
+
+  const pick = (f: File | undefined) => {
+    if (!f) return;
+    if (!/\.(pdf|png|jpe?g)$/i.test(f.name)) {
+      setError("Only PDF, PNG or JPG files are accepted.");
+      return;
+    }
+    if (f.size > MAX_UPLOAD_MB * 1024 * 1024) {
+      setError(`This file is ${formatBytes(f.size)}. The limit is ${MAX_UPLOAD_MB} MB.`);
+      return;
+    }
+    setError(null);
+    setFile(f);
+  };
+
+  const onDrop = (e: DragEvent) => {
+    e.preventDefault();
+    setDragging(false);
+    pick(e.dataTransfer.files?.[0]);
+  };
 
   const handleSubmit = async (e: FormEvent) => {
     e.preventDefault();
-    if (!file) {
-      toast.error("Please select a file to upload");
-      return;
-    }
-
+    if (!file) return;
     setUploading(true);
     try {
+      const title = DOCUMENT_TYPE_LABELS[type];
       if (isHR && employmentId) {
-        await kycApi.uploadEmployeeDocument(
-          employmentId,
-          file,
-          presetType,
-          DOCUMENT_TYPE_LABELS[presetType],
-          docNumber.trim() || undefined
-        );
+        await kycApi.uploadEmployeeDocument(employmentId, file, type, title, docNumber.trim() || undefined);
       } else {
-        await kycApi.uploadMyDocument(
-          file,
-          presetType,
-          DOCUMENT_TYPE_LABELS[presetType],
-          docNumber.trim() || undefined
-        );
+        await kycApi.uploadMyDocument(file, type, title, docNumber.trim() || undefined);
       }
-      toast.success("Document attached successfully");
+      toast.success(replacing ? "Document replaced" : "Document uploaded");
       onSuccess();
     } catch (err) {
       toast.error("Upload failed", errorMessage(err));
@@ -1270,83 +905,68 @@ function UploadDocumentDialog({
 
   return (
     <Dialog open={true} onClose={onClose}>
-      <form onSubmit={handleSubmit} className="p-6 space-y-4">
-        <div className="flex items-center gap-3">
-          <div className="grid h-10 w-10 place-items-center rounded-xl bg-brand-500/10 text-brand-500">
-            <Upload size={20} />
+      <form onSubmit={handleSubmit}>
+        <div className="space-y-4 p-6">
+          <div className="flex items-start gap-3">
+            <div className="grid h-10 w-10 shrink-0 place-items-center rounded-xl bg-brand-500/10 text-accent">
+              <Upload size={18} />
+            </div>
+            <div>
+              <h3 className="text-[15px] font-semibold text-fg">{replacing ? "Replace" : "Upload"} {label.toLowerCase()}</h3>
+              <p className="mt-0.5 text-[13px] text-fg-muted">PDF, PNG or JPG, up to {MAX_UPLOAD_MB} MB</p>
+            </div>
           </div>
-          <div>
-            <h3 className="text-sm font-semibold text-fg">
-              Upload {DOCUMENT_TYPE_LABELS[presetType]}
-            </h3>
-            <p className="text-xs text-fg-subtle">
-              PDF, PNG, or JPG (up to 15MB)
-            </p>
-          </div>
-        </div>
 
-        <div>
-          <label className="label">
-            Reference / Document Number{" "}
-            <span className="text-fg-subtle font-normal">(Optional)</span>
-          </label>
-          <input
-            type="text"
-            placeholder="e.g. Number on card/certificate"
-            value={docNumber}
-            onChange={(e) => setDocNumber(e.target.value)}
-            className="input text-xs font-mono"
-          />
-        </div>
-
-        <div>
-          <label className="label">Select File</label>
           <input
             ref={fileInputRef}
             type="file"
             accept=".pdf,.png,.jpg,.jpeg"
-            onChange={(e) => {
-              if (e.target.files && e.target.files[0]) {
-                setFile(e.target.files[0]);
-              }
-            }}
+            onChange={(e) => pick(e.target.files?.[0])}
             className="hidden"
           />
-
-          <div
+          <button
+            type="button"
             onClick={() => fileInputRef.current?.click()}
-            className={`border-2 border-dashed rounded-xl p-5 text-center cursor-pointer transition-colors ${
-              file
-                ? "border-brand-500 bg-brand-500/[0.04]"
-                : "border-line hover:border-brand-500/50 bg-canvas"
+            onDragOver={(e) => { e.preventDefault(); setDragging(true); }}
+            onDragLeave={() => setDragging(false)}
+            onDrop={onDrop}
+            className={`block w-full rounded-xl border-2 border-dashed p-6 text-center transition-colors ${
+              dragging || file ? "border-brand-500 bg-brand-500/[0.04]" : "border-line hover:border-brand-500/50 bg-canvas"
             }`}
           >
-            <FileUp className="mx-auto h-7 w-7 text-brand-500 mb-1.5" />
+            <FileUp className="mx-auto mb-2 h-7 w-7 text-accent" />
             {file ? (
-              <div className="text-xs">
-                <p className="font-semibold text-fg truncate">{file.name}</p>
-                <p className="text-fg-subtle mt-0.5">
-                  {(file.size / 1024).toFixed(0)} KB · Click to change
-                </p>
-              </div>
+              <span className="block text-[13px]">
+                <span className="block truncate font-medium text-fg">{file.name}</span>
+                <span className="mt-0.5 block text-xs text-fg-subtle">{formatBytes(file.size)} · Click to choose another file</span>
+              </span>
             ) : (
-              <div className="text-xs text-fg-subtle">
-                <span className="font-semibold text-brand-500">Choose file</span> or drag & drop
-              </div>
+              <span className="block text-[13px] text-fg-subtle">
+                <span className="font-medium text-accent">Choose a file</span> or drag it here
+              </span>
             )}
+          </button>
+          {error && <p className="text-xs font-medium text-danger" role="alert">{error}</p>}
+
+          <div>
+            <label className="label" htmlFor="kyc-doc-number">
+              Document number <span className="font-normal text-fg-subtle">(optional)</span>
+            </label>
+            <input
+              id="kyc-doc-number"
+              type="text"
+              maxLength={100}
+              placeholder="Number printed on the card or certificate"
+              value={docNumber}
+              onChange={(e) => setDocNumber(e.target.value)}
+              className="input font-mono"
+            />
           </div>
         </div>
-
-        <div className="flex items-center justify-end gap-2 pt-3 border-t border-line">
-          <button type="button" onClick={onClose} className="btn-secondary btn-sm">
-            Cancel
-          </button>
-          <button
-            type="submit"
-            disabled={!file || uploading}
-            className="btn-primary btn-sm"
-          >
-            {uploading ? "Uploading…" : "Attach Document"}
+        <div className="flex justify-end gap-2 border-t border-line bg-panel px-6 py-3.5">
+          <button type="button" onClick={onClose} className="btn-secondary">Cancel</button>
+          <button type="submit" disabled={!file || uploading} className="btn-primary">
+            {uploading ? "Uploading…" : replacing ? "Replace document" : "Upload document"}
           </button>
         </div>
       </form>
@@ -1354,98 +974,103 @@ function UploadDocumentDialog({
   );
 }
 
-function DocumentPreviewDialog({
-  doc,
-  onClose,
-}: {
+function DocumentPreviewDialog({ doc, onClose, actions }: {
   doc: KycDocument;
   onClose: () => void;
+  actions?: ReactNode;
 }) {
-  const isImage = doc.mime_type.startsWith("image/");
-  const [preview, setPreview] = useState<{ url?: string; error?: string }>({});
+  const [preview, setPreview] = useState<{ url?: string; type?: string; error?: string }>({});
   useEffect(() => {
     let active = true;
     let objectUrl: string | undefined;
-    kycApi.fetchDocumentBlob(doc.preview_url).then(({ url }) => {
-      objectUrl = url;
-      if (active) setPreview({ url });
-      else URL.revokeObjectURL(url);
-    }).catch(() => { if (active) setPreview({ error: "Could not load document" }); });
+    kycApi.fetchDocumentBlob(doc.preview_url).then(({ blob, url }) => {
+      URL.revokeObjectURL(url);
+      // Only the types the server accepts on upload are rendered inline. A sandboxed
+      // iframe can't host the browser's PDF viewer, so PDFs go in an <object> instead.
+      if (!PREVIEWABLE.has(blob.type)) {
+        if (active) setPreview({ error: "This file type can't be previewed. Download it instead." });
+        return;
+      }
+      objectUrl = URL.createObjectURL(new Blob([blob], { type: blob.type }));
+      if (active) setPreview({ url: objectUrl, type: blob.type });
+      else URL.revokeObjectURL(objectUrl);
+    }).catch(() => { if (active) setPreview({ error: "Couldn't load this document." }); });
     return () => { active = false; if (objectUrl) URL.revokeObjectURL(objectUrl); };
   }, [doc.preview_url]);
 
   return (
-    <Dialog open={true} onClose={onClose} className="max-w-2xl">
-      <div className="p-5 space-y-4">
-        <div className="flex items-center justify-between border-b border-line pb-3">
-          <div>
-            <h3 className="text-sm font-semibold text-fg">{doc.document_title}</h3>
-            <p className="text-xs text-fg-subtle">
-              {doc.file_name} · {(doc.file_size / 1024).toFixed(0)} KB · Uploaded{" "}
-              {format(new Date(doc.uploaded_at), "d MMM yyyy, h:mm a")}
-            </p>
+    <Dialog open={true} onClose={onClose} className="max-w-3xl">
+      <div className="flex items-start justify-between gap-4 border-b border-line px-5 py-4">
+        <div className="min-w-0">
+          <div className="flex flex-wrap items-center gap-2">
+            <h3 className="truncate text-[15px] font-semibold text-fg">{doc.document_title}</h3>
+            <StatusBadge status={doc.status} />
           </div>
-          <StatusBadge status={doc.status} />
-        </div>
-
-        <div className="max-h-[60vh] overflow-auto rounded-xl border border-line bg-canvas p-2 flex items-center justify-center">
-          {preview.error ? <p role="alert">{preview.error}</p> : !preview.url ? <p>Loading document…</p> : isImage ? (
-            <img
-              src={preview.url}
-              alt={doc.document_title}
-              className="max-h-[55vh] max-w-full rounded-lg object-contain"
-            />
-          ) : (
-            <iframe
-              sandbox=""
-              src={preview.url}
-              title={doc.document_title}
-              className="h-[55vh] w-full rounded-lg border-0"
-            />
+          <p className="mt-0.5 truncate text-xs text-fg-subtle">
+            {doc.file_name} · {formatBytes(doc.file_size)} · Uploaded {format(new Date(doc.uploaded_at), "d MMM yyyy, h:mm a")}
+            {doc.document_number ? ` · No. ${doc.document_number}` : ""}
+          </p>
+          {doc.status === "REJECTED" && doc.rejection_reason && (
+            <p className="mt-1 text-xs font-medium text-danger">Rejected: {doc.rejection_reason}</p>
           )}
         </div>
+        <button type="button" onClick={onClose} className="btn-icon shrink-0" aria-label="Close">
+          <X size={16} />
+        </button>
+      </div>
 
-        <div className="flex items-center justify-between pt-2">
-          <span className="text-xs text-fg-subtle">
-            {doc.document_number ? `Doc Ref: ${doc.document_number}` : ""}
-          </span>
-          <div className="flex items-center gap-2">
-            <DocumentDownload document={doc}
-              className="btn-secondary btn-sm"
-            >
-              <Download size={13} /> Download
-            </DocumentDownload>
-            <button
-              type="button"
-              onClick={onClose}
-              className="btn-primary btn-sm"
-            >
-              Close
-            </button>
-          </div>
+      <div className="grid h-[60vh] place-items-center overflow-auto bg-canvas p-3">
+        {preview.error ? (
+          <p className="text-[13px] text-danger" role="alert">{preview.error}</p>
+        ) : !preview.url ? (
+          <Skeleton className="h-full w-full rounded-lg" />
+        ) : preview.type?.startsWith("image/") ? (
+          <img src={preview.url} alt={doc.document_title} className="max-h-full max-w-full rounded-lg object-contain shadow-card" />
+        ) : (
+          <object data={preview.url} type="application/pdf" aria-label={doc.document_title} className="h-full w-full rounded-lg bg-surface">
+            <div className="grid h-full place-items-center p-6 text-center text-[13px] text-fg-muted">
+              This browser can’t show PDFs inline. Use Download to open it.
+            </div>
+          </object>
+        )}
+      </div>
+
+      <div className="flex flex-wrap items-center justify-between gap-2 border-t border-line bg-panel px-5 py-3">
+        <DocumentDownload document={doc} className="btn-secondary btn-sm">
+          <Download size={13} /> Download
+        </DocumentDownload>
+        <div className="flex items-center gap-2">
+          {actions}
+          <button type="button" onClick={onClose} className="btn-ghost btn-sm">Close</button>
         </div>
       </div>
     </Dialog>
   );
 }
 
-
 function DocumentDownload({ document, children, ...props }: {
-  document: KycDocument; children: React.ReactNode; className?: string; title?: string;
+  document: KycDocument; children: ReactNode; className?: string; title?: string;
 }) {
-  const [error, setError] = useState(false);
+  const toast = useToast();
   const [busy, setBusy] = useState(false);
   const download = async () => {
-    setBusy(true); setError(false);
+    setBusy(true);
     try {
       const { url } = await kycApi.fetchDocumentBlob(document.download_url);
       const link = window.document.createElement("a");
-      link.href = url; link.download = document.file_name;
+      link.href = url;
+      link.download = document.file_name;
       link.click();
       setTimeout(() => URL.revokeObjectURL(url), 1000);
-    } catch { setError(true); }
-    finally { setBusy(false); }
+    } catch (err) {
+      toast.error("Download failed", errorMessage(err));
+    } finally {
+      setBusy(false);
+    }
   };
-  return <><button type="button" {...props} onClick={download} disabled={busy}>{children}</button>
-    {error && <span role="alert">Download failed. Try again.</span>}</>;
+  return (
+    <button type="button" {...props} aria-label={props.title} onClick={download} disabled={busy}>
+      {children}
+    </button>
+  );
 }

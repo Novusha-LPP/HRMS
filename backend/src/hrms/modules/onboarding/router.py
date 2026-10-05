@@ -12,7 +12,7 @@ from datetime import UTC, datetime, timedelta
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.authn import CurrentUser
 from hrms.core.authz import (
@@ -196,7 +196,7 @@ async def list_cases(
         q = q.where(OnboardingCase.employment_id == emp_uuid)
     elif not scope.is_all:
         allowed_ids = await visible_employment_ids(session, tenant_id, scope)
-        q = q.where(OnboardingCase.employment_id.in_(allowed_ids))
+        q = q.where(col(OnboardingCase.employment_id).in_(allowed_ids))
     rows = await session.execute(q.order_by(OnboardingCase.started_at.desc()))  # type: ignore
     result = []
     for c in rows.scalars():

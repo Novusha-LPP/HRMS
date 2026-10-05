@@ -16,7 +16,7 @@ from uuid import UUID, uuid4
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 from sqlalchemy import text
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.authz import Scope, ScopeDep, require_global_permission, require_permission
 from hrms.core.database import SessionDep
@@ -117,7 +117,7 @@ async def list_reports(
     q = (
         select(ReportDefinition)
         .where(ReportDefinition.tenant_id == tenant_id)
-        .where(ReportDefinition.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(ReportDefinition.archived_at).is_(None))
     )
     if owner_type:
         q = q.where(
@@ -282,10 +282,10 @@ def _attendance_filters(filters: list[dict]) -> tuple[list[str], dict]:
                 params.update({f"{key}_{j}": d for j, d in enumerate(parsed)})
                 dates.extend([("gte", parsed[0]), ("lte", parsed[1])])
             else:
-                operator = {"eq": "=", "gte": ">=", "lte": "<="}[op]
+                operator = {"eq": "=", "gte": ">=", "lte": "<="}[str(op)]
                 clauses.append(f"ad.work_date {operator} :{key}")
                 params[key] = parsed[0]
-                dates.append((op, parsed[0]))
+                dates.append((str(op), parsed[0]))
         elif field == "employment_id":
             if not isinstance(value, str) or not value.startswith("emp_"):
                 raise HTTPException(422, "Supply a valid employee identifier")
@@ -299,7 +299,7 @@ def _attendance_filters(filters: list[dict]) -> tuple[list[str], dict]:
                 raise HTTPException(422, "Supply nonempty text filter values")
             if field == "status" and any(v not in meta["options"] for v in values):
                 raise HTTPException(422, "Unknown attendance status")
-            col = {"status": "ad.status", "department": "ou.name", "location": "l.name"}[field]
+            col = {"status": "ad.status", "department": "ou.name", "location": "l.name"}[str(field)]
             placeholders = ", ".join(f":{key}_{j}" for j in range(len(values)))
             clauses.append(f"{col} IN ({placeholders})")
             params.update({f"{key}_{j}": v for j, v in enumerate(values)})
@@ -542,7 +542,7 @@ async def _fetch_def(session, tenant_id: UUID, report_id: str) -> ReportDefiniti
         select(ReportDefinition)
         .where(ReportDefinition.tenant_id == tenant_id)
         .where(ReportDefinition.id == r_uuid)
-        .where(ReportDefinition.archived_at.is_(None))  # type: ignore[attr-defined]
+        .where(col(ReportDefinition.archived_at).is_(None))
     )
     rd = row.scalars().first()
     if not rd:

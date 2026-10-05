@@ -14,6 +14,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from sqlalchemy import text
 
 from hrms import model_registry  # noqa: F401
+from hrms.core.browser_sessions import BrowserSessionMiddleware
 from hrms.core.config import settings
 from hrms.core.database import engine
 from hrms.core.error_handlers import register_exception_handlers
@@ -76,6 +77,7 @@ app = FastAPI(
 
 # ─── Middleware ───────────────────────────────────────────────────────────────
 app.add_middleware(RequestLoggingMiddleware)
+app.add_middleware(BrowserSessionMiddleware)
 app.add_middleware(
     CORSMiddleware,
     allow_origins=settings.cors_origins_list,

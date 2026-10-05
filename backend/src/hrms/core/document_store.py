@@ -48,20 +48,31 @@ def is_sealed(blob: bytes) -> bool:
     return blob.startswith(MAGIC)
 
 
+def _sealed_parts(blob: bytes) -> tuple[str, bytes, bytes]:
+    """Reject malformed envelopes through the same error contract as AES failures."""
+    try:
+        if len(blob) <= len(MAGIC):
+            raise ValueError("Truncated header")
+        n = blob[len(MAGIC)]
+        start = len(MAGIC) + 1
+        if not n or len(blob) < start + n + 12 + 16:
+            raise ValueError("Truncated ciphertext")
+        return (blob[start:start + n].decode("utf-8"),
+                blob[start + n:start + n + 12], blob[start + n + 12:])
+    except (ValueError, IndexError, UnicodeError) as exc:
+        raise FieldCryptoError("Malformed encrypted document") from exc
+
+
 def sealed_key_id(blob: bytes) -> str | None:
     if not is_sealed(blob):
         return None
-    n = blob[len(MAGIC)]
-    return blob[len(MAGIC) + 1 : len(MAGIC) + 1 + n].decode()
+    return _sealed_parts(blob)[0]
 
 
 def unseal(blob: bytes, aad: str) -> bytes:
     if not is_sealed(blob):
-        return blob  # stored before encryption; encrypt-pii seals it
-    n = blob[len(MAGIC)]
-    start = len(MAGIC) + 1
-    key_id = blob[start : start + n].decode()
-    nonce, sealed = blob[start + n : start + n + 12], blob[start + n + 12 :]
+        return blob  # Legacy plaintext remains readable until migration.
+    key_id, nonce, sealed = _sealed_parts(blob)
     key = _keys().get(key_id)
     if key is None:
         raise FieldCryptoError(f"document was encrypted with key {key_id!r}: not configured")

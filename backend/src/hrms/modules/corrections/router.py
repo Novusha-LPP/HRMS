@@ -16,7 +16,7 @@ always the caller (from the token), never a client-supplied query param.
 from uuid import uuid4
 
 from fastapi import APIRouter, HTTPException, Query
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.approvals import require_reviewer
 from hrms.core.authn import CurrentUser
@@ -78,10 +78,10 @@ async def list_corrections(
         q = q.where(AttendanceCorrectionRequest.employment_id == emp_uuid)
     elif not scope.is_all:
         allowed_ids = await visible_employment_ids(session, tenant_id, scope)
-        q = q.where(AttendanceCorrectionRequest.employment_id.in_(allowed_ids))
+        q = q.where(col(AttendanceCorrectionRequest.employment_id).in_(allowed_ids))
     if status:
         q = q.where(AttendanceCorrectionRequest.status == status)
-    rows = await session.execute(q.order_by(AttendanceCorrectionRequest.work_date.desc()))
+    rows = await session.execute(q.order_by(col(AttendanceCorrectionRequest.work_date).desc()))
     results = []
     for cor in rows.scalars():
         history = await _get_history(session, tenant_id, cor.id)
@@ -355,7 +355,7 @@ async def _get_history(session, tenant_id, cor_id) -> list[CorrectionApprovalAct
         select(CorrectionApprovalAction)
         .where(CorrectionApprovalAction.tenant_id == tenant_id)
         .where(CorrectionApprovalAction.correction_id == cor_id)
-        .order_by(CorrectionApprovalAction.actioned_at)
+        .order_by(col(CorrectionApprovalAction.actioned_at))
     )
     return [
         CorrectionApprovalActionResponse(

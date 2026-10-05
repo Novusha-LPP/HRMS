@@ -8,6 +8,8 @@ export interface Employment {
   first_name?: string | null;
   last_name?: string | null;
   full_name?: string | null;
+  email?: string | null;
+  role?: string | null;
   hire_date: string;
   separation_date: string | null;
   employment_state: string;

@@ -6,6 +6,7 @@ from uuid import uuid4
 import pytest
 from sqlalchemy import text
 
+from hrms.core import database, perf
 from hrms.core.ids import to_uuid
 from hrms.modules.dashboard.router import _mmdd_window, _next_occurrence
 from hrms.modules.time.presence import classify, is_late, present_sql
@@ -306,3 +307,36 @@ async def test_daily_analysis_counts_everyone_once_and_stays_in_scope(api):
         client, "GET", f"/v1/time/daily-analysis?work_date={monday}&status=PRESENT"
     )
     assert [r["employee_number"] for r in present_only["employees"]] == ["A0"]
+
+
+async def test_hr_dashboard_query_budget_stays_below_alert_threshold(api):
+    client, engine = api
+    admin = await tenant(client)
+    tid = to_uuid(admin["user"]["tenant_id"])
+    company_a = admin["user"]["legal_entities"][0]["id"]
+    await _seed_company(client, engine, tid, company_a, "Q", count=3)
+
+    perf.instrument_engine(database.AsyncSessionLocal.kw["bind"])
+    seen = []
+    perf.REQUEST_OBSERVER = lambda scope, tally: seen.append(tally)
+    try:
+        # Request all 23 dashboard sections (no sections param means all sections)
+        res = await ok(client, "GET", "/v1/dashboard/hr")
+        assert res["headcount"]["total"] >= 3
+        # Query count regression alert fires when p95 statements > 50.
+        # With batched aggregation queries, the count should stay <= 25.
+        query_count = seen[-1].count
+        assert query_count <= 25, f"Expected <= 25 queries for full dashboard, got {query_count}"
+
+        # Scoped overview request (e.g. from Organization page) should be <= 10
+        await ok(
+            client,
+            "GET",
+            "/v1/dashboard/hr?sections=headcount,org_summary,entity_distribution,department_distribution",
+        )
+        overview_queries = seen[-1].count
+        assert (
+            overview_queries <= 10
+        ), f"Expected <= 10 queries for org overview sections, got {overview_queries}"
+    finally:
+        perf.REQUEST_OBSERVER = None

@@ -1,5 +1,6 @@
 from datetime import date, datetime
 from typing import Literal
+from uuid import UUID
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -148,6 +149,8 @@ class HourlyArrivalStat(BaseModel):
 
 
 class DailyAnalysisResponse(BaseModel):
+    snapshot_id: UUID | None = None
+    generated_at: datetime | None = None
     total_filtered: int = 0
     work_date: date
     metrics: DailyMetrics

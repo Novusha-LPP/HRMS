@@ -932,8 +932,8 @@ async def application_summary(
     """Application counts by status and approved days by leave type, across the caller's scope."""
     scope = read_scope(scope, "leave.read", "leave.approve")
     base = [
-        LeaveApplication.tenant_id == tenant_id,
-        LeaveApplication.archived_at == None,  # noqa: E711
+        col(LeaveApplication.tenant_id) == tenant_id,
+        col(LeaveApplication.archived_at) == None,  # noqa: E711
     ]
     if not scope.is_all:
         base.append(
@@ -959,7 +959,7 @@ async def application_summary(
         )
         .join(LeaveType, col(LeaveType.id) == LeaveApplication.leave_type_id)
         .where(*base, LeaveApplication.status == LeaveApplicationStatus.APPROVED)
-        .group_by(LeaveType.id, LeaveType.name, LeaveType.color)
+        .group_by(col(LeaveType.id), col(LeaveType.name), col(LeaveType.color))
         .order_by(LeaveType.name)
     )
     return LeaveApplicationSummary(
@@ -1699,7 +1699,7 @@ async def _allocate_days(session, tenant_id, employment_id, start, end, half_day
         )
     ).all()
     holidays = {r[0] for r in holidays}
-    allocation = {}
+    allocation: dict[str, float] = {}
     day = start
     while day <= end:
         policy = await resolve_policy(employment_id, day, session, tenant_id)

@@ -16,6 +16,7 @@ export function LoginPage() {
   const navigate = useNavigate();
   const [identifier, setIdentifier] = useState("");
   const [password, setPassword] = useState("");
+  const [otp, setOtp] = useState("");
   // Only shown once the API says the same code/phone is used by more than one company.
   const [company, setCompany] = useState("");
   const [needCompany, setNeedCompany] = useState(false);
@@ -28,7 +29,7 @@ export function LoginPage() {
     setError(null);
     setBusy(true);
     try {
-      await login(identifier, password, needCompany ? company : undefined);
+      await login(identifier, password, needCompany ? company : undefined, otp || undefined);
       navigate("/dashboard");
     } catch (err) {
       if (err instanceof SignInError && err.code === "COMPANY_REQUIRED") setNeedCompany(true);
@@ -127,6 +128,11 @@ export function LoginPage() {
                 <p className="mt-1 text-xs text-fg-subtle">Your HR team can tell you your company's code.</p>
               </div>
             )}
+          <div>
+            <label className="label" htmlFor="auth-otp">Authenticator code (if enabled)</label>
+            <input id="auth-otp" className="input" inputMode="numeric" autoComplete="one-time-code"
+              pattern="[0-9]{6}" maxLength={6} value={otp} onChange={e => setOtp(e.target.value)} />
+          </div>
             <button type="submit" className="btn-primary h-10 w-full" disabled={!identifier || !password || (needCompany && !company.trim()) || busy}>
               {busy ? <Loader2 size={15} className="animate-spin" /> : <>Sign in <ArrowRight size={15} /></>}
             </button>

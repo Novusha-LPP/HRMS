@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useRef, useState } from "react";
 import { useQuery } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { format, parseISO, subDays, addDays, isAfter, startOfDay } from "date-fns";
@@ -61,65 +61,7 @@ function fmtFriendlyDate(dateStr: string): string {
   }
 }
 
-function exportDailyAnalysisCsv(dateStr: string, employees: DailyEmployeeRecord[]) {
-  const headers = [
-    "Employee ID",
-    "Employee Name",
-    "Email",
-    "Department",
-    "Designation",
-    "Work Date",
-    "Attendance Status",
-    "First Check-in",
-    "Last Check-out",
-    "Effective Minutes",
-    "Effective Hours",
-    "Gross Minutes",
-    "Break Minutes",
-    "Late By (Minutes)",
-    "Early Departure (Minutes)",
-    "Overtime (Minutes)",
-    "Leave Type",
-    "Punches Count",
-  ];
 
-  const esc = (v: unknown) => {
-    const str = v === null || v === undefined ? "" : String(v);
-    return /[",\n]/.test(str) ? `"${str.replace(/"/g, '""')}"` : str;
-  };
-
-  const rows = employees.map((emp) => [
-    emp.employee_number,
-    emp.name,
-    emp.email ?? "",
-    emp.department ?? "",
-    emp.designation ?? "",
-    dateStr,
-    emp.status,
-    emp.first_punch_in ? format(new Date(emp.first_punch_in), "yyyy-MM-dd HH:mm:ss") : "",
-    emp.last_punch_out ? format(new Date(emp.last_punch_out), "yyyy-MM-dd HH:mm:ss") : "",
-    emp.effective_minutes,
-    (emp.effective_minutes / 60).toFixed(2),
-    emp.gross_minutes,
-    emp.break_minutes,
-    emp.late_by_minutes,
-    emp.early_departure_minutes,
-    emp.overtime_minutes,
-    emp.leave_type ?? "",
-    emp.punches_count,
-  ]);
-
-  const csvContent = [headers.map(esc).join(","), ...rows.map((r) => r.map(esc).join(","))].join("\n");
-  const blob = new Blob([csvContent], { type: "text/csv;charset=utf-8;" });
-  const url = URL.createObjectURL(blob);
-  const link = document.createElement("a");
-  link.href = url;
-  link.setAttribute("download", `daily-attendance-analysis-${dateStr}.csv`);
-  document.body.appendChild(link);
-  link.click();
-  document.body.removeChild(link);
-  URL.revokeObjectURL(url);
-}
 
 export function DailyAnalysisPage() {
   const [searchParams, setSearchParams] = useSearchParams();
@@ -141,6 +83,7 @@ export function DailyAnalysisPage() {
   const toast = useToast();
 
   // Inspection Drawer
+  const reportSnapshot = useRef<{ date: string; id: string; expires: number } | null>(null);
   const [inspectEmployee, setInspectEmployee] = useState<DailyEmployeeRecord | null>(null);
 
   // Sync date change to URL
@@ -158,16 +101,21 @@ export function DailyAnalysisPage() {
   const isFutureDate = isAfter(parseISO(selectedDate), startOfDay(new Date()));
 
   // Fetch Daily Analysis from backend API
-  const { data, isPending, isError, refetch } = useQuery<DailyAnalysisResponse>({
+  const { data, isPending, isFetching, isError, refetch } = useQuery<DailyAnalysisResponse>({
     queryKey: ["daily-analysis", selectedDate, deptFilter, statusFilter, searchQuery, page],
-    queryFn: () =>
-      timeApi.dailyAnalysis({
+    queryFn: async () => {
+      const cached = reportSnapshot.current;
+      const result = await timeApi.dailyAnalysis({
+        snapshot_id: cached?.date === selectedDate && cached.expires > Date.now() ? cached.id : undefined,
         work_date: selectedDate,
         limit: perPage, offset: (page - 1) * perPage,
         department: deptFilter || undefined,
         status: statusFilter === "ALL" ? undefined : statusFilter,
         search: searchQuery.trim() || undefined,
-      }),
+      });
+      reportSnapshot.current = { date: selectedDate, id: result.snapshot_id, expires: new Date(result.generated_at).getTime() + 240_000 };
+      return result;
+    },
   });
 
   // Fetch employee punches when drawer is open
@@ -230,15 +178,17 @@ export function DailyAnalysisPage() {
   const exportAll = async () => {
     setExporting(true);
     try {
-      const records: DailyEmployeeRecord[] = [];
-      for (let offset = 0; ; offset += 500) {
-        const result = await timeApi.dailyAnalysis({ work_date: selectedDate,
-          department: deptFilter || undefined, status: statusFilter === "ALL" ? undefined : statusFilter,
-          search: searchQuery.trim() || undefined, limit: 500, offset });
-        records.push(...result.employees);
-        if (records.length >= result.total_filtered || result.employees.length === 0) break;
+      if (!data?.snapshot_id) return;
+      let snapshotId = data.snapshot_id;
+      if (new Date(data.generated_at).getTime() + 240_000 <= Date.now()) {
+        reportSnapshot.current = null;
+        const refreshed = await refetch({ throwOnError: true });
+        if (!refreshed.data) return;
+        snapshotId = refreshed.data.snapshot_id;
       }
-      exportDailyAnalysisCsv(selectedDate, records);
+      timeApi.exportDailyAnalysis({ snapshot_id: snapshotId, work_date: selectedDate,
+        department: deptFilter || undefined, status: statusFilter === "ALL" ? undefined : statusFilter,
+        search: searchQuery.trim() || undefined });
     } catch (e) { toast.error("Couldn’t export attendance", errorMessage(e)); }
     finally { setExporting(false); }
   };
@@ -305,9 +255,17 @@ export function DailyAnalysisPage() {
 
             <button
               type="button"
+              className="btn-secondary btn-sm"
+              disabled={isFetching || exporting}
+              onClick={() => { reportSnapshot.current = null; void refetch(); }}
+            >
+              {isFetching ? "Refreshing…" : "Refresh"}
+            </button>
+            <button
+              type="button"
               className="btn-secondary btn-sm gap-1.5"
               onClick={() => { void exportAll(); }}
-              disabled={totalEmployees === 0 || exporting}
+              disabled={totalEmployees === 0 || exporting || isFetching}
             >
               <Download size={13} />
               <span>Export CSV</span>
@@ -316,12 +274,13 @@ export function DailyAnalysisPage() {
         }
       />
 
+      {data?.generated_at && <p className="text-xs text-fg-muted">Report captured {new Date(data.generated_at).toLocaleTimeString()}. Refresh to include newer changes.</p>}
       {isError && (
         <Notice
           title="Could not load daily analysis"
           tone="warning"
           action={
-            <button className="btn-secondary btn-sm" onClick={() => refetch()}>
+            <button className="btn-secondary btn-sm" onClick={() => { reportSnapshot.current = null; void refetch(); }}>
               Retry
             </button>
           }

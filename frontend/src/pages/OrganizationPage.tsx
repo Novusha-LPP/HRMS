@@ -69,8 +69,8 @@ export function OrganizationPage() {
 function OrganizationOverviewTab({ onNavigateTab }: { onNavigateTab: (tab: Tab) => void }) {
   const [distView, setDistView] = useState<"company" | "dept">("company");
   const { data: hrData, isPending: hrPending } = useQuery({
-    queryKey: ["dash-hr"],
-    queryFn: () => dashboardApi.hr(),
+    queryKey: ["dash-hr", "org-overview"],
+    queryFn: () => dashboardApi.hr("headcount,org_summary,entity_distribution,department_distribution"),
   });
   const { data: entities = [], isPending: entitiesPending } = useQuery({
     queryKey: ["legal-entities"],

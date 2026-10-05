@@ -26,14 +26,12 @@ export class ApiError extends Error {
   }
 }
 
-// Held in memory so every request picks it up immediately after login/logout,
-// without re-reading localStorage on the hot path. AuthContext is the only
-// thing that calls this. The backend derives tenant + identity entirely from
-// this token now — there is no client-supplied tenant header anymore.
-let authToken: string | null = null;
+// Identity generation protects against responses from a previous session.
+// Credentials live only in the backend-issued HttpOnly cookie.
+let authToken = 0;
 
-export function setAuthToken(token: string | null) {
-  authToken = token;
+export function setAuthToken() {
+  authToken += 1;
 }
 
 let onUnauthorized: (() => void) | null = null;
@@ -42,7 +40,7 @@ export function setUnauthorizedHandler(handler: (() => void) | null) {
   onUnauthorized = handler;
 }
 
-export function getAuthToken(): string | null {
+export function getAuthToken(): number {
   return authToken;
 }
 
@@ -56,7 +54,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
   if (!(options.body instanceof FormData) && !headers["Content-Type"]) {
     headers["Content-Type"] = "application/json";
   }
-  if (authToken) headers["Authorization"] = `Bearer ${authToken}`;
+  headers["X-HRMS-Session"] = "cookie";
 
   // Attach or generate client request correlation ID
   const clientRequestId = headers["X-Request-ID"] || generateRequestId();
@@ -64,7 +62,7 @@ async function request<T>(path: string, options: RequestInit = {}): Promise<T> {
 
   const requestToken = authToken;
   return withRequestDeadline(async (signal) => {
-  const res = await fetch(`${BASE}${path}`, { ...options, headers, signal });
+  const res = await fetch(`${BASE}${path}`, { ...options, headers, signal, credentials: "include" });
 
   if (requestToken !== authToken) throw new Error("Session changed");
   if (!res.ok) {

@@ -18,7 +18,7 @@ from datetime import date, time
 from uuid import UUID
 
 from sqlalchemy import text
-from sqlmodel import select
+from sqlmodel import col, select
 
 from hrms.core.config import settings
 from hrms.core.datetime_utils import compute_standard_minutes
@@ -197,11 +197,11 @@ async def _entity_assignment(
         .where(EmployeePolicyAssignment.legal_entity_id == legal_entity_id)
         .where(EmployeePolicyAssignment.effective_from <= work_date)
         .where(
-            (EmployeePolicyAssignment.effective_to == None)  # noqa: E711
-            | (EmployeePolicyAssignment.effective_to >= work_date)
+            (col(EmployeePolicyAssignment.effective_to) == None)  # noqa: E711
+            | (col(EmployeePolicyAssignment.effective_to) >= work_date)
         )
         .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
-        .order_by(EmployeePolicyAssignment.effective_from.desc())
+        .order_by(col(EmployeePolicyAssignment.effective_from).desc())
         .limit(1)
     )
     return row.scalars().first()
@@ -278,11 +278,11 @@ async def resolve_policy(
         .where(EmployeePolicyAssignment.employment_id == employment_id)
         .where(EmployeePolicyAssignment.effective_from <= work_date)
         .where(
-            (EmployeePolicyAssignment.effective_to == None)  # noqa: E711
-            | (EmployeePolicyAssignment.effective_to >= work_date)
+            (col(EmployeePolicyAssignment.effective_to) == None)  # noqa: E711
+            | (col(EmployeePolicyAssignment.effective_to) >= work_date)
         )
         .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
-        .order_by(EmployeePolicyAssignment.effective_from.desc())
+        .order_by(col(EmployeePolicyAssignment.effective_from).desc())
         .limit(1)
     )
     assignment: EmployeePolicyAssignment | None = asgn_row.scalars().first()
@@ -325,12 +325,13 @@ class PolicyResolver:
                 .where(EmployeePolicyAssignment.tenant_id == self._tenant_id)
                 .where(EmployeePolicyAssignment.effective_from <= self._work_date)
                 .where(
-                    (EmployeePolicyAssignment.effective_to == None)  # noqa: E711
-                    | (EmployeePolicyAssignment.effective_to >= self._work_date)
+                    (col(EmployeePolicyAssignment.effective_to) == None)  # noqa: E711
+                    | (col(EmployeePolicyAssignment.effective_to) >= self._work_date)
                 )
                 .where(EmployeePolicyAssignment.archived_at == None)  # noqa: E711
                 .order_by(
-                    EmployeePolicyAssignment.effective_from.desc(), EmployeePolicyAssignment.id
+                    col(EmployeePolicyAssignment.effective_from).desc(),
+                    col(EmployeePolicyAssignment.id),
                 )
             )
         ).scalars()

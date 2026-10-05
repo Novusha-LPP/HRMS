@@ -3,6 +3,8 @@ Static metadata describing which columns and filters are available per report mo
 The frontend uses this to build the report builder UI.
 """
 
+from typing import Any
+
 AVAILABLE_COLUMNS: dict[str, list[dict]] = {
     "ATTENDANCE": [
         {"field": "employee_number", "label": "Employee No.", "type": "string", "default": True},
@@ -223,7 +225,7 @@ AVAILABLE_FILTERS: dict[str, list[dict]] = {
 }
 
 # Default system reports seeded per tenant
-DEFAULT_REPORTS = [
+DEFAULT_REPORTS: list[dict[str, Any]] = [
     {
         "name": "Monthly Attendance Summary",
         "description": "Attendance status for all employees in the selected month",

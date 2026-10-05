@@ -21,6 +21,7 @@ class LoginRequest(BaseModel):
 
     identifier: str = Field(min_length=1, max_length=320)
     password: str = Field(max_length=256)
+    otp: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
     # Company code (the tenant's slug). Only needed when the same employee code or
     # mobile number exists in more than one company — the API then answers
     # COMPANY_REQUIRED and the sign-in form asks for it.
@@ -66,6 +67,7 @@ class LegalEntitySummary(BaseModel):
 
 
 class MeResponse(BaseModel):
+    mfa_required: bool = False
     id: str
     email: str | None
     name: str

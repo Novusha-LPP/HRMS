@@ -270,7 +270,7 @@ async def _get_or_create_record(
         tenant_id=tenant_id,
         id=uuid4(),
         employment_id=employment_id,
-        person_id=meta["person_id"],
+        person_id=UUID(str(meta["person_id"])) if meta["person_id"] else None,
         status=KycStatus.NOT_SUBMITTED,
         updated_at=datetime.now(UTC),
     )

@@ -3,6 +3,20 @@
 import os
 
 import pytest
+from sqlalchemy.engine import make_url
+
+# Maintenance helpers/import scripts and readiness create their own engines rather
+# than using the api fixture. Pin their configuration before importing any hrms
+# module, so setting only HRMS_TEST_DATABASE_URL cannot reach a shared/default DB.
+_test_database_url = os.getenv("HRMS_TEST_DATABASE_URL")
+if _test_database_url:
+    _test_url = make_url(_test_database_url)
+    if not (_test_url.database or "").endswith("_test"):
+        raise RuntimeError("Tests require an explicitly isolated *_test database")
+    os.environ["HRMS_DATABASE_URL"] = _test_database_url
+    os.environ["HRMS_APP_DATABASE_URL"] = _test_url.set(
+        username="hrms_app", password="hrms_app_dev_password"
+    ).render_as_string(hide_password=False)
 
 
 def pytest_addoption(parser):
