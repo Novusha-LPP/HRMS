@@ -1121,9 +1121,9 @@ async def apply_due_actions(session, tenant_id):
             SCHEDULED_ACTIONS.labels("applied").inc()
         except Exception as exc:
             SCHEDULED_ACTIONS.labels("failed").inc()
-            reason = (str(exc.detail) if isinstance(exc, HTTPException) else type(exc).__name__)[
-                :500
-            ]
+            reason = (
+                exc.detail if isinstance(exc, HTTPException) and exc.detail else type(exc).__name__
+            )[:500]
             logger.warning(
                 "Scheduled personnel action %s for employment %s could not be applied: %s",
                 action_id,

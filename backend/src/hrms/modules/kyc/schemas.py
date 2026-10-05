@@ -1,8 +1,38 @@
 """Pydantic schemas for Employee KYC API."""
 
+import re
 from datetime import date, datetime
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
+
+# Statutory identifiers: spaces and dashes are dropped and letters upper-cased before the
+# format is checked, so "1234 5678 9012" and "abcde1234f" are stored canonically. A blank
+# value clears the field.
+IDENTIFIER_FORMATS: dict[str, tuple[re.Pattern[str], str]] = {
+    "pan_number": (
+        re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$"),
+        "A PAN is 5 letters, 4 digits and a letter, e.g. ABCDE1234F",
+    ),
+    "aadhaar_number": (re.compile(r"^\d{12}$"), "An Aadhaar number has exactly 12 digits"),
+    "ifsc_code": (
+        re.compile(r"^[A-Z]{4}0[A-Z0-9]{6}$"),
+        "An IFSC is 4 letters, a zero and 6 characters, e.g. HDFC0000123",
+    ),
+    "uan_number": (re.compile(r"^\d{12}$"), "A UAN has exactly 12 digits"),
+    "esi_number": (re.compile(r"^(\d{10}|\d{17})$"), "An ESI number has 10 or 17 digits"),
+}
+
+
+def normalize_identifier(field: str, value: str | None) -> str | None:
+    if value is None:
+        return None
+    cleaned = re.sub(r"[\s-]", "", value).upper()
+    if not cleaned:
+        return None
+    pattern, message = IDENTIFIER_FORMATS[field]
+    if not pattern.match(cleaned):
+        raise ValueError(message)
+    return cleaned
 
 
 class KycRecordUpdateRequest(BaseModel):
@@ -30,6 +60,11 @@ class KycRecordUpdateRequest(BaseModel):
     emergency_contact_phone: str | None = Field(default=None, max_length=20)
     current_address: str | None = Field(default=None, max_length=500)
     permanent_address: str | None = Field(default=None, max_length=500)
+
+    @field_validator(*IDENTIFIER_FORMATS, mode="before")
+    @classmethod
+    def _identifier(cls, value, info):
+        return normalize_identifier(info.field_name, value)
 
 
 class KycDocumentResponse(BaseModel):
