@@ -1,8 +1,10 @@
 import { useEffect, useMemo, useRef, useState } from "react";
 import type { KeyboardEvent as ReactKeyboardEvent } from "react";
 import { useNavigate } from "react-router-dom";
+import { useQuery } from "@tanstack/react-query";
 import type { LucideIcon } from "lucide-react";
-import { Search, Umbrella, FilePenLine, Moon, Sun, LogOut, CornerDownLeft, ArrowRight } from "lucide-react";
+import { Search, Umbrella, FilePenLine, Moon, Sun, LogOut, CornerDownLeft, ArrowRight, UserRound } from "lucide-react";
+import { peopleApi } from "../../api/people";
 import { Dialog } from "../ui/Overlay";
 import { useAuth } from "../../context/AuthContext";
 import { useTheme } from "../../context/ThemeContext";
@@ -32,6 +34,9 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
   const [query, setQuery] = useState("");
   const [active, setActive] = useState(0);
   const listRef = useRef<HTMLDivElement>(null);
+  const canSearchPeople = !!user && user.role !== "EMPLOYEE";
+  // The same cached list the Employees page uses; the API already limits it to people this user may see.
+  const people = useQuery({ queryKey: ["employees"], queryFn: () => peopleApi.listAllEmployees(), enabled: canSearchPeople });
 
   const commands = useMemo<Command[]>(() => {
     if (!user) return [];
@@ -63,8 +68,21 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       { id: "logout", group: "Actions", label: "Sign out", icon: LogOut, run: logout },
     ];
     const q = query.trim().toLowerCase();
-    const all = [...pages, ...actions].filter((c) => !q || c.label.toLowerCase().includes(q));
-    const canSearchPeople = user.role !== "EMPLOYEE";
+    const matches: Command[] = q.length >= 2 && canSearchPeople
+      ? (people.data ?? [])
+          .filter((e) =>
+            [e.full_name, e.employee_number, e.email, e.designation, e.department]
+              .some((v) => v?.toLowerCase().includes(q)))
+          .slice(0, 6)
+          .map((e) => ({
+            id: `emp:${e.id}`, group: "Employees",
+            label: `${e.full_name ?? e.employee_number} · ${e.employee_number}`,
+            icon: UserRound,
+            hint: [e.designation, e.department].filter(Boolean).join(" · ") || undefined,
+            run: go(`/employees?id=${encodeURIComponent(e.id)}`),
+          }))
+      : [];
+    const all = [...matches, ...[...pages, ...actions].filter((c) => !q || c.label.toLowerCase().includes(q))];
     if (q && canSearchPeople) {
       all.push({
         id: "people", group: "Employees", label: `Search employees for “${query.trim()}”`, icon: Search,
@@ -72,7 +90,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       });
     }
     return all;
-  }, [user, query, resolved, navigate, setTheme, logout]);
+  }, [user, query, resolved, navigate, setTheme, logout, onClose, canSearchPeople, people.data]);
 
   useEffect(() => {
     listRef.current?.querySelector(`[data-index="${active}"]`)?.scrollIntoView({ block: "nearest" });
