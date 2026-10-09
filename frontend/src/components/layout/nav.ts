@@ -1,6 +1,6 @@
 import {
   LayoutGrid, NavigationUsers as Users, Clock, NavigationLeave as Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck, BookOpen,
-  Briefcase, CalendarCheck, UserCircle as UserRound,
+  Briefcase, CalendarCheck, UserCircle as UserRound, IdCard,
 } from "../icons/ThemeIcons";
 import type { LucideIcon } from "lucide-react";
 import type { UserRole } from "../../context/AuthContext";
@@ -45,6 +45,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/leave", label: "Leave", icon: Umbrella },
       { to: "/corrections", label: "Corrections", icon: FilePenLine },
       { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
+      { to: "/statutory", label: "PF & ESIC", icon: IdCard },
     ],
   },
   {
