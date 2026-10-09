@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import { format } from "date-fns";
 import { ChevronRight, ClipboardCheck } from "lucide-react";
@@ -6,6 +7,7 @@ import { useAuth } from "../context/AuthContext";
 import { onboardingApi } from "../api/onboarding";
 import type { OnboardingCase } from "../api/onboarding";
 import { OnboardingChecklist } from "../components/onboarding/OnboardingChecklist";
+import { ChecklistTemplates } from "../components/onboarding/ChecklistTemplates";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
 import { StatusBadge } from "../components/ui/StatusBadge";
@@ -107,18 +109,33 @@ function HROnboardingView() {
   );
 }
 
+type PageTab = "hires" | "checklists";
+
 export function OnboardingPage() {
   const { user } = useAuth();
+  const [params, setParams] = useSearchParams();
   if (!user) return null;
   const isHR = user.role === "HR" || user.role === "SUPER_ADMIN";
+  const canEditChecklists = user.permissions.includes("*") || user.permissions.includes("onboarding.write");
+  const tab: PageTab = canEditChecklists && params.get("tab") === "checklists" ? "checklists" : "hires";
 
   return (
     <>
       <PageHeader
         title="Onboarding"
-        description={isHR ? "Track new-hire onboarding plans and overdue tasks." : "Your onboarding tasks for getting started."}
+        description={isHR ? "Track new-hire onboarding plans and overdue tasks, and maintain the checklists they follow." : "Your onboarding tasks for getting started."}
       />
-      {isHR ? <HROnboardingView /> : user.employmentId ? <OnboardingChecklist employmentId={user.employmentId} /> : <NoEmployeeRecord feature="onboarding checklist" />}
+      {isHR && canEditChecklists && (
+        <Tabs<PageTab>
+          className="mb-6"
+          value={tab}
+          onChange={(t) => setParams(t === "hires" ? {} : { tab: t }, { replace: true })}
+          items={[{ value: "hires", label: "New hires" }, { value: "checklists", label: "Checklists" }]}
+        />
+      )}
+      {isHR
+        ? tab === "checklists" ? <ChecklistTemplates /> : <HROnboardingView />
+        : user.employmentId ? <OnboardingChecklist employmentId={user.employmentId} /> : <NoEmployeeRecord feature="onboarding checklist" />}
     </>
   );
 }

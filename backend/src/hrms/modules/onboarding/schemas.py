@@ -1,23 +1,24 @@
 from datetime import date, datetime
 
-from pydantic import BaseModel, ConfigDict
+from pydantic import BaseModel, ConfigDict, Field
 
 from hrms.modules.onboarding.models import AssigneeType, CaseStatus, ItemStatus, OnboardingItemType
 
 
 class TemplateItemCreate(BaseModel):
-    title: str
-    description: str | None = None
+    title: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
     item_type: OnboardingItemType = OnboardingItemType.TASK
     assignee_type: AssigneeType = AssigneeType.EMPLOYEE
-    due_days_from_hire: int = 7
+    # Negative = before the joining date (pre-joining tasks such as sending documents).
+    due_days_from_hire: int = Field(default=7, ge=-90, le=365)
     required: bool = True
     sequence: int = 0
 
 
 class TemplateCreate(BaseModel):
-    name: str
-    description: str | None = None
+    name: str = Field(min_length=1, max_length=255)
+    description: str | None = Field(default=None, max_length=1000)
     trigger: str = "HIRE"
     is_default: bool = False
     items: list[TemplateItemCreate] = []
