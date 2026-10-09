@@ -7,19 +7,6 @@
       "runtimeArgs": ["run", "dev", "--prefix", "frontend"],
       "port": 5173,
       "url": "http://localhost:5173"
-    },
-    {
-      "name": "r1-api",
-      "runtimeExecutable": "/tmp/claude-1000/-home-aiserver-HRMS/2894b92d-ec28-466e-a941-05858876d93a/scratchpad/run-api.sh",
-      "runtimeArgs": [],
-      "port": 8115
-    },
-    {
-      "name": "r1-web",
-      "runtimeExecutable": "/tmp/claude-1000/-home-aiserver-HRMS/2894b92d-ec28-466e-a941-05858876d93a/scratchpad/run-web.sh",
-      "runtimeArgs": [],
-      "port": 5183,
-      "url": "http://localhost:5183"
     }
   ]
 }
