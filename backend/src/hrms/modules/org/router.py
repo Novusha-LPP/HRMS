@@ -17,7 +17,7 @@ from sqlalchemy import func, text
 from sqlmodel import col, select
 
 from hrms.core.authn import CurrentUser
-from hrms.core.authz import ScopeDep, require_permission
+from hrms.core.authz import ScopeDep, authorize_org_unit, require_permission
 from hrms.core.change_audit import record_change
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import business_today, now_utc
@@ -25,13 +25,28 @@ from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
 from hrms.modules.kernel.models import EntityChangeLog
-from hrms.modules.org.models import EmployeeIdScheme, Job, LegalEntity, Location, OrgUnit
+from hrms.modules.org.models import (
+    CostCentre,
+    EmployeeIdScheme,
+    Grade,
+    Job,
+    LegalEntity,
+    Location,
+    OrgUnit,
+    Position,
+)
 from hrms.modules.org.schemas import (
     AssignDepartmentsRequest,
     ChangeLogEntry,
+    CostCentreCreate,
+    CostCentreResponse,
+    CostCentreUpdate,
     EmployeeIdSchemeCreate,
     EmployeeIdSchemeResponse,
     EmployeeIdSchemeUpdate,
+    GradeCreate,
+    GradeResponse,
+    GradeUpdate,
     JobCreate,
     JobResponse,
     JobUpdate,
@@ -44,6 +59,9 @@ from hrms.modules.org.schemas import (
     OrgUnitCreate,
     OrgUnitResponse,
     OrgUnitUpdate,
+    PositionCreate,
+    PositionResponse,
+    PositionUpdate,
 )
 
 router = APIRouter(prefix="/v1/org", tags=["Organisation"])
@@ -963,6 +981,536 @@ async def job_history(
 ) -> list[ChangeLogEntry]:
     job = await _get_job(session, tenant_id, job_id)
     return await _entity_history(session, tenant_id, "job", job.id)
+
+
+# ─── Grades and cost centres (tenant-wide catalogs, like jobs) ────────────────
+#
+# Never deleted: a grade or cost centre on someone's history must stay readable,
+# so retiring one is status=INACTIVE. Codes are unique per tenant, ignoring case.
+
+
+async def _ensure_unique_code(session, tenant_id: UUID, model, code: str, label: str, exclude=None):
+    q = (
+        select(model.id)
+        .where(model.tenant_id == tenant_id)
+        .where(func.lower(model.code) == code.lower())
+        .where(col(model.archived_at).is_(None))
+    )
+    if exclude is not None:
+        q = q.where(model.id != exclude)
+    if (await session.execute(q)).first():
+        raise HTTPException(
+            status.HTTP_409_CONFLICT, f"A {label} with code {code!r} already exists"
+        )
+
+
+async def _get_catalog_row(session, tenant_id: UUID, model, typed_id: str, label: str):
+    row = await session.execute(
+        select(model)
+        .where(model.tenant_id == tenant_id)
+        .where(model.id == to_uuid(typed_id))
+        .where(col(model.archived_at).is_(None))
+    )
+    found = row.scalars().first()
+    if not found:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, f"{label} not found")
+    return found
+
+
+def _set_fields(fields: dict, nullable: frozenset[str] = frozenset()) -> dict:
+    """PATCH values to apply: strings trimmed, and null ignored where the column can't be null."""
+    out = {}
+    for k, v in fields.items():
+        if v is None and k not in nullable:
+            continue
+        out[k] = v.strip() if isinstance(v, str) else v
+    return out
+
+
+def _grade_response(g: Grade) -> GradeResponse:
+    return GradeResponse(
+        id=to_typed_id("grade", g.id),
+        code=g.code,
+        name=g.name,
+        sequence=g.sequence,
+        status=g.status,
+        version=g.version,
+    )
+
+
+@router.get("/grades", response_model=list[GradeResponse], summary="List grades")
+async def list_grades(tenant_id: TenantDep, session: SessionDep) -> list[GradeResponse]:
+    rows = await session.execute(
+        select(Grade)
+        .where(Grade.tenant_id == tenant_id)
+        .where(col(Grade.archived_at).is_(None))
+        .order_by(col(Grade.sequence), col(Grade.code))
+    )
+    return [_grade_response(g) for g in rows.scalars()]
+
+
+@router.post(
+    "/grades",
+    response_model=GradeResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a grade",
+    dependencies=[require_permission("org.write")],
+)
+async def create_grade(
+    body: GradeCreate, principal: CurrentUser, tenant_id: TenantDep, session: SessionDep
+) -> GradeResponse:
+    code = body.code.strip()
+    await _ensure_unique_code(session, tenant_id, Grade, code, "grade")
+    grade = Grade(
+        tenant_id=tenant_id, id=uuid4(), code=code, name=body.name.strip(), sequence=body.sequence
+    )
+    session.add(grade)
+    await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "grade",
+        grade.id,
+        "CREATE",
+        changed_by=principal.user_account_id,
+        before=None,
+        after={"code": grade.code, "name": grade.name, "sequence": grade.sequence},
+    )
+    return _grade_response(grade)
+
+
+@router.patch(
+    "/grades/{grade_id}",
+    response_model=GradeResponse,
+    summary="Update a grade",
+    dependencies=[require_permission("org.write")],
+)
+async def update_grade(
+    grade_id: str,
+    body: GradeUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> GradeResponse:
+    grade = await _get_catalog_row(session, tenant_id, Grade, grade_id, "Grade")
+    fields = _set_fields(body.model_dump(exclude_unset=True))
+    if "code" in fields:
+        await _ensure_unique_code(session, tenant_id, Grade, fields["code"], "grade", grade.id)
+    before = {k: getattr(grade, k) for k in fields}
+    for k, v in fields.items():
+        setattr(grade, k, v)
+    session.add(grade)
+    await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "grade",
+        grade.id,
+        "UPDATE",
+        changed_by=principal.user_account_id,
+        before=before,
+        after=fields,
+    )
+    return _grade_response(grade)
+
+
+@router.get(
+    "/grades/{grade_id}/history",
+    response_model=list[ChangeLogEntry],
+    summary="Change history for a grade",
+)
+async def grade_history(
+    grade_id: str, tenant_id: TenantDep, session: SessionDep
+) -> list[ChangeLogEntry]:
+    grade = await _get_catalog_row(session, tenant_id, Grade, grade_id, "Grade")
+    return await _entity_history(session, tenant_id, "grade", grade.id)
+
+
+def _cost_centre_response(c: CostCentre) -> CostCentreResponse:
+    return CostCentreResponse(
+        id=to_typed_id("cost_centre", c.id),
+        code=c.code,
+        name=c.name,
+        status=c.status,
+        version=c.version,
+    )
+
+
+@router.get("/cost-centres", response_model=list[CostCentreResponse], summary="List cost centres")
+async def list_cost_centres(tenant_id: TenantDep, session: SessionDep) -> list[CostCentreResponse]:
+    rows = await session.execute(
+        select(CostCentre)
+        .where(CostCentre.tenant_id == tenant_id)
+        .where(col(CostCentre.archived_at).is_(None))
+        .order_by(col(CostCentre.code))
+    )
+    return [_cost_centre_response(c) for c in rows.scalars()]
+
+
+@router.post(
+    "/cost-centres",
+    response_model=CostCentreResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a cost centre",
+    dependencies=[require_permission("org.write")],
+)
+async def create_cost_centre(
+    body: CostCentreCreate, principal: CurrentUser, tenant_id: TenantDep, session: SessionDep
+) -> CostCentreResponse:
+    code = body.code.strip()
+    await _ensure_unique_code(session, tenant_id, CostCentre, code, "cost centre")
+    centre = CostCentre(tenant_id=tenant_id, id=uuid4(), code=code, name=body.name.strip())
+    session.add(centre)
+    await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "cost_centre",
+        centre.id,
+        "CREATE",
+        changed_by=principal.user_account_id,
+        before=None,
+        after={"code": centre.code, "name": centre.name},
+    )
+    return _cost_centre_response(centre)
+
+
+@router.patch(
+    "/cost-centres/{cost_centre_id}",
+    response_model=CostCentreResponse,
+    summary="Update a cost centre",
+    dependencies=[require_permission("org.write")],
+)
+async def update_cost_centre(
+    cost_centre_id: str,
+    body: CostCentreUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> CostCentreResponse:
+    centre = await _get_catalog_row(session, tenant_id, CostCentre, cost_centre_id, "Cost centre")
+    fields = _set_fields(body.model_dump(exclude_unset=True))
+    if "code" in fields:
+        await _ensure_unique_code(
+            session, tenant_id, CostCentre, fields["code"], "cost centre", centre.id
+        )
+    before = {k: getattr(centre, k) for k in fields}
+    for k, v in fields.items():
+        setattr(centre, k, v)
+    session.add(centre)
+    await session.flush()
+    await record_change(
+        session,
+        tenant_id,
+        "cost_centre",
+        centre.id,
+        "UPDATE",
+        changed_by=principal.user_account_id,
+        before=before,
+        after=fields,
+    )
+    return _cost_centre_response(centre)
+
+
+@router.get(
+    "/cost-centres/{cost_centre_id}/history",
+    response_model=list[ChangeLogEntry],
+    summary="Change history for a cost centre",
+)
+async def cost_centre_history(
+    cost_centre_id: str, tenant_id: TenantDep, session: SessionDep
+) -> list[ChangeLogEntry]:
+    centre = await _get_catalog_row(session, tenant_id, CostCentre, cost_centre_id, "Cost centre")
+    return await _entity_history(session, tenant_id, "cost_centre", centre.id)
+
+
+# ─── Positions (seats in a company department or team) ───────────────────────
+#
+# A position belongs to one org unit, so it is scoped like that unit's company.
+# `filled` counts current, non-separated employees placed in it, the same count the
+# HR dashboard's vacancies card uses (status ACTIVE and a max_headcount set).
+
+_POSITION_SELECT = """
+    SELECT p.id, p.title, p.code, p.org_unit_id, ou.name AS org_unit_name, ou.legal_entity_id,
+           p.job_id, j.title AS job_title, p.grade_id, g.name AS grade_name, p.max_headcount,
+           p.status, p.effective_from, p.effective_to, p.version, COALESCE(filled.n, 0) AS filled
+    FROM positions p
+    JOIN org_units ou ON ou.tenant_id = p.tenant_id AND ou.id = p.org_unit_id
+    LEFT JOIN jobs j ON j.tenant_id = p.tenant_id AND j.id = p.job_id
+    LEFT JOIN grades g ON g.tenant_id = p.tenant_id AND g.id = p.grade_id
+    LEFT JOIN LATERAL (
+        SELECT COUNT(*) AS n FROM assignments a
+        JOIN employments e ON e.tenant_id = a.tenant_id AND e.id = a.employment_id
+        WHERE a.tenant_id = p.tenant_id AND a.position_id = p.id
+          AND a.effective_from <= CAST(:today AS date)
+          AND (a.effective_to IS NULL OR a.effective_to > CAST(:today AS date))
+          AND e.employment_state != 'SEPARATED'
+    ) filled ON true
+    WHERE p.tenant_id = CAST(:tid AS uuid) AND p.archived_at IS NULL
+"""
+
+
+def _position_scope_sql(scope) -> tuple[str, dict]:
+    if scope.is_all:
+        return "", {}
+    clauses, params = [], {}
+    if scope.legal_entity_ids:
+        clauses.append("ou.legal_entity_id = ANY(CAST(:pos_entities AS uuid[]))")
+        params["pos_entities"] = [str(i) for i in scope.legal_entity_ids]
+    if scope.org_unit_ids:
+        clauses.append("p.org_unit_id = ANY(CAST(:pos_units AS uuid[]))")
+        params["pos_units"] = [str(i) for i in scope.org_unit_ids]
+    if not clauses:
+        return " AND FALSE", {}
+    return " AND (" + " OR ".join(clauses) + ")", params
+
+
+def _position_response(r) -> PositionResponse:
+    filled = int(r["filled"])
+    limit = r["max_headcount"]
+    return PositionResponse(
+        id=to_typed_id("position", r["id"]),
+        title=r["title"],
+        code=r["code"],
+        org_unit_id=to_typed_id("org_unit", r["org_unit_id"]),
+        org_unit_name=r["org_unit_name"],
+        legal_entity_id=to_typed_id("legal_entity", r["legal_entity_id"])
+        if r["legal_entity_id"]
+        else None,
+        job_id=to_typed_id("job", r["job_id"]) if r["job_id"] else None,
+        job_title=r["job_title"],
+        grade_id=to_typed_id("grade", r["grade_id"]) if r["grade_id"] else None,
+        grade_name=r["grade_name"],
+        max_headcount=limit,
+        filled=filled,
+        vacancies=max(limit - filled, 0) if limit is not None else None,
+        status=r["status"],
+        effective_from=r["effective_from"],
+        effective_to=r["effective_to"],
+        version=r["version"],
+    )
+
+
+async def _position_row(session, tenant_id: UUID, position_id: UUID):
+    row = await session.execute(
+        text(_POSITION_SELECT + " AND p.id = CAST(:pid AS uuid)"),
+        {"tid": str(tenant_id), "pid": str(position_id), "today": business_today()},
+    )
+    found = row.mappings().first()
+    if not found:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Position not found")
+    return found
+
+
+async def _optional_ref(session, tenant_id: UUID, model, typed_id: str | None, label: str):
+    """Resolve an optional reference (job, grade) to a UUID, 422 if it doesn't exist."""
+    if not typed_id:
+        return None
+    uid = to_uuid(typed_id)
+    exists = await session.execute(
+        select(model.id)
+        .where(model.tenant_id == tenant_id)
+        .where(model.id == uid)
+        .where(col(model.archived_at).is_(None))
+    )
+    if not exists.first():
+        raise HTTPException(422, f"{label} not found")
+    return uid
+
+
+@router.get("/positions", response_model=list[PositionResponse], summary="List positions")
+async def list_positions(
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+    org_unit_id: str | None = None,
+) -> list[PositionResponse]:
+    scope_sql, params = _position_scope_sql(scope)
+    sql = _POSITION_SELECT + scope_sql
+    if org_unit_id:
+        sql += " AND p.org_unit_id = CAST(:ou AS uuid)"
+        params["ou"] = str(to_uuid(org_unit_id))
+    rows = await session.execute(
+        text(sql + " ORDER BY ou.name, p.title"),
+        {"tid": str(tenant_id), "today": business_today(), **params},
+    )
+    return [_position_response(r) for r in rows.mappings()]
+
+
+@router.post(
+    "/positions",
+    response_model=PositionResponse,
+    status_code=status.HTTP_201_CREATED,
+    summary="Create a position",
+    dependencies=[require_permission("org.write")],
+)
+async def create_position(
+    body: PositionCreate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> PositionResponse:
+    unit = (
+        (
+            await session.execute(
+                select(OrgUnit)
+                .where(OrgUnit.tenant_id == tenant_id)
+                .where(OrgUnit.id == to_uuid(body.org_unit_id))
+                .where(col(OrgUnit.archived_at).is_(None))
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if not unit:
+        raise HTTPException(422, "Department not found")
+    if unit.type == "DEPARTMENT_TEMPLATE":
+        raise HTTPException(
+            422,
+            "Choose a company's department or team, not a shared department",
+        )
+    await authorize_org_unit(session, tenant_id, scope, unit.id)
+    job_id = await _optional_ref(session, tenant_id, Job, body.job_id, "Job")
+    grade_id = await _optional_ref(session, tenant_id, Grade, body.grade_id, "Grade")
+    start = body.effective_from or business_today()
+    if body.effective_to is not None and body.effective_to <= start:
+        raise HTTPException(422, "The end date must be after the start date")
+    position = Position(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        title=body.title.strip(),
+        code=(body.code or "").strip() or None,
+        org_unit_id=unit.id,
+        job_id=job_id,
+        grade_id=grade_id,
+        max_headcount=body.max_headcount,
+        # ACTIVE, not the model's historical "OPEN" default: the dashboard's vacancy
+        # count only reads ACTIVE positions.
+        status="ACTIVE",
+        effective_from=start,
+        effective_to=body.effective_to,
+    )
+    session.add(position)
+    await session.flush()
+    row = await _position_row(session, tenant_id, position.id)
+    await record_change(
+        session,
+        tenant_id,
+        "position",
+        position.id,
+        "CREATE",
+        changed_by=principal.user_account_id,
+        before=None,
+        after=_position_history_values(row, _POSITION_HISTORY_FIELDS),
+    )
+    return _position_response(row)
+
+
+# History shows what HR reads on screen (department, job and grade names as they were at
+# the time), not the IDs behind them.
+_POSITION_HISTORY_FIELDS = (
+    "title",
+    "code",
+    "department",
+    "job",
+    "grade",
+    "max_headcount",
+    "status",
+    "effective_from",
+    "effective_to",
+)
+_POSITION_HISTORY_SOURCE = {
+    "department": "org_unit_name",
+    "job": "job_title",
+    "grade": "grade_name",
+}
+_POSITION_FIELD_LABEL = {"job_id": "job", "grade_id": "grade"}
+
+
+def _position_history_values(row, labels) -> dict:
+    return {label: row[_POSITION_HISTORY_SOURCE.get(label, label)] for label in labels}
+
+
+async def _get_position(session, tenant_id: UUID, scope, position_id: str) -> Position:
+    position = (
+        (
+            await session.execute(
+                select(Position)
+                .where(Position.tenant_id == tenant_id)
+                .where(Position.id == to_uuid(position_id))
+                .where(col(Position.archived_at).is_(None))
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if not position:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Position not found")
+    await authorize_org_unit(session, tenant_id, scope, position.org_unit_id)
+    return position
+
+
+@router.patch(
+    "/positions/{position_id}",
+    response_model=PositionResponse,
+    summary="Update a position",
+    dependencies=[require_permission("org.write")],
+)
+async def update_position(
+    position_id: str,
+    body: PositionUpdate,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> PositionResponse:
+    position = await _get_position(session, tenant_id, scope, position_id)
+    fields = _set_fields(
+        body.model_dump(exclude_unset=True),
+        nullable=frozenset({"code", "job_id", "grade_id", "max_headcount", "effective_to"}),
+    )
+    if "code" in fields:
+        fields["code"] = fields["code"] or None
+    if "job_id" in fields:
+        fields["job_id"] = await _optional_ref(session, tenant_id, Job, fields["job_id"], "Job")
+    if "grade_id" in fields:
+        fields["grade_id"] = await _optional_ref(
+            session, tenant_id, Grade, fields["grade_id"], "Grade"
+        )
+    end = fields.get("effective_to", position.effective_to)
+    if end is not None and end <= position.effective_from:
+        raise HTTPException(422, "The end date must be after the start date")
+    labels = [_POSITION_FIELD_LABEL.get(k, k) for k in fields]
+    before = _position_history_values(await _position_row(session, tenant_id, position.id), labels)
+    for k, v in fields.items():
+        setattr(position, k, v)
+    session.add(position)
+    await session.flush()
+    row = await _position_row(session, tenant_id, position.id)
+    await record_change(
+        session,
+        tenant_id,
+        "position",
+        position.id,
+        "UPDATE",
+        changed_by=principal.user_account_id,
+        before=before,
+        after=_position_history_values(row, labels),
+    )
+    return _position_response(row)
+
+
+@router.get(
+    "/positions/{position_id}/history",
+    response_model=list[ChangeLogEntry],
+    summary="Change history for a position",
+)
+async def position_history(
+    position_id: str, tenant_id: TenantDep, session: SessionDep, scope: ScopeDep
+) -> list[ChangeLogEntry]:
+    position = await _get_position(session, tenant_id, scope, position_id)
+    return await _entity_history(session, tenant_id, "position", position.id)
 
 
 # ─── Employee ID schemes ──────────────────────────────────────────────────────

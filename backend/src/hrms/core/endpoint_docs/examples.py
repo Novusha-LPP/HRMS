@@ -39,6 +39,15 @@ REQUEST_EXAMPLES: dict[str, dict[str, Any]] = {
         "reason_code": "REORG",
         "idempotency_key": "transfer-emp-2026-11-01",
     },
+    "create_grade": {"code": "M2", "name": "Manager", "sequence": 20},
+    "create_cost_centre": {"code": "CC-OPS", "name": "Operations"},
+    "create_position": {
+        "title": "Shift Supervisor",
+        "org_unit_id": "ou_...",
+        "job_id": "job_...",
+        "grade_id": "grd_...",
+        "max_headcount": 3,
+    },
     "create_punch": {"punch_type": "IN", "source": "WEB"},
     "create_correction": {
         "work_date": "2026-10-05",

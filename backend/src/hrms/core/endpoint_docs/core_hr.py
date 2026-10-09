@@ -98,6 +98,61 @@ department instead (`409`).
     "create_job": ("Create a job", "Adds a job title. `code` and `function` are optional."),
     "update_job": ("Update a job", "Changes a job's title, code or function."),
     "job_history": ("Job change history", _HISTORY),
+    "list_grades": (
+        "List grades",
+        "The tenant's grades or levels (for example *W1*, *M2*), lowest `sequence` first. "
+        "Includes inactive ones, so old records still show their grade.",
+    ),
+    "create_grade": (
+        "Create a grade",
+        "Adds a grade. `code` must be unique in the tenant, ignoring case (`409`). `sequence` "
+        "orders grades from junior to senior.",
+    ),
+    "update_grade": (
+        "Update a grade",
+        "Changes a grade's code, name or order. Grades are never deleted: set `status` to "
+        "`INACTIVE` to stop using one.",
+    ),
+    "grade_history": ("Grade change history", _HISTORY),
+    "list_cost_centres": (
+        "List cost centres",
+        "The tenant's cost centres, by code. Includes inactive ones.",
+    ),
+    "create_cost_centre": (
+        "Create a cost centre",
+        "Adds a cost centre. `code` must be unique in the tenant, ignoring case (`409`).",
+    ),
+    "update_cost_centre": (
+        "Update a cost centre",
+        "Changes a cost centre's code or name. Cost centres are never deleted: set `status` to "
+        "`INACTIVE` to stop using one.",
+    ),
+    "cost_centre_history": ("Cost centre change history", _HISTORY),
+    "list_positions": (
+        "List positions",
+        """
+Positions (approved seats) in the departments and teams the caller can see, optionally for one
+`org_unit_id`. Each shows its job, grade, `max_headcount`, how many current employees fill it,
+and the resulting `vacancies`. Positions without a `max_headcount` have no vacancy count.
+""",
+    ),
+    "create_position": (
+        "Create a position",
+        """
+Adds a position to a company's department or team (not a shared department, `422`). `job_id`
+and `grade_id` are optional. `max_headcount` makes it count towards the vacancies figure.
+`effective_from` defaults to today.
+""",
+    ),
+    "update_position": (
+        "Update a position",
+        """
+Changes a position's title, code, job, grade, headcount or end date. Its department can't
+change: create a new position instead. Set `status` to `INACTIVE` to retire it; positions are
+never deleted.
+""",
+    ),
+    "position_history": ("Position change history", _HISTORY),
     "list_employee_id_schemes": (
         "List employee ID schemes",
         "The rules for generating employee numbers, for example `SFPL-0042`. There is one for "

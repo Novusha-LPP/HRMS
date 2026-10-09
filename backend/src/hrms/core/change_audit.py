@@ -28,7 +28,9 @@ from hrms.modules.kernel.models import EntityChangeLog
 
 # Extend this when wiring a new entity's PATCH endpoint into the audit trail —
 # record_change() refuses anything not listed here.
-ENTITY_TYPES = frozenset({"legal_entity", "location", "org_unit", "job"})
+ENTITY_TYPES = frozenset(
+    {"legal_entity", "location", "org_unit", "job", "grade", "position", "cost_centre"}
+)
 
 ACTIONS = frozenset({"CREATE", "UPDATE", "ARCHIVE"})
 

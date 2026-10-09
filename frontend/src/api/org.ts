@@ -60,6 +60,46 @@ export interface Job {
   version: number;
 }
 
+export type MasterStatus = "ACTIVE" | "INACTIVE";
+
+export interface Grade {
+  id: string;
+  code: string;
+  name: string;
+  /** Rank order: lower is more junior. */
+  sequence: number;
+  status: string;
+  version: number;
+}
+
+export interface CostCentre {
+  id: string;
+  code: string;
+  name: string;
+  status: string;
+  version: number;
+}
+
+export interface Position {
+  id: string;
+  title: string;
+  code: string | null;
+  org_unit_id: string;
+  org_unit_name: string | null;
+  legal_entity_id: string | null;
+  job_id: string | null;
+  job_title: string | null;
+  grade_id: string | null;
+  grade_name: string | null;
+  max_headcount: number | null;
+  filled: number;
+  vacancies: number | null;
+  status: string;
+  effective_from: string;
+  effective_to: string | null;
+  version: number;
+}
+
 export interface EmployeeIdScheme {
   id: string;
   legal_entity_id: string | null;
@@ -110,6 +150,29 @@ export const orgApi = {
   updateJob: (id: string, body: Partial<Pick<Job, "title" | "code" | "function">>) =>
     api.patch<Job>(`/v1/org/jobs/${id}`, body),
   jobHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/jobs/${id}/history`),
+
+  listGrades: () => api.get<Grade[]>("/v1/org/grades"),
+  createGrade: (body: { code: string; name: string; sequence?: number }) => api.post<Grade>("/v1/org/grades", body),
+  updateGrade: (id: string, body: Partial<{ code: string; name: string; sequence: number; status: MasterStatus }>) =>
+    api.patch<Grade>(`/v1/org/grades/${id}`, body),
+  gradeHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/grades/${id}/history`),
+
+  listCostCentres: () => api.get<CostCentre[]>("/v1/org/cost-centres"),
+  createCostCentre: (body: { code: string; name: string }) => api.post<CostCentre>("/v1/org/cost-centres", body),
+  updateCostCentre: (id: string, body: Partial<{ code: string; name: string; status: MasterStatus }>) =>
+    api.patch<CostCentre>(`/v1/org/cost-centres/${id}`, body),
+  costCentreHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/cost-centres/${id}/history`),
+
+  listPositions: () => api.get<Position[]>("/v1/org/positions"),
+  createPosition: (body: {
+    title: string; org_unit_id: string; code?: string; job_id?: string; grade_id?: string;
+    max_headcount?: number; effective_from?: string;
+  }) => api.post<Position>("/v1/org/positions", body),
+  updatePosition: (id: string, body: Partial<{
+    title: string; code: string | null; job_id: string | null; grade_id: string | null;
+    max_headcount: number | null; status: MasterStatus; effective_to: string | null;
+  }>) => api.patch<Position>(`/v1/org/positions/${id}`, body),
+  positionHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/positions/${id}/history`),
 
   listEmployeeIdSchemes: () => api.get<EmployeeIdScheme[]>("/v1/org/employee-id-schemes"),
   createEmployeeIdScheme: (body: {

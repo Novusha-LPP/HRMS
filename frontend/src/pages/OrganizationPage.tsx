@@ -2,12 +2,12 @@ import { useState } from "react";
 import type { FormEvent } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2, KeyRound, UserRoundX, UserRoundCheck, History, ArrowLeft, ChevronRight, UserPlus } from "lucide-react";
+import { Plus, Building2, Landmark, MapPin, Briefcase, Users, Hash, Pencil, Trash2, KeyRound, UserRoundX, UserRoundCheck, History, ArrowLeft, ChevronRight, UserPlus, Layers, Armchair, Wallet } from "lucide-react";
 import { orgApi } from "../api/org";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
 import { departmentMembers, employeeMatches, employeeName, moveTeamMembers } from "../lib/teamManagement";
-import type { LegalEntity, Location, OrgUnit, Job, EmployeeIdScheme, ChangeLogEntry } from "../api/org";
+import type { LegalEntity, Location, OrgUnit, Job, EmployeeIdScheme, ChangeLogEntry, Grade, CostCentre, Position, MasterStatus } from "../api/org";
 import { dashboardApi } from "../api/dashboard";
 import { usersApi } from "../api/users";
 import type { Role, UserAccount } from "../api/users";
@@ -21,7 +21,7 @@ import { useToast, errorMessage } from "../components/ui/Toast";
 import { useAuth } from "../context/AuthContext";
 import { format } from "date-fns";
 
-type Tab = "overview" | "companies" | "departments" | "locations" | "jobs" | "employee-ids" | "access";
+type Tab = "overview" | "companies" | "departments" | "locations" | "jobs" | "grades" | "positions" | "cost-centres" | "employee-ids" | "access";
 
 export function OrganizationPage() {
   const { user } = useAuth();
@@ -36,7 +36,7 @@ export function OrganizationPage() {
     <>
       <PageHeader
         title="Organization"
-        description="Companies, departments, locations and job titles across the group."
+        description="Companies, departments, locations, job titles, grades, positions and cost centres across the group."
         actions={tab === "companies" && params.get("company") ? undefined : <UsageHelpButton key={tab} topic={tab === "departments" ? "departments" : tab === "companies" ? "companies" : "organization"} />}
       />
       <Tabs
@@ -49,6 +49,9 @@ export function OrganizationPage() {
           { value: "departments", label: "Departments" },
           { value: "locations", label: "Locations" },
           { value: "jobs", label: "Job titles" },
+          { value: "grades", label: "Grades" },
+          { value: "positions", label: "Positions" },
+          { value: "cost-centres", label: "Cost centres" },
           { value: "employee-ids", label: "Employee IDs" },
           ...(canManageAccess ? [{ value: "access" as const, label: "Company admins" }] : []),
         ]}
@@ -58,6 +61,9 @@ export function OrganizationPage() {
       {tab === "departments" && <DepartmentsTab />}
       {tab === "locations" && <LocationsTab />}
       {tab === "jobs" && <JobsTab />}
+      {tab === "grades" && <GradesTab />}
+      {tab === "positions" && <PositionsTab />}
+      {tab === "cost-centres" && <CostCentresTab />}
       {tab === "employee-ids" && <EmployeeIdSchemesTab canCreateGlobal={canCreateCompany} />}
       {tab === "access" && canManageAccess && <AccessTab />}
     </>
@@ -1115,6 +1121,472 @@ function JobSheet({ open, onClose, initial }: { open: boolean; onClose: () => vo
             <input id="jb-fn" className="input" placeholder="e.g. Engineering" value={form.function} onChange={(e) => setForm((f) => ({ ...f, function: e.target.value }))} />
           </div>
         </div>
+      </form>
+    </Sheet>
+  );
+}
+
+/* ─────────────────────────── Grades ─────────────────────────── */
+
+function StatusSelect({ id, value, onChange }: { id: string; value: MasterStatus; onChange: (v: MasterStatus) => void }) {
+  return (
+    <div>
+      <label className="label" htmlFor={id}>Status</label>
+      <select id={id} className="input" value={value} onChange={(e) => onChange(e.target.value as MasterStatus)}>
+        <option value="ACTIVE">Active — can be chosen for new records</option>
+        <option value="INACTIVE">Inactive — kept on old records only</option>
+      </select>
+    </div>
+  );
+}
+
+function GradesTab() {
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Grade | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<Grade | null>(null);
+  const grades = useQuery({ queryKey: ["grades"], queryFn: () => orgApi.listGrades() });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-fg-muted">Levels or bands shared across every company, from junior to senior.</p>
+        <button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add grade</button>
+      </div>
+      {grades.isError ? (
+        <div className="card"><EmptyState icon={Layers} title="Couldn’t load grades" description="The organization API isn’t responding." /></div>
+      ) : grades.isPending ? (
+        <Skeleton className="h-48 rounded-xl" />
+      ) : !grades.data?.length ? (
+        <div className="card">
+          <EmptyState icon={Layers} title="No grades yet" description="Add the levels your companies use, for example W1–W4 for workers and M1–M3 for managers."
+            action={<button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add grade</button>} />
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <table className="tbl">
+            <thead><tr><th className="w-16">Order</th><th>Code</th><th>Name</th><th>Status</th><th className="w-20" /></tr></thead>
+            <tbody>
+              {grades.data.map((g) => (
+                <tr key={g.id}>
+                  <td className="tabular-nums text-fg-subtle">{g.sequence}</td>
+                  <td className="font-mono text-xs font-medium text-fg">{g.code}</td>
+                  <td>{g.name}</td>
+                  <td><StatusChip status={g.status} /></td>
+                  <td>
+                    <div className="flex justify-end gap-1">
+                      <button className="btn-icon" onClick={() => setViewingHistory(g)} aria-label={`History for ${g.code}`}><History size={14} /></button>
+                      <button className="btn-icon" onClick={() => setEditing(g)} aria-label={`Edit ${g.code}`}><Pencil size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <GradeSheet open={adding} onClose={() => setAdding(false)} />
+      <GradeSheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} initial={editing ?? undefined} />
+      <HistoryModal
+        open={viewingHistory !== null}
+        onClose={() => setViewingHistory(null)}
+        title={viewingHistory ? `History — ${viewingHistory.code}` : "History"}
+        fetcher={viewingHistory ? () => orgApi.gradeHistory(viewingHistory.id) : undefined}
+      />
+    </div>
+  );
+}
+
+function GradeSheet({ open, onClose, initial }: { open: boolean; onClose: () => void; initial?: Grade }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const isEdit = !!initial;
+  const empty = {
+    code: initial?.code ?? "", name: initial?.name ?? "", sequence: String(initial?.sequence ?? 0),
+    status: (initial?.status ?? "ACTIVE") as MasterStatus,
+  };
+  const [form, setForm] = useState(empty);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body = { code: form.code.trim(), name: form.name.trim(), sequence: Number(form.sequence) || 0 };
+      return isEdit ? orgApi.updateGrade(initial!.id, { ...body, status: form.status }) : orgApi.createGrade(body);
+    },
+    onSuccess: (g) => {
+      qc.invalidateQueries({ queryKey: ["grades"] });
+      toast.success(isEdit ? "Grade updated" : "Grade added", `${g.code} · ${g.name}`);
+      setForm(empty);
+      onClose();
+    },
+    onError: (e) => toast.error(isEdit ? "Couldn’t update grade" : "Couldn’t add grade", errorMessage(e)),
+  });
+
+  const valid = form.code.trim().length > 0 && form.name.trim().length > 0 && Number(form.sequence) >= 0;
+  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
+
+  return (
+    <Sheet
+      open={open} onClose={onClose} title={isEdit ? "Edit grade" : "Add grade"}
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" type="submit" form="grade-form" disabled={!valid || save.isPending}>
+          {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add grade"}
+        </button>
+      </>}
+    >
+      <form id="grade-form" onSubmit={submit} className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="label" htmlFor="gr-code">Code</label>
+            <input id="gr-code" className="input font-mono" placeholder="e.g. M2" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
+          </div>
+          <div className="col-span-2">
+            <label className="label" htmlFor="gr-name">Name</label>
+            <input id="gr-name" className="input" placeholder="e.g. Manager" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          </div>
+        </div>
+        <div>
+          <label className="label" htmlFor="gr-seq">Order</label>
+          <input id="gr-seq" type="number" min={0} className="input" value={form.sequence} onChange={(e) => setForm((f) => ({ ...f, sequence: e.target.value }))} />
+          <p className="mt-1 text-xs text-fg-subtle">Lower numbers are more junior. Lists and reports sort by this.</p>
+        </div>
+        {isEdit && <StatusSelect id="gr-status" value={form.status} onChange={(status) => setForm((f) => ({ ...f, status }))} />}
+      </form>
+    </Sheet>
+  );
+}
+
+/* ─────────────────────────── Cost centres ─────────────────────────── */
+
+function CostCentresTab() {
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<CostCentre | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<CostCentre | null>(null);
+  const centres = useQuery({ queryKey: ["cost-centres"], queryFn: () => orgApi.listCostCentres() });
+
+  return (
+    <div className="space-y-4">
+      <div className="flex items-center justify-between gap-3">
+        <p className="text-sm text-fg-muted">Where employee costs are booked. Payroll and reports group cost by these.</p>
+        <button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add cost centre</button>
+      </div>
+      {centres.isError ? (
+        <div className="card"><EmptyState icon={Wallet} title="Couldn’t load cost centres" description="The organization API isn’t responding." /></div>
+      ) : centres.isPending ? (
+        <Skeleton className="h-48 rounded-xl" />
+      ) : !centres.data?.length ? (
+        <div className="card">
+          <EmptyState icon={Wallet} title="No cost centres yet" description="Add the cost centres your accounts team uses."
+            action={<button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add cost centre</button>} />
+        </div>
+      ) : (
+        <div className="card overflow-hidden">
+          <table className="tbl">
+            <thead><tr><th>Code</th><th>Name</th><th>Status</th><th className="w-20" /></tr></thead>
+            <tbody>
+              {centres.data.map((c) => (
+                <tr key={c.id}>
+                  <td className="font-mono text-xs font-medium text-fg">{c.code}</td>
+                  <td>{c.name}</td>
+                  <td><StatusChip status={c.status} /></td>
+                  <td>
+                    <div className="flex justify-end gap-1">
+                      <button className="btn-icon" onClick={() => setViewingHistory(c)} aria-label={`History for ${c.code}`}><History size={14} /></button>
+                      <button className="btn-icon" onClick={() => setEditing(c)} aria-label={`Edit ${c.code}`}><Pencil size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <CostCentreSheet open={adding} onClose={() => setAdding(false)} />
+      <CostCentreSheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} initial={editing ?? undefined} />
+      <HistoryModal
+        open={viewingHistory !== null}
+        onClose={() => setViewingHistory(null)}
+        title={viewingHistory ? `History — ${viewingHistory.code}` : "History"}
+        fetcher={viewingHistory ? () => orgApi.costCentreHistory(viewingHistory.id) : undefined}
+      />
+    </div>
+  );
+}
+
+function CostCentreSheet({ open, onClose, initial }: { open: boolean; onClose: () => void; initial?: CostCentre }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const isEdit = !!initial;
+  const empty = { code: initial?.code ?? "", name: initial?.name ?? "", status: (initial?.status ?? "ACTIVE") as MasterStatus };
+  const [form, setForm] = useState(empty);
+
+  const save = useMutation({
+    mutationFn: () => {
+      const body = { code: form.code.trim(), name: form.name.trim() };
+      return isEdit ? orgApi.updateCostCentre(initial!.id, { ...body, status: form.status }) : orgApi.createCostCentre(body);
+    },
+    onSuccess: (c) => {
+      qc.invalidateQueries({ queryKey: ["cost-centres"] });
+      toast.success(isEdit ? "Cost centre updated" : "Cost centre added", `${c.code} · ${c.name}`);
+      setForm(empty);
+      onClose();
+    },
+    onError: (e) => toast.error(isEdit ? "Couldn’t update cost centre" : "Couldn’t add cost centre", errorMessage(e)),
+  });
+
+  const valid = form.code.trim().length > 0 && form.name.trim().length > 0;
+  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
+
+  return (
+    <Sheet
+      open={open} onClose={onClose} title={isEdit ? "Edit cost centre" : "Add cost centre"}
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" type="submit" form="cc-form" disabled={!valid || save.isPending}>
+          {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add cost centre"}
+        </button>
+      </>}
+    >
+      <form id="cc-form" onSubmit={submit} className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <div>
+            <label className="label" htmlFor="cc-code">Code</label>
+            <input id="cc-code" className="input font-mono" placeholder="e.g. CC-OPS" value={form.code} onChange={(e) => setForm((f) => ({ ...f, code: e.target.value }))} />
+          </div>
+          <div className="col-span-2">
+            <label className="label" htmlFor="cc-name">Name</label>
+            <input id="cc-name" className="input" placeholder="e.g. Operations" value={form.name} onChange={(e) => setForm((f) => ({ ...f, name: e.target.value }))} />
+          </div>
+        </div>
+        {isEdit && <StatusSelect id="cc-status" value={form.status} onChange={(status) => setForm((f) => ({ ...f, status }))} />}
+      </form>
+    </Sheet>
+  );
+}
+
+/* ─────────────────────────── Positions ─────────────────────────── */
+
+function PositionsTab() {
+  const [adding, setAdding] = useState(false);
+  const [editing, setEditing] = useState<Position | null>(null);
+  const [viewingHistory, setViewingHistory] = useState<Position | null>(null);
+  const [entityFilter, setEntityFilter] = useState("");
+  const positions = useQuery({ queryKey: ["positions"], queryFn: () => orgApi.listPositions() });
+  const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities() });
+  const entityName = new Map((entities.data ?? []).map((e) => [e.id, e.name]));
+  const rows = (positions.data ?? []).filter((p) => !entityFilter || p.legal_entity_id === entityFilter);
+  const totals = rows.reduce(
+    (t, p) => (p.status === "ACTIVE" && p.max_headcount != null
+      ? { seats: t.seats + p.max_headcount, filled: t.filled + Math.min(p.filled, p.max_headcount) }
+      : t),
+    { seats: 0, filled: 0 },
+  );
+
+  return (
+    <div className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        <div className="flex flex-wrap items-center gap-3">
+          {(entities.data?.length ?? 0) > 1 && (
+            <select className="input w-auto" aria-label="Company" value={entityFilter} onChange={(e) => setEntityFilter(e.target.value)}>
+              <option value="">All companies</option>
+              {entities.data!.map((e) => <option key={e.id} value={e.id}>{e.name}</option>)}
+            </select>
+          )}
+          {rows.length > 0 && (
+            <p className="text-sm text-fg-muted">
+              <span className="font-semibold text-fg tabular-nums">{totals.seats - totals.filled}</span> open of{" "}
+              <span className="tabular-nums">{totals.seats}</span> approved seats
+            </p>
+          )}
+        </div>
+        <button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add position</button>
+      </div>
+      {positions.isError ? (
+        <div className="card"><EmptyState icon={Armchair} title="Couldn’t load positions" description="The organization API isn’t responding." /></div>
+      ) : positions.isPending ? (
+        <Skeleton className="h-64 rounded-xl" />
+      ) : !rows.length ? (
+        <div className="card">
+          <EmptyState icon={Armchair} title="No positions yet" description="A position is an approved seat in a department, for example “Shift Supervisor × 3”. Positions with a headcount feed the vacancies figure."
+            action={<button className="btn-primary" onClick={() => setAdding(true)}><Plus size={15} /> Add position</button>} />
+        </div>
+      ) : (
+        <div className="card overflow-x-auto">
+          <table className="tbl">
+            <thead>
+              <tr>
+                <th>Position</th><th>Department</th><th className="hidden md:table-cell">Job · Grade</th>
+                <th className="text-right">Filled</th><th className="text-right">Open</th><th>Status</th><th className="w-20" />
+              </tr>
+            </thead>
+            <tbody>
+              {rows.map((p) => (
+                <tr key={p.id}>
+                  <td>
+                    <p className="font-medium text-fg">{p.title}</p>
+                    {p.code && <p className="font-mono text-[11px] text-fg-subtle">{p.code}</p>}
+                  </td>
+                  <td>
+                    <p>{p.org_unit_name ?? "—"}</p>
+                    {(entities.data?.length ?? 0) > 1 && p.legal_entity_id && <p className="text-xs text-fg-subtle">{entityName.get(p.legal_entity_id)}</p>}
+                  </td>
+                  <td className="hidden md:table-cell">{[p.job_title, p.grade_name].filter(Boolean).join(" · ") || "—"}</td>
+                  <td className="text-right tabular-nums">{p.filled}{p.max_headcount != null && <span className="text-fg-subtle"> / {p.max_headcount}</span>}</td>
+                  <td className="text-right tabular-nums">
+                    {p.vacancies == null ? <span className="text-fg-subtle">—</span> : p.vacancies > 0 ? <span className="font-semibold text-warning">{p.vacancies}</span> : 0}
+                  </td>
+                  <td><StatusChip status={p.status} /></td>
+                  <td>
+                    <div className="flex justify-end gap-1">
+                      <button className="btn-icon" onClick={() => setViewingHistory(p)} aria-label={`History for ${p.title}`}><History size={14} /></button>
+                      <button className="btn-icon" onClick={() => setEditing(p)} aria-label={`Edit ${p.title}`}><Pencil size={14} /></button>
+                    </div>
+                  </td>
+                </tr>
+              ))}
+            </tbody>
+          </table>
+        </div>
+      )}
+      <PositionSheet open={adding} onClose={() => setAdding(false)} />
+      <PositionSheet key={editing?.id} open={editing !== null} onClose={() => setEditing(null)} initial={editing ?? undefined} />
+      <HistoryModal
+        open={viewingHistory !== null}
+        onClose={() => setViewingHistory(null)}
+        title={viewingHistory ? `History — ${viewingHistory.title}` : "History"}
+        fetcher={viewingHistory ? () => orgApi.positionHistory(viewingHistory.id) : undefined}
+      />
+    </div>
+  );
+}
+
+function PositionSheet({ open, onClose, initial }: { open: boolean; onClose: () => void; initial?: Position }) {
+  const qc = useQueryClient();
+  const toast = useToast();
+  const isEdit = !!initial;
+  const units = useQuery({ queryKey: ["org-units"], queryFn: () => orgApi.listOrgUnits(), enabled: open });
+  const entities = useQuery({ queryKey: ["legal-entities"], queryFn: () => orgApi.listLegalEntities(), enabled: open });
+  const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => orgApi.listJobs(), enabled: open });
+  const grades = useQuery({ queryKey: ["grades"], queryFn: () => orgApi.listGrades(), enabled: open });
+  const entityName = new Map((entities.data ?? []).map((e) => [e.id, e.name]));
+  // Positions live in a company's own department or team, never in the shared department list.
+  const placeable = (units.data ?? [])
+    .filter((u) => u.type !== "DEPARTMENT_TEMPLATE" && u.status === "ACTIVE")
+    .sort((a, b) => (entityName.get(a.legal_entity_id ?? "") ?? "").localeCompare(entityName.get(b.legal_entity_id ?? "") ?? "") || a.name.localeCompare(b.name));
+  const empty = {
+    title: initial?.title ?? "", code: initial?.code ?? "", unit: initial?.org_unit_id ?? "",
+    job: initial?.job_id ?? "", grade: initial?.grade_id ?? "",
+    headcount: initial?.max_headcount != null ? String(initial.max_headcount) : "",
+    from: initial?.effective_from ?? format(new Date(), "yyyy-MM-dd"),
+    to: initial?.effective_to ?? "",
+    status: (initial?.status ?? "ACTIVE") as MasterStatus,
+  };
+  const [form, setForm] = useState(empty);
+  const set = (patch: Partial<typeof empty>) => setForm((f) => ({ ...f, ...patch }));
+
+  const save = useMutation({
+    mutationFn: () => {
+      const headcount = form.headcount.trim() ? Number(form.headcount) : null;
+      if (isEdit) {
+        return orgApi.updatePosition(initial!.id, {
+          title: form.title.trim(), code: form.code.trim() || null, job_id: form.job || null, grade_id: form.grade || null,
+          max_headcount: headcount, status: form.status, effective_to: form.to || null,
+        });
+      }
+      return orgApi.createPosition({
+        title: form.title.trim(), org_unit_id: form.unit, code: form.code.trim() || undefined,
+        job_id: form.job || undefined, grade_id: form.grade || undefined,
+        max_headcount: headcount ?? undefined, effective_from: form.from,
+      });
+    },
+    onSuccess: (p) => {
+      qc.invalidateQueries({ queryKey: ["positions"] });
+      qc.invalidateQueries({ queryKey: ["dashboard"] });
+      toast.success(isEdit ? "Position updated" : "Position added", p.title);
+      setForm(empty);
+      onClose();
+    },
+    onError: (e) => toast.error(isEdit ? "Couldn’t update position" : "Couldn’t add position", errorMessage(e)),
+  });
+
+  const headcountOk = !form.headcount.trim() || (Number.isInteger(Number(form.headcount)) && Number(form.headcount) >= 1);
+  const valid = form.title.trim().length > 0 && (isEdit || form.unit !== "") && headcountOk;
+  const submit = (e: FormEvent) => { e.preventDefault(); if (valid) save.mutate(); };
+  const activeOr = <T extends { id: string; status: string }>(list: T[] | undefined, current: string) =>
+    (list ?? []).filter((x) => x.status === "ACTIVE" || x.id === current);
+
+  return (
+    <Sheet
+      open={open} onClose={onClose} title={isEdit ? "Edit position" : "Add position"}
+      footer={<>
+        <button className="btn-secondary" onClick={onClose}>Cancel</button>
+        <button className="btn-primary" type="submit" form="pos-form" disabled={!valid || save.isPending}>
+          {save.isPending ? "Saving…" : isEdit ? "Save changes" : "Add position"}
+        </button>
+      </>}
+    >
+      <form id="pos-form" onSubmit={submit} className="space-y-4">
+        <div className="grid grid-cols-3 gap-3">
+          <div className="col-span-2">
+            <label className="label" htmlFor="po-title">Title</label>
+            <input id="po-title" className="input" placeholder="e.g. Shift Supervisor" value={form.title} onChange={(e) => set({ title: e.target.value })} />
+          </div>
+          <div>
+            <label className="label" htmlFor="po-code">Code <span className="font-normal text-fg-subtle">(optional)</span></label>
+            <input id="po-code" className="input font-mono" value={form.code} onChange={(e) => set({ code: e.target.value })} />
+          </div>
+        </div>
+        <div>
+          <label className="label" htmlFor="po-unit">Department or team</label>
+          {isEdit ? (
+            <p className="input flex items-center bg-muted text-fg-muted">{initial!.org_unit_name ?? "—"}</p>
+          ) : (
+            <select id="po-unit" className="input" value={form.unit} onChange={(e) => set({ unit: e.target.value })}>
+              <option value="">Choose…</option>
+              {placeable.map((u) => (
+                <option key={u.id} value={u.id}>
+                  {(entities.data?.length ?? 0) > 1 && u.legal_entity_id ? `${entityName.get(u.legal_entity_id)} · ` : ""}{u.name}{u.type === "TEAM" ? " (team)" : ""}
+                </option>
+              ))}
+            </select>
+          )}
+          {isEdit && <p className="mt-1 text-xs text-fg-subtle">To move a seat to another department, retire this one and add a new position there.</p>}
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="po-job">Job title <span className="font-normal text-fg-subtle">(optional)</span></label>
+            <select id="po-job" className="input" value={form.job} onChange={(e) => set({ job: e.target.value })}>
+              <option value="">—</option>
+              {activeOr(jobs.data, form.job).sort((a, b) => a.title.localeCompare(b.title)).map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
+            </select>
+          </div>
+          <div>
+            <label className="label" htmlFor="po-grade">Grade <span className="font-normal text-fg-subtle">(optional)</span></label>
+            <select id="po-grade" className="input" value={form.grade} onChange={(e) => set({ grade: e.target.value })}>
+              <option value="">—</option>
+              {activeOr(grades.data, form.grade).map((g) => <option key={g.id} value={g.id}>{g.code} · {g.name}</option>)}
+            </select>
+          </div>
+        </div>
+        <div className="grid grid-cols-2 gap-3">
+          <div>
+            <label className="label" htmlFor="po-hc">Approved headcount</label>
+            <input id="po-hc" type="number" min={1} className="input" placeholder="No limit" value={form.headcount} onChange={(e) => set({ headcount: e.target.value })} />
+            {!headcountOk && <p className="mt-1 text-xs text-danger">Use a whole number of 1 or more, or leave it empty.</p>}
+          </div>
+          {isEdit ? (
+            <div>
+              <label className="label" htmlFor="po-to">End date <span className="font-normal text-fg-subtle">(optional)</span></label>
+              <input id="po-to" type="date" className="input" min={initial!.effective_from} value={form.to} onChange={(e) => set({ to: e.target.value })} />
+            </div>
+          ) : (
+            <div>
+              <label className="label" htmlFor="po-from">Approved from</label>
+              <input id="po-from" type="date" className="input" value={form.from} onChange={(e) => set({ from: e.target.value })} />
+            </div>
+          )}
+        </div>
+        <p className="text-xs text-fg-subtle">With a headcount, this position counts towards the vacancies on the HR dashboard. Leave it empty for a seat with no limit.</p>
+        {isEdit && <StatusSelect id="po-status" value={form.status} onChange={(status) => set({ status })} />}
       </form>
     </Sheet>
   );
