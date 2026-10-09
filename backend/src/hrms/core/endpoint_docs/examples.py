@@ -48,6 +48,7 @@ REQUEST_EXAMPLES: dict[str, dict[str, Any]] = {
         "grade_id": "grd_...",
         "max_headcount": 3,
     },
+    "issue_sign_in_slips": {"employment_ids": ["emp_...", "emp_..."], "numeric": True},
     "create_punch": {"punch_type": "IN", "source": "WEB"},
     "create_correction": {
         "work_date": "2026-10-05",

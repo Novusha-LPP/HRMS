@@ -32,7 +32,9 @@ Escalation guards, since granting or managing a login is granting authority:
     read the whole company's records.
 """
 
+import asyncio
 import json
+import secrets
 from datetime import UTC, datetime
 from uuid import UUID, uuid4
 
@@ -48,6 +50,7 @@ from hrms.core.authz import (
     decode_scope_ids,
     require_permission,
 )
+from hrms.core.change_audit import record_change
 from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.security import ahash_password
@@ -56,6 +59,8 @@ from hrms.modules.kernel.models import RoleAssignment, UserAccount
 from hrms.modules.kernel.users.schemas import (
     PasswordReset,
     RoleResponse,
+    SignInSlip,
+    SignInSlipsRequest,
     UserCreate,
     UserResponse,
     UserUpdate,
@@ -457,3 +462,199 @@ async def reset_user_password(
         },
     )
     return _user_row_response((await _fetch_user_rows(session, tenant_id, account_id))[0])
+
+
+# ─── Sign-in slips for staff without email ───────────────────────────────────
+
+_UNAMBIGUOUS = "ABCDEFGHJKMNPQRSTUVWXYZabcdefghjkmnpqrstuvwxyz23456789"
+
+
+def _temporary_password(numeric: bool) -> str:
+    if numeric:
+        return "".join(secrets.choice("0123456789") for _ in range(8))
+    return "".join(secrets.choice(_UNAMBIGUOUS) for _ in range(10))
+
+
+@router.post(
+    "/v1/users/sign-in-slips",
+    response_model=list[SignInSlip],
+    summary="Issue temporary sign-in details to employees",
+    dependencies=[require_permission("iam.write")],
+)
+async def issue_sign_in_slips(
+    body: SignInSlipsRequest,
+    principal: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> list[SignInSlip]:
+    """
+    For each employee: an employee login (role EMPLOYEE, own record only) is created if
+    there is none, or the existing one gets a new temporary password. Either way they sign
+    in with their employee number and must choose their own password first. Logins that
+    hold more than self-service (HR, managers, admins), switched-off logins, people who
+    have left and the caller's own login are skipped, with the reason.
+    """
+    scope = scope.for_permission("iam.write")
+    requested = list(dict.fromkeys(body.employment_ids))
+    uuids = {typed: to_uuid(typed) for typed in requested}
+
+    role_id = (
+        await session.execute(
+            text("SELECT id FROM roles WHERE tenant_id = CAST(:tid AS uuid) AND name = 'EMPLOYEE'"),
+            {"tid": str(tenant_id)},
+        )
+    ).scalar()
+    if role_id is None:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This company has no EMPLOYEE role")
+
+    rows = (
+        await session.execute(
+            text("""
+                SELECT e.id, e.employee_number, e.employment_state, le.name AS company,
+                       COALESCE(NULLIF(p.preferred_name, ''), p.legal_first_name)
+                           || ' ' || p.legal_last_name AS name,
+                       (SELECT array_agg(ua.id) FROM user_accounts ua
+                        WHERE ua.tenant_id = e.tenant_id AND ua.employment_id = e.id) AS accounts
+                FROM employments e
+                JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+                JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+                WHERE e.tenant_id = CAST(:tid AS uuid) AND e.id = ANY(CAST(:ids AS uuid[]))
+            """),
+            {"tid": str(tenant_id), "ids": [str(u) for u in uuids.values()]},
+        )
+    ).mappings()
+    by_id = {r["id"]: r for r in rows}
+
+    results: dict[str, SignInSlip] = {}
+    plans: list[tuple[str, UUID | None]] = []  # (typed employment id, account to reset or None)
+    for typed, uid in uuids.items():
+        row = by_id.get(uid)
+
+        def skip(reason: str, row=row, typed=typed) -> None:
+            results[typed] = SignInSlip(
+                employment_id=typed,
+                employee_number=row["employee_number"] if row else "",
+                name=row["name"] if row else "",
+                company=row["company"] if row else None,
+                outcome="SKIPPED",
+                reason=reason,
+            )
+
+        if row is None:
+            skip("Employee not found")
+            continue
+        try:
+            await authorize_employment(session, tenant_id, scope, uid)
+        except HTTPException:
+            skip("Outside the companies you manage")
+            continue
+        if row["employment_state"] == "SEPARATED":
+            skip("Has left")
+            continue
+        if principal.employment_id == uid:
+            skip("Your own login: use change password instead")
+            continue
+        accounts = row["accounts"] or []
+        if len(accounts) > 1:
+            skip("Has more than one login: reset the right one on its own")
+            continue
+        if accounts:
+            account = (
+                (
+                    await session.execute(
+                        text("""
+                        SELECT ua.status,
+                               array_agg(r.name) FILTER (WHERE r.name IS NOT NULL) AS roles
+                        FROM user_accounts ua
+                        LEFT JOIN role_assignments ra
+                          ON ra.tenant_id = ua.tenant_id AND ra.user_account_id = ua.id
+                        LEFT JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
+                        WHERE ua.tenant_id = CAST(:tid AS uuid) AND ua.id = CAST(:uid AS uuid)
+                        GROUP BY ua.status
+                    """),
+                        {"tid": str(tenant_id), "uid": str(accounts[0])},
+                    )
+                )
+                .mappings()
+                .first()
+            )
+            if account["status"] != "ACTIVE":
+                skip("Login is switched off")
+                continue
+            if set(account["roles"] or []) - {"EMPLOYEE"}:
+                skip("Has an HR, manager or admin login: reset it on its own")
+                continue
+        plans.append((typed, accounts[0] if accounts else None))
+
+    passwords = {typed: _temporary_password(body.numeric) for typed, _ in plans}
+    hashes = dict(
+        zip(
+            [typed for typed, _ in plans],
+            await asyncio.gather(*(ahash_password(passwords[typed]) for typed, _ in plans)),
+            strict=True,
+        )
+    )
+    now = datetime.now(UTC)
+    for typed, account_id in plans:
+        row = by_id[uuids[typed]]
+        if account_id is None:
+            account_id = uuid4()
+            session.add(
+                UserAccount(
+                    tenant_id=tenant_id,
+                    id=account_id,
+                    password_hash=hashes[typed],
+                    employment_id=uuids[typed],
+                    status="ACTIVE",
+                    must_change_password=True,
+                    password_changed_at=now,
+                )
+            )
+            session.add(
+                RoleAssignment(
+                    tenant_id=tenant_id,
+                    id=uuid4(),
+                    user_account_id=account_id,
+                    role_id=role_id,
+                    scope_type="SELF",
+                )
+            )
+            outcome = "CREATED"
+        else:
+            await session.execute(
+                text("""
+                    UPDATE user_accounts
+                    SET password_hash = :hash, must_change_password = true,
+                        password_changed_at = :changed_at, token_epoch = token_epoch + 1,
+                        version = version + 1
+                    WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:uid AS uuid)
+                """),
+                {
+                    "hash": hashes[typed],
+                    "changed_at": now,
+                    "tid": str(tenant_id),
+                    "uid": str(account_id),
+                },
+            )
+            outcome = "RESET"
+        await session.flush()
+        await record_change(
+            session,
+            tenant_id,
+            "user_account",
+            account_id,
+            "CREATE" if outcome == "CREATED" else "UPDATE",
+            changed_by=principal.user_account_id,
+            before=None if outcome == "CREATED" else {"temporary_password": None},
+            after={"temporary_password": "issued on a sign-in slip"},
+        )
+        results[typed] = SignInSlip(
+            employment_id=typed,
+            employee_number=row["employee_number"],
+            name=row["name"],
+            company=row["company"],
+            outcome=outcome,
+            temporary_password=passwords[typed],
+        )
+    return [results[typed] for typed in requested]
