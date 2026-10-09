@@ -87,4 +87,49 @@ REQUEST_EXAMPLES: dict[str, dict[str, Any]] = {
         "filters": [{"field": "work_date", "op": "between", "value": ["2026-10-01", "2026-10-31"]}],
         "limit": 1000,
     },
+    "create_statutory_rule": {
+        "rule_code": "ESIC_WAGE_CEILING",
+        "value": "21000",
+        "effective_from": "2027-04-01",
+        "source": "ESIC notification dated ... (paste the reference)",
+    },
+    "create_pay_component": {
+        "code": "CONV",
+        "name": "Conveyance allowance",
+        "kind": "EARNING",
+        "taxable": True,
+        "in_pf_wages": False,
+        "in_esic_wages": True,
+        "payslip_order": 30,
+    },
+    "update_pay_component": {"name": "Conveyance", "payslip_order": 35},
+    "create_salary_structure": {
+        "name": "Staff",
+        "lines": [
+            {"component_id": "pcmp_...", "calc_type": "PERCENT", "percent": "50", "base": "CTC"},
+            {"component_id": "pcmp_...", "calc_type": "BALANCE"},
+            {"component_id": "pcmp_...", "calc_type": "STATUTORY"},
+        ],
+    },
+    "replace_salary_structure": {
+        "name": "Staff",
+        "lines": [
+            {"component_id": "pcmp_...", "calc_type": "PERCENT", "percent": "40", "base": "CTC"},
+            {"component_id": "pcmp_...", "calc_type": "BALANCE"},
+            {"component_id": "pcmp_...", "calc_type": "STATUTORY"},
+        ],
+    },
+    "preview_salary_breakup": {
+        "annual_ctc": "600000",
+        "lines": [
+            {"component_id": "pcmp_...", "calc_type": "PERCENT", "percent": "50", "base": "CTC"},
+            {"component_id": "pcmp_...", "calc_type": "BALANCE"},
+        ],
+    },
+    "set_employee_compensation": {
+        "structure_id": "sstr_...",
+        "annual_ctc": "600000",
+        "effective_from": "2026-11-01",
+        "reason": "Annual revision",
+    },
 }

@@ -21,6 +21,7 @@ from hrms.modules.kyc import models as kyc  # noqa: F401
 from hrms.modules.leave import models as leave  # noqa: F401
 from hrms.modules.onboarding import models as onboarding  # noqa: F401
 from hrms.modules.org import models as org  # noqa: F401
+from hrms.modules.payroll import models as payroll  # noqa: F401
 from hrms.modules.people import models as people  # noqa: F401
 from hrms.modules.policy import models as policy  # noqa: F401
 from hrms.modules.preferences import models as preferences  # noqa: F401
@@ -165,11 +166,28 @@ RELATIONS = {
         "created_by": "user_accounts",
     },
     "recruitment_events": {"actor_user_id": "user_accounts"},
+    "statutory_rules": {"verified_by": "user_accounts", "recorded_by": "user_accounts"},
+    "pay_components": {"recorded_by": "user_accounts"},
+    "salary_structures": {
+        "legal_entity_id": "legal_entities",
+        "supersedes_id": "salary_structures",
+        "recorded_by": "user_accounts",
+    },
+    "salary_structure_lines": {
+        "component_id": "pay_components",
+        "base_component_id": "pay_components",
+    },
+    "employee_compensations": {
+        "employment_id": "employments",
+        "structure_id": "salary_structures",
+        "recorded_by": "user_accounts",
+    },
 }
 # The same tenant-aware references, removed together with their parent row.
 CASCADE_RELATIONS = {
     "job_applications": {"opening_id": "job_openings", "candidate_id": "candidates"},
     "recruitment_events": {"opening_id": "job_openings", "application_id": "job_applications"},
+    "salary_structure_lines": {"structure_id": "salary_structures"},
 }
 # Bookkeeping timestamps are `NOT NULL` in the Python models (they always carry a
 # default_factory) but nullable-with-a-server-default in the database. The
@@ -195,6 +213,10 @@ _STRICT_TABLES = {
     "candidates",
     "job_applications",
     "recruitment_events",
+    "statutory_rules",
+    "pay_components",
+    "salary_structures",
+    "employee_compensations",
 }
 _NULLABLE_TIMESTAMPS = {
     "created_at",

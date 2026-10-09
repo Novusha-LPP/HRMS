@@ -39,6 +39,11 @@ ENTITY_TYPES = frozenset(
         "cost_centre",
         # Logins: only that a temporary password was issued, never the password itself.
         "user_account",
+        # Payroll
+        "statutory_rule",
+        "pay_component",
+        "salary_structure",
+        "employee_compensation",
     }
 )
 

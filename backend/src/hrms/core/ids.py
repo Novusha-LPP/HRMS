@@ -79,6 +79,12 @@ _PREFIX_MAP: dict[str, str] = {
     "candidate": "cand",
     "job_application": "japp",
     "recruitment_event": "revt",
+    # Payroll
+    "statutory_rule": "srul",
+    "pay_component": "pcmp",
+    "salary_structure": "sstr",
+    "salary_structure_line": "ssln",
+    "employee_compensation": "ecmp",
     # Change audit
     "entity_change": "chg",
 }

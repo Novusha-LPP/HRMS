@@ -36,6 +36,7 @@ from hrms.modules.kyc.router import router as kyc_router
 from hrms.modules.leave.router import router as leave_router
 from hrms.modules.onboarding.router import router as onboarding_router
 from hrms.modules.org.router import router as org_router
+from hrms.modules.payroll.router import router as payroll_router
 from hrms.modules.people.router import router as people_router
 from hrms.modules.platform.router import router as platform_router
 from hrms.modules.policy.router import router as policy_router
@@ -120,6 +121,7 @@ app.include_router(approvals_router)
 app.include_router(kyc_router)
 app.include_router(preferences_router)
 app.include_router(recruitment_router)
+app.include_router(payroll_router)
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────

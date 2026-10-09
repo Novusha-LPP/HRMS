@@ -1,6 +1,6 @@
 import {
   LayoutGrid, NavigationUsers as Users, Clock, NavigationLeave as Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck, BookOpen,
-  Briefcase, CalendarCheck, UserCircle as UserRound, IdCard,
+  Briefcase, CalendarCheck, UserCircle as UserRound, IdCard, Wallet,
 } from "../icons/ThemeIcons";
 import type { LucideIcon } from "lucide-react";
 import type { UserRole } from "../../context/AuthContext";
@@ -46,6 +46,13 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/corrections", label: "Corrections", icon: FilePenLine },
       { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
       { to: "/statutory", label: "PF & ESIC", icon: IdCard },
+    ],
+  },
+  {
+    label: "Pay",
+    items: [
+      // Payroll roles only (granted by the Admin); HR managers don't hold payroll.read.
+      { to: "/payroll", label: "Payroll", icon: Wallet, permission: "payroll.read" },
     ],
   },
   {
