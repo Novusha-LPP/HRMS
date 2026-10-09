@@ -72,6 +72,9 @@ class LeaveType(SQLModel, table=True):
     # leave/router.py::_resolve_entitlement); an explicit bucket policy's own
     # accrual_type/days_per_year wins when one applies.
     accrual_enabled: bool = Field(default=False)
+    # Imported types require a matching assigned bucket policy; never use the
+    # tenant-wide fallback to grant access to a legacy entitlement.
+    legacy_managed: bool = Field(default=False)
 
 
 class LeaveBalance(SQLModel, table=True):
@@ -262,6 +265,9 @@ class LeaveBucketPolicy(SQLModel, table=True):
     probation_eligible: bool = Field(default=False)
     min_service_months: int = Field(default=0, ge=0)
     pro_rate_first_year: bool = Field(default=True)
+    # Complete source definition, including restrictions absent from flat type
+    # fields. The import and application validator share this representation.
+    source_policy: dict | None = Field(default=None, sa_column=Column(JSONB))
 
     recorded_at: datetime | None = Field(default=None)
     recorded_by: UUID | None = Field(default=None)

@@ -18,6 +18,10 @@
         if (t === "dark" || (t === "system" && matchMedia("(prefers-color-scheme: dark)").matches)) {
           document.documentElement.classList.add("dark");
         }
+        var ct = localStorage.getItem("hrms_color_theme");
+        if (ct === "hrms-dashboard") ct = "midnight-blue";
+        document.documentElement.setAttribute("data-color-theme",
+          ["classic-teal", "midnight-blue", "ember-sand"].includes(ct) ? ct : "classic-teal");
       } catch (e) {}
     </script>
   </head>

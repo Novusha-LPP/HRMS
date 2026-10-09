@@ -24,6 +24,7 @@ from hrms.core.logging import setup_logging
 from hrms.core.metrics import MetricsMiddleware
 from hrms.core.metrics import router as metrics_router
 from hrms.core.middleware import RequestLoggingMiddleware
+from hrms.core.openapi import install_openapi
 from hrms.core.perf import QueryMetricsMiddleware, instrument_engine
 from hrms.core.version import APP_VERSION
 from hrms.modules.approvals.router import router as approvals_router
@@ -41,6 +42,8 @@ from hrms.modules.policy.router import router as policy_router
 from hrms.modules.preferences.router import router as preferences_router
 from hrms.modules.recruitment.router import router as recruitment_router
 from hrms.modules.reports.router import router as reports_router
+from hrms.modules.time.holiday_calendars import router as holiday_calendars_router
+from hrms.modules.time.register import router as time_register_router
 from hrms.modules.time.router import router as time_router
 
 # Initialize enterprise logging
@@ -66,14 +69,12 @@ app = FastAPI(
     lifespan=lifespan,
     title=settings.app_name,
     version=APP_VERSION,
-    description=(
-        "Multi-tenant HRMS platform API. All endpoints require a tenant-scoped access token."
-    ),
     # Off on deployed environments unless HRMS_API_DOCS_ENABLED says otherwise: the schema is a
-    # map of every endpoint, which the public internet doesn't need.
+    # map of every endpoint, which the public internet doesn't need. /docs and /redoc are served
+    # by install_openapi() below, together with the integration guide (core/openapi.py).
     openapi_url="/openapi.json" if settings.docs_enabled else None,
-    docs_url="/docs" if settings.docs_enabled else None,
-    redoc_url="/redoc" if settings.docs_enabled else None,
+    docs_url=None,
+    redoc_url=None,
 )
 
 # ─── Middleware ───────────────────────────────────────────────────────────────
@@ -107,6 +108,8 @@ app.include_router(org_router)
 app.include_router(platform_router)
 app.include_router(people_router)
 app.include_router(time_router)
+app.include_router(time_register_router)
+app.include_router(holiday_calendars_router)
 app.include_router(onboarding_router)
 app.include_router(reports_router)
 app.include_router(dashboard_router)
@@ -126,3 +129,7 @@ app.include_router(health_router)
 
 # ─── Exception Handlers ───────────────────────────────────────────────────────
 register_exception_handlers(app)
+
+
+# ─── API docs ─────────────────────────────────────────────────────────────────
+install_openapi(app, docs_enabled=settings.docs_enabled)

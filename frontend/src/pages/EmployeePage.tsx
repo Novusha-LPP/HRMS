@@ -20,6 +20,7 @@ import { Tabs } from "../components/ui/Tabs";
 import { Avatar } from "../components/ui/Avatar";
 import { StatusBadge } from "../components/ui/StatusBadge";
 import { Sheet } from "../components/ui/Overlay";
+import { AttendanceRegister } from "../components/attendance/AttendanceRegister";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { KycSection } from "../components/kyc/KycSection";
@@ -459,7 +460,7 @@ export function EmployeePage() {
   );
 }
 
-type EmployeeSheetTab = "overview" | "kyc" | "access" | "workflow";
+type EmployeeSheetTab = "overview" | "attendance" | "kyc" | "access" | "workflow";
 
 function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose, onTransfer }: {
   row: Row | null; canPlace: boolean; canViewAccess: boolean; canManageAccess: boolean;
@@ -467,6 +468,7 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
 }) {
   const { user } = useAuth();
   const canConfigureWorkflow = !!user?.permissions.some((p) => p === "*" || p === "approvals.manage");
+  const canEditAttendance = !!user?.permissions.some((p) => p === "*" || p === "corrections.write");
   const [activeTab, setActiveTab] = useState<EmployeeSheetTab>("overview");
 
   const fields = row
@@ -529,6 +531,7 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
             onChange={setActiveTab}
             items={[
               { value: "overview", label: "Employment overview" },
+              { value: "attendance", label: "Attendance" },
               { value: "kyc", label: "KYC & Documents" },
               ...(canConfigureWorkflow ? [{ value: "workflow" as const, label: "Approval workflow" }] : []),
               ...(canViewAccess ? [{ value: "access" as const, label: "Access" }] : []),
@@ -555,6 +558,14 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
                 </dl>
               </div>
             </>
+          )}
+          {activeTab === "attendance" && (
+            <AttendanceRegister
+              key={row.id}
+              employmentId={row.id}
+              canEdit={canEditAttendance && row.id !== user?.employmentId}
+              showName={false}
+            />
           )}
           {activeTab === "workflow" && canConfigureWorkflow && <EmployeeWorkflowSection key={row.id} employmentId={row.id} />}
           {activeTab === "kyc" && (

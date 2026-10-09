@@ -42,6 +42,9 @@ class PolicyTemplate(SQLModel, table=True):
     ot_qualifying_minutes: int = Field(default=30, ge=0)
     ot_rate: float = Field(default=1.5, ge=1.0)
     ot_daily_cap_minutes: int | None = Field(default=None)
+    # Work on a weekly off or holiday: OVERTIME (every minute worked is overtime, under the
+    # rules above) or COMP_OFF (a half or full comp-off day is credited to leave instead).
+    off_day_work: str = Field(default="OVERTIME", max_length=10)
 
     punch_rounding_minutes: int = Field(default=0, ge=0)
     punch_rounding_direction: str = Field(default="NONE", max_length=10)

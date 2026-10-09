@@ -29,6 +29,9 @@ export interface Holiday {
   name: string;
   legal_entity_id: string | null;
   is_optional: boolean;
+  calendar_id?: string | null;
+  calendar_name?: string | null;
+  holiday_type?: string | null;
 }
 
 export interface CompOffGrant {
@@ -396,4 +399,3 @@ export interface LeaveBalanceTransaction {
   approved_by: string | null;
   recorded_at: string;
 }
-

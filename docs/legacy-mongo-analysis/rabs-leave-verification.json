@@ -1,0 +1,38 @@
+{
+  "tenant": "rabs-industries-india-private-limited",
+  "existing_rows_unchanged": {
+    "leave_types": 12,
+    "leave_policy_sets": 39,
+    "leave_bucket_policies": 61,
+    "leave_policy_assignments": 190,
+    "leave_balance_buckets": 20,
+    "leave_type_bucket_mapping": 12,
+    "leave_monthly_ledger": 194,
+    "leave_balance_transactions": 195,
+    "leave_applications": 5,
+    "leave_balances": 0
+  },
+  "new_rows": {
+    "leave_types": 5,
+    "leave_policy_sets": 5,
+    "leave_bucket_policies": 5,
+    "leave_policy_assignments": 0,
+    "leave_balance_buckets": 5,
+    "leave_type_bucket_mapping": 5,
+    "leave_monthly_ledger": 0,
+    "leave_balance_transactions": 0,
+    "leave_applications": 0,
+    "leave_balances": 0
+  },
+  "exact_source_definitions_verified": 5,
+  "active_source_policies": 3,
+  "archived_source_policies": 2,
+  "active_pl_entitlements": [
+    12,
+    25
+  ],
+  "deduction_flags_preserved": true,
+  "employee_assignments_created": 0,
+  "suraj_unchanged": true,
+  "rerun_created_records": 0
+}

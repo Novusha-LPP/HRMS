@@ -49,6 +49,7 @@ from prometheus_client.core import GaugeMetricFamily
 from prometheus_client.registry import Collector
 
 from hrms.core import perf
+from hrms.core.active_users import active_users
 from hrms.core.config import settings
 
 _LATENCY_BUCKETS = (0.005, 0.01, 0.025, 0.05, 0.1, 0.25, 0.5, 1, 2.5, 5, 10)
@@ -152,6 +153,12 @@ class MetricsMiddleware:
         finally:
             HTTP_IN_PROGRESS.labels(method).dec()
             route = getattr(scope.get("route"), "path", None) or "unmatched"
+            principal = scope.get("state", {}).get("principal")
+            if principal is not None and 200 <= status < 300:
+                if route == "/v1/auth/logout":
+                    active_users.remove(principal.tenant_id, principal.user_account_id)
+                else:
+                    active_users.record(principal.tenant_id, principal.user_account_id)
             HTTP_REQUESTS.labels(method, route, str(status)).inc()
             HTTP_LATENCY.labels(method, route).observe(time.perf_counter() - started)
             DB_STATEMENTS.labels(method, route).observe(tally.count)
@@ -177,6 +184,7 @@ async def metrics(request: Request) -> Response:
         registry.register(_PoolCollector())
     jobs = CollectorRegistry()
     jobs.register(_JobFreshness(await _last_job_successes()))
+    jobs.register(active_users)
     return Response(
         generate_latest(registry) + generate_latest(jobs), media_type=CONTENT_TYPE_LATEST
     )

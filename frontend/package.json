@@ -9,7 +9,8 @@
     "lint": "oxlint",
     "preview": "vite preview",
     "test": "node --test tests/*.test.ts",
-    "test:e2e": "playwright test"
+    "test:e2e": "playwright test",
+    "test:themes": "playwright test --config=playwright.themes.config.ts"
   },
   "dependencies": {
     "@dnd-kit/core": "^6.3.1",

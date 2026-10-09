@@ -1,0 +1,24 @@
+{
+  "verified": true,
+  "tenant": "suraj-group",
+  "source_punches_matched_field_for_field": 653,
+  "existing_native_punches_preserved": 12,
+  "holiday_entries": 39,
+  "holiday_calendars": 3,
+  "employee_policy_assignments": 125,
+  "holiday_calendar_assignments": 122,
+  "conflicting_days": [
+    {
+      "work_date": "2026-10-03",
+      "effective_minutes": 0,
+      "ot_minutes": 0,
+      "review_flags": "LEGACY_CONFLICT"
+    },
+    {
+      "work_date": "2026-10-05",
+      "effective_minutes": 0,
+      "ot_minutes": 0,
+      "review_flags": "LEGACY_CONFLICT"
+    }
+  ]
+}

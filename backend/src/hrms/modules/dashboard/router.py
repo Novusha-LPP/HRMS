@@ -27,25 +27,31 @@ from sqlmodel import select
 
 from hrms.core.authn import CurrentUser
 from hrms.core.authz import (
+    Scope,
     ScopeDep,
     authorize_employment,
+    read_scope,
     require_permission,
     resolve_acting_employment_id,
 )
 from hrms.core.database import SessionDep
-from hrms.core.datetime_utils import business_today, now_utc
+from hrms.core.datetime_utils import business_today
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
 from hrms.modules.dashboard import widgets
+from hrms.modules.dashboard.celebrations import router as celebrations_router
 from hrms.modules.dashboard.schemas import LayoutItem, LayoutResponse, LayoutUpdate, WidgetInfo
 from hrms.modules.dashboard.widgets import SECTIONS
 from hrms.modules.onboarding.models import CaseStatus, OnboardingCase, OnboardingItem
 from hrms.modules.people.models import PersonnelAction, PersonnelActionStatus
-from hrms.modules.time.models import AttendanceDay, Punch, PunchType
+from hrms.modules.time.holidays import holiday_scope_sql
+from hrms.modules.time.models import AttendanceDay
 from hrms.modules.time.presence import classify, is_late, present_sql
-from hrms.modules.time.service import MAX_OPEN_SESSION
+from hrms.modules.time.register import _range_context, _register_day
+from hrms.modules.time.router import today_status
 
 router = APIRouter(prefix="/v1/dashboard", tags=["Dashboard"])
+router.include_router(celebrations_router)
 
 
 # ─── Employee dashboard ───────────────────────────────────────────────────────
@@ -73,15 +79,9 @@ async def employee_dashboard(
     )
     today_ad = ad_row.scalars().first()
 
-    last_punch_row = await session.execute(
-        select(Punch)
-        .where(Punch.tenant_id == tenant_id)
-        .where(Punch.employment_id == emp_uuid)
-        .where(Punch.punch_type != "VOID")
-        .order_by(Punch.punched_at.desc())  # type: ignore[attr-defined]
-        .limit(1)
+    clock = await today_status(
+        principal, scope, tenant_id, session, employment_id=employment_id, work_date=None
     )
-    last_punch = last_punch_row.scalars().first()
 
     month_rows = await session.execute(
         select(AttendanceDay)
@@ -120,20 +120,13 @@ async def employee_dashboard(
             "pct": round(done / total * 100) if total else 0,
         }
 
-    # Same rule as the time clock: the last event leaves a session open, and it is recent
-    # enough to still be running (comparing UTC dates with the local business date got
-    # check-ins between midnight and the UTC offset wrong).
-    is_punched_in = (
-        last_punch is not None
-        and last_punch.punch_type in (PunchType.IN, PunchType.BREAK_END)
-        and now_utc() - last_punch.punched_at <= MAX_OPEN_SESSION
-    )
+    upcoming_holidays = await _upcoming_holidays(session, tenant_id, emp_uuid, today)
 
     return {
         "role": "EMPLOYEE",
         "today": {
             "date": today.isoformat(),
-            "is_punched_in": is_punched_in,
+            "is_punched_in": clock.is_punched_in,
             "punch_in_time": today_ad.first_punch_in.isoformat()
             if today_ad and today_ad.first_punch_in
             else None,
@@ -146,8 +139,231 @@ async def employee_dashboard(
             "absent": absent,
             "late": late,
             "working_days": len(month_days),
+            "worked_minutes": sum(d.effective_minutes or 0 for d in month_days),
         },
         "onboarding": onboarding,
+        "upcoming_holidays": upcoming_holidays,
+    }
+
+
+_HOLIDAY_LOOKAHEAD_DAYS = 365
+
+
+async def _upcoming_holidays(
+    session, tenant_id, emp_uuid, today: date, limit: int = 6
+) -> list[dict]:
+    """
+    The next holidays on this employee's own calendar — the same rule the attendance
+    register uses (holiday_scope_sql) — plus the optional days they may take (an optional
+    general holiday, or an optional day on their calendar), flagged so the UI can tell
+    them apart.
+    """
+    rows = await session.execute(
+        text(f"""
+            SELECT h.holiday_date, h.name, h.is_optional
+            FROM holidays h
+            WHERE h.tenant_id = :tid AND h.archived_at IS NULL
+              AND h.holiday_date BETWEEN :today AND :until
+              AND {holiday_scope_sql()}
+            UNION
+            SELECT h.holiday_date, h.name, true AS is_optional
+            FROM holidays h
+            JOIN holiday_calendar_days cd
+              ON cd.tenant_id = h.tenant_id AND cd.holiday_id = h.id AND cd.is_optional
+            WHERE h.tenant_id = :tid AND h.archived_at IS NULL
+              AND h.holiday_date BETWEEN :today AND :until
+              AND cd.calendar_id = holiday_calendar_for(h.tenant_id, :eid, h.holiday_date)
+            ORDER BY holiday_date, name
+            LIMIT :limit
+        """),
+        {
+            "tid": tenant_id,
+            "eid": emp_uuid,
+            "today": today,
+            "until": today + timedelta(days=_HOLIDAY_LOOKAHEAD_DAYS),
+            "limit": limit,
+        },
+    )
+    return [
+        {
+            "date": r["holiday_date"].isoformat(),
+            "name": r["name"],
+            "is_optional": r["is_optional"],
+            "days_away": (r["holiday_date"] - today).days,
+        }
+        for r in rows.mappings()
+    ]
+
+
+async def _direct_reports(session, tenant_id, mgr_uuid, scope: Scope | None = None) -> list[dict]:
+    """
+    Current line reports of a manager (anyone not SEPARATED). With `scope`, only the
+    reports that scope may read are returned.
+    """
+    clause, params = scope.employment_filter_sql("e") if scope is not None else ("", {})
+    rows = await session.execute(
+        text(f"""
+            SELECT e.id, p.legal_first_name || ' ' || p.legal_last_name AS name,
+                   e.employee_number, e.hire_date, j.title AS designation,
+                   ou.name AS department
+            FROM assignment_managers am
+            JOIN assignments a   ON a.tenant_id = am.tenant_id AND a.id = am.assignment_id
+            JOIN employments e   ON e.tenant_id = a.tenant_id  AND e.id = a.employment_id
+            JOIN persons p       ON p.tenant_id = e.tenant_id  AND p.id = e.person_id
+            LEFT JOIN jobs j     ON j.tenant_id = a.tenant_id  AND j.id = a.job_id
+            LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
+            WHERE am.tenant_id = CAST(:tid AS uuid)
+              AND am.manager_employment_id = CAST(:mgr AS uuid)
+              AND am.manager_type = 'LINE'
+              AND am.effective_to IS NULL
+              AND e.employment_state NOT IN ('SEPARATED')
+              {clause}
+            ORDER BY name
+        """),
+        {"tid": str(tenant_id), "mgr": str(mgr_uuid), **params},
+    )
+    return [dict(r._mapping) for r in rows]
+
+
+# ─── My team ──────────────────────────────────────────────────────────────────
+
+_TEAM_LEAVE_LOOKAHEAD_DAYS = 30
+_TEAM_MAX_MEMBERS = 200
+
+
+@router.get("/team", summary="Your direct reports: today, this month and upcoming leave")
+async def team_overview(
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> dict:
+    """
+    Always the caller's own line reports. Each report must also be readable under the
+    caller's people.read scope, so being named someone's manager alone shows nothing
+    more than the manager dashboard already does.
+    """
+    if principal.employment_id is None:
+        raise HTTPException(400, "This account has no employment record")
+    mgr_uuid = principal.employment_id
+    visible = read_scope(scope, "people.read")
+    team = (await _direct_reports(session, tenant_id, mgr_uuid, visible))[:_TEAM_MAX_MEMBERS]
+    today = business_today()
+    month_start = today.replace(day=1)
+    team_ids = [str(m["id"]) for m in team]
+
+    month: dict = {}
+    if team_ids:
+        for r in (
+            await session.execute(
+                text(f"""
+                    SELECT ad.employment_id,
+                           COUNT(*) FILTER (WHERE {present_sql("ad")}) AS present,
+                           COUNT(*) FILTER (WHERE ad.status = 'LATE' OR ad.late_by_minutes > 0)
+                               AS late,
+                           COUNT(*) FILTER (WHERE ad.status = 'ABSENT'
+                                            AND ad.first_punch_in IS NULL) AS absent,
+                           COALESCE(SUM(ad.effective_minutes), 0) AS minutes
+                    FROM attendance_days ad
+                    WHERE ad.tenant_id = CAST(:tid AS uuid)
+                      AND ad.employment_id = ANY(CAST(:ids AS uuid[]))
+                      AND ad.work_date BETWEEN :start AND :today
+                    GROUP BY ad.employment_id
+                """),
+                {"tid": str(tenant_id), "ids": team_ids, "start": month_start, "today": today},
+            )
+        ).mappings():
+            month[r["employment_id"]] = {
+                "present": r["present"],
+                "late": r["late"],
+                "absent": r["absent"],
+                "worked_minutes": int(r["minutes"]),
+            }
+
+    members = []
+    for m in team:
+        emp = m["id"]
+        day_out = None
+        if m["hire_date"] <= today:
+            context = await _range_context(session, tenant_id, emp, None, today, today)
+            day = await _register_day(session, tenant_id, emp, today, context)
+            last = day.punches[-1].punch_type if day.punches else None
+            day_out = {
+                "status": day.status,
+                "is_off_day": day.is_off_day,
+                "holiday_name": day.holiday_name,
+                "leave_type": day.leave_type,
+                "first_punch_in": day.first_punch_in.isoformat() if day.first_punch_in else None,
+                "last_punch_out": day.last_punch_out.isoformat() if day.last_punch_out else None,
+                "effective_minutes": day.effective_minutes,
+                "late_by_minutes": day.late_by_minutes,
+                "is_checked_in": last in ("IN", "BREAK_END"),
+                "shift_start": day.shift_start,
+                "shift_end": day.shift_end,
+                "timezone": day.timezone,
+            }
+        members.append(
+            {
+                "employment_id": to_typed_id("employment", emp),
+                "name": m["name"],
+                "employee_number": m["employee_number"],
+                "designation": m["designation"],
+                "department": m["department"],
+                "hire_date": m["hire_date"].isoformat(),
+                "today": day_out,
+                "month": month.get(
+                    emp, {"present": 0, "late": 0, "absent": 0, "worked_minutes": 0}
+                ),
+            }
+        )
+
+    upcoming_leave: list[dict] = []
+    if team_ids:
+        upcoming_leave = [
+            {
+                "id": to_typed_id("leave_application", r["id"]),
+                "employment_id": to_typed_id("employment", r["employment_id"]),
+                "name": r["name"],
+                "leave_type": r["leave_type_name"],
+                "color": r["color"],
+                "from_date": r["from_date"].isoformat(),
+                "to_date": r["to_date"].isoformat(),
+                "days": float(r["days_requested"]),
+                "status": r["status"],
+            }
+            for r in (
+                await session.execute(
+                    text("""
+                        SELECT la.id, la.employment_id, la.from_date, la.to_date,
+                               la.days_requested, la.status, lt.name AS leave_type_name,
+                               lt.color, p.legal_first_name || ' ' || p.legal_last_name AS name
+                        FROM leave_applications la
+                        JOIN leave_types lt
+                          ON lt.tenant_id = la.tenant_id AND lt.id = la.leave_type_id
+                        JOIN employments e ON e.tenant_id = la.tenant_id AND e.id = la.employment_id
+                        JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+                        WHERE la.tenant_id = CAST(:tid AS uuid)
+                          AND la.employment_id = ANY(CAST(:ids AS uuid[]))
+                          AND (la.status = 'APPROVED' OR la.status LIKE 'PENDING%')
+                          AND la.to_date >= :today AND la.from_date <= :until
+                        ORDER BY la.from_date, name
+                        LIMIT 50
+                    """),
+                    {
+                        "tid": str(tenant_id),
+                        "ids": team_ids,
+                        "today": today,
+                        "until": today + timedelta(days=_TEAM_LEAVE_LOOKAHEAD_DAYS),
+                    },
+                )
+            ).mappings()
+        ]
+
+    return {
+        "date": today.isoformat(),
+        "month": month_start.strftime("%B %Y"),
+        "members": members,
+        "upcoming_leave": upcoming_leave,
     }
 
 
@@ -169,23 +385,7 @@ async def manager_dashboard(
 
     today = business_today()
 
-    team_rows = await session.execute(
-        text("""
-            SELECT e.id, p.legal_first_name || ' ' || p.legal_last_name AS name,
-                   e.employee_number
-            FROM assignment_managers am
-            JOIN assignments a   ON a.tenant_id = am.tenant_id AND a.id = am.assignment_id
-            JOIN employments e   ON e.tenant_id = a.tenant_id  AND e.id = a.employment_id
-            JOIN persons p       ON p.tenant_id = e.tenant_id  AND p.id = e.person_id
-            WHERE am.tenant_id = CAST(:tid AS uuid)
-              AND am.manager_employment_id = CAST(:mgr AS uuid)
-              AND am.manager_type = 'LINE'
-              AND am.effective_to IS NULL
-              AND e.employment_state NOT IN ('SEPARATED')
-        """),
-        {"tid": str(tenant_id), "mgr": str(mgr_uuid)},
-    )
-    team = [dict(r._mapping) for r in team_rows]
+    team = await _direct_reports(session, tenant_id, mgr_uuid)
     team_ids = [r["id"] for r in team]
 
     attendance_summary = {"present": 0, "absent": 0, "on_leave": 0, "not_yet_in": 0}

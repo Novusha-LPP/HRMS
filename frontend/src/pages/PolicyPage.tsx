@@ -15,6 +15,7 @@ import {
   MoreHorizontal,
   Building2,
   Info,
+  CalendarDays,
 } from "lucide-react";
 import type { PolicyTemplate, EmployeePolicyAssignment } from "../api/policy";
 import { policyApi } from "../api/policy";
@@ -51,6 +52,7 @@ function addMinutes(time: string, minutes: number): string {
 // off by either alternating pattern below, so it's always a working day.
 const SATURDAY_PATTERNS: { value: PolicyTemplate["saturday_pattern"]; label: string }[] = [
   { value: "ALL", label: "Every Saturday" },
+  { value: "SECOND_OFF", label: "2nd Saturday off" },
   { value: "SECOND_FOURTH_OFF", label: "2nd & 4th Saturday off (alternate)" },
   { value: "FIRST_THIRD_OFF", label: "1st & 3rd Saturday off" },
 ];
@@ -72,6 +74,7 @@ const DEFAULTS: Partial<PolicyTemplate> = {
   ot_qualifying_minutes: 30,
   ot_rate: 1.5,
   ot_daily_cap_minutes: null,
+  off_day_work: "OVERTIME",
   punch_rounding_minutes: 0,
   punch_rounding_direction: "NONE",
   correction_requires_approval: true,
@@ -255,6 +258,7 @@ function PolicyCard({ tpl, onEdit, onDelete, onAssign }: { tpl: PolicyTemplate; 
     [Coffee, "Break", `${tpl.break_minutes} min · from actual check-outs`],
     [Timer, "Grace", `${tpl.grace_late_minutes} min late · ${tpl.grace_early_departure_minutes} min early`],
     [Zap, "Overtime", tpl.ot_enabled ? `After ${tpl.ot_qualifying_minutes} min at ${tpl.ot_rate}×` : "Disabled"],
+    [CalendarDays, "Off-day work", tpl.off_day_work === "COMP_OFF" ? "Comp-off credited" : "Counted as overtime"],
     [FilePenLine, "Corrections", tpl.correction_requires_approval ? `${tpl.correction_approval_levels}-level approval` : "Auto-approved"],
   ];
 
@@ -533,6 +537,29 @@ function PolicySheet({ open, initial, saving, onSave, onClose }: {
               {num("Daily cap", "ot_daily_cap_minutes", "min", { nullable: true })}
             </div>
           )}
+          <p className="hint">
+            {form.ot_enabled
+              ? "Overtime counts after the full shift and goes for approval."
+              : "With overtime off, extra time is still shown on the day — never approved or paid."}
+          </p>
+        </Section>
+
+        <Section title="Work on weekly offs & holidays">
+          <div>
+            <label className="label" htmlFor="pol-offday">Time worked on an off day</label>
+            <select
+              id="pol-offday" className="input" value={form.off_day_work ?? "OVERTIME"}
+              onChange={(e) => set("off_day_work", e.target.value as PolicyTemplate["off_day_work"])}
+            >
+              <option value="OVERTIME">Counts as overtime</option>
+              <option value="COMP_OFF">Earns comp-off</option>
+            </select>
+            <p className="hint">
+              {form.off_day_work === "COMP_OFF"
+                ? "A full standard day credits 1 comp-off day, at least the half-day share credits ½ — added to the leave balance automatically."
+                : "Every minute worked counts as overtime, under the overtime rules above. No late or early marks on an off day."}
+            </p>
+          </div>
         </Section>
 
         <Section title="Corrections">

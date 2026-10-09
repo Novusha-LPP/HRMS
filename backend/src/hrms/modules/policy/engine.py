@@ -48,6 +48,7 @@ class ResolvedPolicy:
     punch_rounding_direction: str
     correction_requires_approval: bool
     correction_approval_levels: int
+    off_day_work: str = "OVERTIME"
 
 
 def default_policy() -> ResolvedPolicy:
@@ -118,6 +119,7 @@ def _merge(template: PolicyTemplate, assignment: EmployeePolicyAssignment | None
         punch_rounding_direction=template.punch_rounding_direction,
         correction_requires_approval=template.correction_requires_approval,
         correction_approval_levels=template.correction_approval_levels,
+        off_day_work=template.off_day_work,
     )
 
 

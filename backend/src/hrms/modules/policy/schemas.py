@@ -14,7 +14,7 @@ class PolicyTemplateCreate(BaseModel):
     expected_start_time: time = time(9, 0)
     expected_end_time: time = time(18, 0)
     work_days: str = Field(default="1111100", pattern="^[01]{7}$")
-    saturday_pattern: Literal["ALL", "SECOND_FOURTH_OFF", "FIRST_THIRD_OFF"] = "ALL"
+    saturday_pattern: Literal["ALL", "SECOND_OFF", "SECOND_FOURTH_OFF", "FIRST_THIRD_OFF"] = "ALL"
     break_minutes: int = Field(default=60, ge=0)
     break_auto_deduct: bool = False
     grace_late_minutes: int = Field(default=0, ge=0)
@@ -24,6 +24,7 @@ class PolicyTemplateCreate(BaseModel):
     ot_qualifying_minutes: int = Field(default=30, ge=0)
     ot_rate: float = Field(default=1.5, ge=1.0)
     ot_daily_cap_minutes: int | None = Field(default=None, ge=0)
+    off_day_work: Literal["OVERTIME", "COMP_OFF"] = "OVERTIME"
     punch_rounding_minutes: int = Field(default=0, ge=0)
     punch_rounding_direction: Literal["NONE", "UP", "DOWN", "NEAREST"] = "NONE"
     correction_requires_approval: bool = True
@@ -38,7 +39,9 @@ class PolicyTemplateUpdate(BaseModel):
     expected_start_time: time | None = None
     expected_end_time: time | None = None
     work_days: str | None = Field(default=None, pattern="^[01]{7}$")
-    saturday_pattern: Literal["ALL", "SECOND_FOURTH_OFF", "FIRST_THIRD_OFF"] | None = None
+    saturday_pattern: (
+        Literal["ALL", "SECOND_OFF", "SECOND_FOURTH_OFF", "FIRST_THIRD_OFF"] | None
+    ) = None
     break_minutes: int | None = Field(default=None, ge=0)
     break_auto_deduct: bool | None = None
     grace_late_minutes: int | None = Field(default=None, ge=0)
@@ -48,6 +51,7 @@ class PolicyTemplateUpdate(BaseModel):
     ot_qualifying_minutes: int | None = Field(default=None, ge=0)
     ot_rate: float | None = None
     ot_daily_cap_minutes: int | None = Field(default=None, ge=0)
+    off_day_work: Literal["OVERTIME", "COMP_OFF"] | None = None
     punch_rounding_minutes: int | None = Field(default=None, ge=0)
     punch_rounding_direction: Literal["NONE", "UP", "DOWN", "NEAREST"] | None = None
     correction_requires_approval: bool | None = None

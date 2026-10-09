@@ -23,7 +23,8 @@ import { AppearanceControls } from "./AppearanceControls";
 import { humanize } from "../ui/StatusBadge";
 import { usePopover } from "../ui/Popover";
 import { CommandPalette } from "./CommandPalette";
-import { navFor, findNav } from "./nav";
+import { LoginCelebration } from "./LoginCelebration";
+import { navFor, findNav, hasNestedNav } from "./nav";
 import type { NavItem } from "./nav";
 import { API_DOCS_URL } from "../../lib/runtimeConfig";
 
@@ -83,10 +84,10 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isHrmsTheme = colorTheme === "midnight-blue";
 
   return (
-    <div className="flex h-screen overflow-hidden bg-canvas">
+    <div className="app-shell flex h-screen overflow-hidden bg-canvas">
       <PreferencesSync />
       <aside
-        className={`hidden shrink-0 flex-col transition-[width] duration-200 ease-out lg:flex ${collapsed ? "w-[68px]" : "w-60"}`}
+        className={`app-sidebar hidden shrink-0 flex-col transition-[width] duration-200 ease-out lg:flex ${collapsed ? "w-[68px]" : "w-60"}`}
         style={isHrmsTheme ? { background: "var(--sidebar-bg, #0A1F4E)" } : undefined}
       >
         <SidebarContent collapsed={collapsed} onSearch={openPalette} />
@@ -96,7 +97,7 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-zinc-950/30 backdrop-blur-[2px] animate-fade-in" onClick={() => setMobileOpen(false)} />
           <aside
-            className={`absolute inset-y-0 left-0 flex w-64 flex-col border-r border-line bg-canvas shadow-pop animate-slide-in-left ${
+            className={`app-sidebar absolute inset-y-0 left-0 flex w-64 flex-col border-r border-line bg-canvas shadow-pop animate-slide-in-left ${
               isHrmsTheme ? "border-[#1C3A75]" : ""
             }`}
             style={isHrmsTheme ? { background: "var(--sidebar-bg, #0A1F4E)" } : undefined}
@@ -107,7 +108,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       )}
 
       <div className="flex min-w-0 flex-1 flex-col lg:py-2 lg:pr-2">
-        <div className="flex min-h-0 flex-1 flex-col overflow-hidden bg-panel lg:rounded-xl lg:border lg:border-line lg:shadow-xs">
+        <div className="app-workspace flex min-h-0 flex-1 flex-col overflow-hidden bg-panel lg:rounded-xl lg:border lg:border-line lg:shadow-xs">
           <TopBar onToggleSidebar={toggleSidebar} onSearch={openPalette} />
           <main ref={scrollRef} className="flex-1 overflow-y-auto">
             <div className="mx-auto w-full max-w-[1400px] px-4 py-6 sm:px-6 lg:px-8 lg:py-8">{children}</div>
@@ -116,6 +117,7 @@ export function AppShell({ children }: { children: ReactNode }) {
       </div>
 
       <CommandPalette open={paletteOpen} onClose={() => setPaletteOpen(false)} />
+      <LoginCelebration />
     </div>
   );
 }
@@ -135,7 +137,7 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
   return (
     <>
       <div className={`flex shrink-0 items-center gap-2.5 h-14 ${collapsed ? "justify-center" : "px-4"}`}>
-        <div className="grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-[15px] font-bold text-white shadow-xs ring-1 ring-inset ring-white/15">
+        <div className="tenant-mark grid h-8 w-8 shrink-0 place-items-center rounded-lg bg-gradient-to-br from-brand-500 to-brand-700 text-[15px] font-bold text-white shadow-xs ring-1 ring-inset ring-white/15">
           {user.tenantName.charAt(0).toUpperCase()}
         </div>
         {!collapsed && (
@@ -146,12 +148,12 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
         )}
       </div>
 
-      {/* Both palettes share the same sidebar structure and search placement. */}
+      {/* Palettes share the same sidebar structure and search placement. */}
       <div className={`${collapsed ? "flex justify-center pb-2" : "px-3 pb-2"}`}>
         <button
           onClick={onSearch}
           title={collapsed ? `Search (${MOD_KEY}+K)` : undefined}
-          className={`flex h-8 items-center gap-2 rounded-lg border text-[13px] shadow-xs transition-colors ${
+          className={`sidebar-search flex h-8 items-center gap-2 rounded-lg border text-[13px] shadow-xs transition-colors ${
             isHrmsTheme
               ? "border-[#1C3A75] bg-white/5 text-[#9FB3D9] hover:border-blue-400 hover:text-white"
               : "border border-line bg-surface text-fg-subtle hover:border-line-strong hover:text-fg-muted"
@@ -175,7 +177,7 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
             {collapsed ? (
               idx > 0 && <div className={`mx-2 mb-3 h-px ${isHrmsTheme ? "bg-[#1C3A75]" : "bg-line"}`} />
             ) : (
-              <p className={`pb-1.5 text-[11px] font-medium ${isHrmsTheme ? "px-2 text-[#9FB3D9]" : "px-2 text-fg-subtle"}`}>{section.label}</p>
+              <p className={`sidebar-section-label pb-1.5 text-[11px] font-medium ${isHrmsTheme ? "px-2 text-[#9FB3D9]" : "px-2 text-fg-subtle"}`}>{section.label}</p>
             )}
             <div className="space-y-0.5">
               {section.items.map((item) =>
@@ -187,7 +189,7 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
                     rel="noopener noreferrer"
                     onClick={onNavigate}
                     title={collapsed ? item.label : undefined}
-                    className={`group flex items-center rounded-lg font-medium transition-colors h-8 gap-2.5 text-[13px] ${
+                    className={`sidebar-nav-item group flex items-center rounded-lg font-medium transition-colors h-8 gap-2.5 text-[13px] ${
                       collapsed ? "justify-center" : "px-2.5"
                     } ${
                       isHrmsTheme
@@ -216,10 +218,11 @@ function SidebarContent({ collapsed, onSearch, onNavigate }: { collapsed: boolea
                   <NavLink
                     key={item.to}
                     to={item.to}
+                    end={hasNestedNav(item.to)}
                     onClick={onNavigate}
                     title={collapsed ? item.label : undefined}
                     className={({ isActive }) =>
-                      `group flex items-center rounded-lg font-medium transition-colors h-8 gap-2.5 text-[13px] ${
+                      `sidebar-nav-item group flex items-center rounded-lg font-medium transition-colors h-8 gap-2.5 text-[13px] ${
                         collapsed ? "justify-center" : "px-2.5"
                       } ${
                         isHrmsTheme
@@ -274,6 +277,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
   return (
     <div ref={ref} className="relative">
       <button
+        aria-label="Account menu"
         onClick={() => setOpen((o) => !o)}
         aria-expanded={open}
         className={`flex w-full items-center gap-2.5 rounded-lg text-left transition-colors ${
@@ -283,7 +287,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
         <Avatar name={user.name} size="md" />
         {!collapsed && (
           <>
-            {/* The HRMS theme's sidebar is navy, so its text is light; classic is unchanged. */}
+            {/* Midnight's sidebar uses a dedicated foreground on its navy surface. */}
             <span className="min-w-0 flex-1 leading-tight">
               <span className={`block truncate text-[13px] font-medium ${isHrmsTheme ? "text-white" : "text-fg"}`}>{user.name}</span>
               <span className={`block truncate text-[11px] ${isHrmsTheme ? "text-[#B0BBD0]" : "text-fg-subtle"}`}>{ROLE_LABEL[user.role]}</span>
@@ -358,7 +362,7 @@ function TopBar({ onToggleSidebar, onSearch }: { onToggleSidebar: () => void; on
           <Search size={16} />
         </button>
         <button
-          onClick={() => changeColorTheme(colorTheme === "classic-teal" ? "midnight-blue" : "classic-teal")}
+          onClick={() => changeColorTheme(COLOR_THEMES[(COLOR_THEMES.findIndex((palette) => palette.id === colorTheme) + 1) % COLOR_THEMES.length].id)}
           className="btn-icon"
           aria-label="Switch Theme Palette"
           title={`Colour theme: ${colorThemeName(colorTheme)} (click to switch)`}

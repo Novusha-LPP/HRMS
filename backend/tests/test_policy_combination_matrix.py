@@ -122,6 +122,7 @@ def expected(events, scheduled_start, scheduled_end, hours, mode, grace, ot):
             late_by_minutes=late,
             early_departure_minutes=0,
             ot_minutes=0,
+            ot_status="NONE",
             status="LATE" if late else "PRESENT",
         )
     gross = int((pout - pin).total_seconds() // 60)
@@ -132,8 +133,17 @@ def expected(events, scheduled_start, scheduled_end, hours, mode, grace, ot):
         # Only time actually spent away is deducted; the policy break is never auto-deducted.
         brk = 0
     effective = max(0, gross - brk)
-    excess = effective - hours * 60
-    overtime = excess if ot and excess >= 40 else 0
+    # Overtime only after the full shift (start to end, break included). With an overtime
+    # policy its threshold applies and the minutes await approval; without one the plain
+    # extra time is recorded for visibility only (INFO).
+    shift = int((scheduled_end - scheduled_start).total_seconds() // 60)
+    excess = effective - shift
+    if ot:
+        overtime = excess if excess >= 40 else 0
+        ot_status = "PENDING" if overtime else "NONE"
+    else:
+        overtime = max(0, excess)
+        ot_status = "INFO" if overtime else "NONE"
     status = (
         "ABSENT"
         if effective == 0
@@ -152,6 +162,7 @@ def expected(events, scheduled_start, scheduled_end, hours, mode, grace, ot):
         late_by_minutes=late,
         early_departure_minutes=early,
         ot_minutes=overtime,
+        ot_status=ot_status,
         status=status,
     )
 
@@ -165,6 +176,7 @@ async def test_policy_arithmetic_matrix(monkeypatch, hours, mode, grace, ot, sce
 
     monkeypatch.setattr(service.approval_flow, "finish", AsyncMock())
     monkeypatch.setattr(service.approval_flow, "start", AsyncMock())
+    monkeypatch.setattr(service, "is_off_day", AsyncMock(return_value=False))
 
     day = date(2026, 9, 28)
     events, start, end = example(day, hours, mode, scenario)
@@ -189,7 +201,7 @@ async def test_policy_arithmetic_matrix(monkeypatch, hours, mode, grace, ot, sce
     )
     for field, value in oracle.items():
         assert getattr(result, field) == value, (hours, mode, grace, ot, scenario[0], field, value)
-    assert result.ot_status == ("PENDING" if oracle["ot_minutes"] else "NONE")
+    assert result.ot_status == oracle["ot_status"]
 
 
 @pytest.mark.database
@@ -445,7 +457,7 @@ async def test_policy_edge_workflows(api, monkeypatch):
     # Reviewed overtime becomes invalid when a correction changes its minutes.
     day += timedelta(days=1)
     await punch(day, "09:30", "IN")
-    await punch(day, "18:10", "OUT")
+    await punch(day, "19:10", "OUT")  # 40 min past the 09:30-18:30 shift
     async with engine.connect() as conn:
         stored = (
             (
@@ -671,6 +683,7 @@ async def test_multiple_visits_and_open_breaks(
 
     monkeypatch.setattr(service.approval_flow, "finish", AsyncMock())
     monkeypatch.setattr(service.approval_flow, "start", AsyncMock())
+    monkeypatch.setattr(service, "is_off_day", AsyncMock(return_value=False))
 
     day = date(2026, 9, 28)
     tz = ZoneInfo("Asia/Kolkata")

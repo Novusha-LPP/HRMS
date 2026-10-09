@@ -15,7 +15,7 @@ the caller's own employment and is checked against their scope if they ask
 for someone else's (a manager checking a direct report's history, say).
 """
 
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, date, datetime, timedelta
 from uuid import UUID, uuid4
 
@@ -34,21 +34,25 @@ from hrms.core.authz import (
 )
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import (
-    apply_punch_rounding,
     business_today,
-    calc_lateness,
     is_working_day,
     now_utc,
+    shift_lateness,
     to_tz,
 )
+from hrms.core.errors import CodedHTTPException
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
 from hrms.modules.approvals import service as approval_flow
 from hrms.modules.policy.engine import resolve_policy
+from hrms.modules.time.holidays import holiday_scope_sql
 from hrms.modules.time.models import (
+    LONG_DAY_MINUTES,
     AttendanceDay,
     AttendanceStatus,
     Holiday,
+    HolidayCalendar,
+    HolidayCalendarDay,
     OvertimeStatus,
     Punch,
     PunchSource,
@@ -68,6 +72,7 @@ from hrms.modules.time.schemas import (
 from hrms.modules.time.service import (
     carried_over_day,
     events_for_day,
+    is_live_punched_in,
     lock_day,
     recompute_day,
     stale_open_day,
@@ -141,6 +146,23 @@ async def create_punch(
     }
     if body.punch_type not in allowed.get(previous, set()):
         raise HTTPException(409, "Invalid punch sequence; use a correction for missing events")
+    opened = min((e.punched_at for e in events if e.punch_type == "IN"), default=None)
+    if (
+        body.punch_type == PunchType.OUT
+        and not body.confirm_long_day
+        and opened is not None
+        and punched_at - opened > timedelta(minutes=LONG_DAY_MINUTES)
+    ):
+        # Usually a check-in left open overnight. Recording it as worked time needs the
+        # employee to say so; the day then goes to HR to check before any overtime counts.
+        hours = int((punched_at - opened).total_seconds() // 3600)
+        raise CodedHTTPException(
+            409,
+            f"You checked in at {to_tz(opened, policy.timezone):%I:%M %p on %d %b} and haven't "
+            f"checked out since. Checking out now records a {hours}-hour day, which HR will "
+            "review. If you forgot to check out, ask HR to correct the time instead.",
+            code="LONG_DAY_CONFIRM",
+        )
     punch = Punch(
         tenant_id=tenant_id,
         id=uid,
@@ -191,17 +213,9 @@ async def today_status(
     policy = await resolve_policy(emp_uuid, now.date(), session, tenant_id)
     target_date = work_date if isinstance(work_date, date) else work_date_for(now, policy)
     policy = await resolve_policy(emp_uuid, target_date, session, tenant_id)
-    if not isinstance(work_date, date):
-        # After midnight, a session still open from the previous date is "today" until it
-        # ends, so the clock offers Check out rather than a new Check in.
-        previous_policy = await resolve_policy(
-            emp_uuid, target_date - timedelta(days=1), session, tenant_id
-        )
-        carried = await carried_over_day(
-            session, tenant_id, emp_uuid, target_date, policy, previous_policy, now
-        )
-        if carried is not None:
-            target_date, policy = carried, previous_policy
+    # Display only this work date. A forgotten check-out on a previous work date
+    # must not make the employee appear checked in today. Overnight shifts are
+    # already assigned their correct work date by work_date_for().
     ad_row = await session.execute(
         select(AttendanceDay)
         .where(AttendanceDay.tenant_id == tenant_id)
@@ -216,6 +230,8 @@ async def today_status(
     if punches:
         last = punches[-1]
         is_punched_in = last.punch_type in (PunchType.IN, PunchType.BREAK_END)
+    if not isinstance(work_date, date):
+        is_punched_in = is_live_punched_in(punches, now)
 
     return TodayStatusResponse(
         employment_id=to_typed_id("employment", emp_uuid),
@@ -291,8 +307,36 @@ async def list_holidays(
         q = q.where(Holiday.holiday_date >= date(year, 1, 1)).where(
             Holiday.holiday_date <= date(year, 12, 31)
         )
-    rows = await session.execute(q.order_by(col(Holiday.holiday_date)))
-    return [_holiday_response(h) for h in rows.scalars()]
+    rows = list((await session.execute(q.order_by(col(Holiday.holiday_date)))).scalars())
+    calendar_rows = await session.execute(
+        select(HolidayCalendar).where(
+            HolidayCalendar.tenant_id == tenant_id,
+            HolidayCalendar.archived_at == None,  # noqa: E711
+        )
+    )
+    calendars = {c.id: c.name for c in calendar_rows.scalars()}
+    # A holiday is one row however many calendars observe it: name every live calendar it is
+    # on. One that is only on archived calendars went with them and isn't listed.
+    on: dict = {}
+    on_any_calendar = set()
+    for d in (
+        await session.execute(
+            select(HolidayCalendarDay).where(HolidayCalendarDay.tenant_id == tenant_id)
+        )
+    ).scalars():
+        on_any_calendar.add(d.holiday_id)
+        if d.calendar_id in calendars:
+            on.setdefault(d.holiday_id, set()).add(calendars[d.calendar_id])
+    for h in rows:
+        if h.calendar_id:
+            on_any_calendar.add(h.id)
+            if h.calendar_id in calendars:
+                on.setdefault(h.id, set()).add(calendars[h.calendar_id])
+    return [
+        _holiday_response(h, ", ".join(sorted(on[h.id])) if h.id in on else None)
+        for h in rows
+        if h.id in on or h.id not in on_any_calendar
+    ]
 
 
 @router.post(
@@ -337,6 +381,15 @@ async def delete_holiday(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Holiday not found")
     h.archived_at = now_utc()
     session.add(h)
+    # Removing a holiday takes it off every calendar that observed it.
+    for d in (
+        await session.execute(
+            select(HolidayCalendarDay).where(
+                HolidayCalendarDay.tenant_id == tenant_id, HolidayCalendarDay.holiday_id == h.id
+            )
+        )
+    ).scalars():
+        await session.delete(d)
     await session.flush()
 
 
@@ -474,6 +527,56 @@ async def review_overtime(
     return _attendance_day_response(ad)
 
 
+# ─── Days flagged for review ──────────────────────────────────────────────────
+#
+# A day is flagged when a break was never ended or it ran over 16 hours. Its overtime and
+# comp-off are held until someone who approves corrections either corrects the punches (the
+# flag clears itself) or marks the day reviewed — accepting the time as worked.
+
+
+@router.post(
+    "/attendance-days/{attendance_day_id}/review",
+    response_model=AttendanceDayResponse,
+    summary="Accept a flagged attendance day as recorded",
+    dependencies=[require_permission("corrections.approve")],
+)
+async def review_attendance_day(
+    attendance_day_id: str,
+    principal: CurrentUser,
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> AttendanceDayResponse:
+    ad = (
+        (
+            await session.execute(
+                select(AttendanceDay)
+                .where(AttendanceDay.tenant_id == tenant_id)
+                .where(AttendanceDay.id == to_uuid(attendance_day_id))
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if not ad:
+        raise HTTPException(status.HTTP_404_NOT_FOUND, "Attendance day not found")
+    await authorize_employment(
+        session, tenant_id, scope.for_permission("corrections.approve"), ad.employment_id
+    )
+    if ad.employment_id == principal.employment_id:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "You can't review your own attendance")
+    ad = await lock_day(session, tenant_id, ad.employment_id, ad.work_date)
+    if not ad.review_flags:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This day has nothing to review")
+    if ad.reviewed_at is not None:
+        raise HTTPException(status.HTTP_400_BAD_REQUEST, "This day has already been reviewed")
+    ad.reviewed_by = principal.user_account_id
+    ad.reviewed_at = now_utc()
+    policy = await resolve_policy(ad.employment_id, ad.work_date, session, tenant_id)
+    ad = await recompute_day(session, tenant_id, ad.employment_id, ad.work_date, policy, ad)
+    return _attendance_day_response(ad)
+
+
 @dataclass(slots=True, kw_only=True)
 class _DailyRecord:
     employment_id: UUID
@@ -493,6 +596,10 @@ class _DailyRecord:
     early_departure_minutes: int = 0
     overtime_minutes: int = 0
     overtime_status: OvertimeStatus = OvertimeStatus.NONE
+    comp_off_days: float = 0
+    review_flags: list[str] = field(default_factory=list)
+    needs_review: bool = False
+    attendance_day_id: str | None = None
     leave_type: str | None = None
     punches_count: int = 0
     is_currently_in: bool = False
@@ -548,9 +655,10 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
 
     # 2. Query attendance_days for target_date
     ad_query = text("""
-        SELECT ad.employment_id, ad.status, ad.first_punch_in, ad.last_punch_out,
+        SELECT ad.id, ad.employment_id, ad.status, ad.first_punch_in, ad.last_punch_out,
                ad.gross_minutes, ad.break_minutes, ad.effective_minutes,
-               ad.late_by_minutes, ad.early_departure_minutes, ad.ot_minutes, ad.ot_status
+               ad.late_by_minutes, ad.early_departure_minutes, ad.ot_minutes, ad.ot_status,
+               ad.comp_off_days, ad.review_flags, ad.reviewed_at
         FROM attendance_days ad
         WHERE ad.tenant_id = CAST(:tid AS uuid)
           AND ad.work_date = CAST(:target_date AS date)
@@ -589,18 +697,20 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
     )
     leave_map = {str(r["employment_id"]): r["leave_type_name"] for r in leave_rows}
 
-    # 3b. Is target_date a tenant-wide holiday? (per-legal-entity holidays are
-    # excluded here since this query doesn't currently resolve each
-    # employee's legal entity — only the tenant-wide calendar applies.)
+    # Calendars follow dated employee assignments; legacy holidays keep company scope.
     holiday_row = await session.execute(
-        text("""
-            SELECT legal_entity_id FROM holidays
-            WHERE tenant_id = CAST(:tid AS uuid) AND holiday_date = CAST(:target_date AS date)
-              AND archived_at IS NULL AND is_optional = false
+        text(f"""
+            SELECT DISTINCT e.id FROM employments e JOIN holidays h
+              ON h.tenant_id = e.tenant_id
+            WHERE h.tenant_id = CAST(:tid AS uuid)
+              AND h.holiday_date = CAST(:target_date AS date)
+              AND h.archived_at IS NULL AND h.is_optional = false
+              AND e.id = ANY(CAST(:ids AS uuid[]))
+              AND {holiday_scope_sql(employee="e.id")}
         """),
-        {"tid": str(tenant_id), "target_date": target_date},
+        {"tid": str(tenant_id), "target_date": target_date, "ids": emp_ids},
     )
-    holiday_entities = {r[0] for r in holiday_row}
+    holiday_employees = {str(r[0]) for r in holiday_row}
 
     # 4. Query punches for target_date
     punch_query = text("""
@@ -660,7 +770,7 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
                 )
             )
         ]
-        is_holiday = None in holiday_entities or emp["legal_entity_id"] in holiday_entities
+        is_holiday = emp_id in holiday_employees
 
         is_currently_in = False
         if emp_punches:
@@ -686,16 +796,14 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
         # is authoritative — recomputing from the raw punch here ignored rounding and made
         # this screen disagree with every other report.
         if first_in and ad is None:
-            live_late = calc_lateness(
-                apply_punch_rounding(
-                    first_in,
-                    emp_policy.punch_rounding_minutes,
-                    emp_policy.punch_rounding_direction,
-                    emp_policy.timezone,
-                ),
+            live_late = shift_lateness(
+                first_in,
                 emp_policy.expected_start_time,
+                emp_policy.expected_end_time,
                 emp_policy.grace_late_minutes,
                 emp_policy.timezone,
+                emp_policy.punch_rounding_minutes,
+                emp_policy.punch_rounding_direction,
             )
             late_by = live_late.late_by_minutes
 
@@ -724,6 +832,7 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
         # apply_overtime() in time/models.py for how this got persisted.
         overtime = ad["ot_minutes"] if ad else 0
         overtime_status = ad["ot_status"] if ad else OvertimeStatus.NONE
+        review_flags = ad["review_flags"].split(",") if ad and ad["review_flags"] else []
 
         record = _DailyRecord(
             employment_id=emp["id"],
@@ -743,6 +852,10 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
             early_departure_minutes=early_dep,
             overtime_minutes=overtime,
             overtime_status=overtime_status,
+            comp_off_days=ad["comp_off_days"] if ad else 0,
+            review_flags=review_flags,
+            needs_review=bool(review_flags) and ad is not None and ad["reviewed_at"] is None,
+            attendance_day_id=to_typed_id("attendance_day", ad["id"]) if ad else None,
             leave_type=leave_type,
             punches_count=len(emp_punches),
             is_currently_in=is_currently_in,
@@ -815,7 +928,7 @@ async def daily_analysis_export(
     )
 
 
-def _holiday_response(h: Holiday) -> HolidayResponse:
+def _holiday_response(h: Holiday, calendar_name: str | None = None) -> HolidayResponse:
     return HolidayResponse(
         id=to_typed_id("holiday", h.id),
         holiday_date=h.holiday_date,
@@ -824,6 +937,9 @@ def _holiday_response(h: Holiday) -> HolidayResponse:
         if h.legal_entity_id
         else None,
         is_optional=h.is_optional,
+        calendar_id=to_typed_id("holiday_calendar", h.calendar_id) if h.calendar_id else None,
+        calendar_name=calendar_name,
+        holiday_type=h.holiday_type,
     )
 
 
@@ -844,6 +960,11 @@ def _attendance_day_response(r: AttendanceDay) -> AttendanceDayResponse:
         ot_reviewed_by=to_typed_id("employment", r.ot_reviewed_by) if r.ot_reviewed_by else None,
         ot_reviewed_at=r.ot_reviewed_at,
         ot_review_notes=r.ot_review_notes,
+        comp_off_days=r.comp_off_days,
+        review_flags=r.review_flags.split(",") if r.review_flags else [],
+        needs_review=bool(r.review_flags) and r.reviewed_at is None,
+        reviewed_by=to_typed_id("user", r.reviewed_by) if r.reviewed_by else None,
+        reviewed_at=r.reviewed_at,
     )
 
 

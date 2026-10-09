@@ -1,6 +1,6 @@
 import {
   LayoutGrid, NavigationUsers as Users, Clock, NavigationLeave as Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck, BookOpen,
-  Briefcase,
+  Briefcase, CalendarCheck, UserCircle as UserRound,
 } from "../icons/ThemeIcons";
 import type { LucideIcon } from "lucide-react";
 import type { UserRole } from "../../context/AuthContext";
@@ -39,7 +39,9 @@ export const NAV_SECTIONS: NavSection[] = [
     label: "Workforce",
     items: [
       { to: "/employees", label: "Employees", icon: Users, roles: [...HR_ROLES, "MANAGER"] },
+      { to: "/team", label: "My team", icon: UserRound, roles: ["MANAGER"] },
       { to: "/attendance", label: "Attendance", icon: Clock },
+      { to: "/attendance/register", label: "Attendance register", icon: CalendarCheck, roles: [...HR_ROLES, "MANAGER"] },
       { to: "/leave", label: "Leave", icon: Umbrella },
       { to: "/corrections", label: "Corrections", icon: FilePenLine },
       { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
@@ -87,10 +89,19 @@ export function navFor(user: NavUser): NavSection[] {
     .filter((s) => s.items.length > 0);
 }
 
+/** The most specific nav entry for a path ("/attendance/register" over "/attendance"). */
 export function findNav(pathname: string) {
+  let best: { section: string; item: NavItem } | null = null;
   for (const s of NAV_SECTIONS) {
-    const item = s.items.find((i) => !i.external && pathname.startsWith(i.to));
-    if (item) return { section: s.label, item };
+    for (const item of s.items) {
+      const matches = !item.external && pathname.startsWith(item.to);
+      if (matches && (!best || item.to.length > best.item.to.length)) best = { section: s.label, item };
+    }
   }
-  return null;
+  return best;
+}
+
+/** Whether another nav entry sits under this one, so this one must match its path exactly. */
+export function hasNestedNav(to: string) {
+  return NAV_SECTIONS.some((s) => s.items.some((i) => i.to !== to && i.to.startsWith(`${to}/`)));
 }

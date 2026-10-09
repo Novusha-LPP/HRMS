@@ -1,0 +1,53 @@
+{
+  "mode": "APPLIED",
+  "tenant": "suraj-group",
+  "attendance_names_corrected": 5,
+  "missing_weekoff_assignments_added": 64,
+  "leave_minimum_labels_corrected": 2,
+  "weekoff_assignments_verified": 189,
+  "attendance_assignment_counts": {
+    "Novusha Week Off": 17,
+    "Sunday Week Off (Fallback)": 60,
+    "Head Office Week Off": 93,
+    "Operations Week Off": 19
+  },
+  "calendar_rule_checks": 1825,
+  "exact_leave_definitions_verified": 18,
+  "leave_assignments_verified": 189,
+  "employees_with_privilege_leave": 107,
+  "existing_attendance_and_leave_balances_unchanged": true,
+  "other_tenants_unchanged": true,
+  "limitations": [
+    "Legacy shift, grace and overtime configuration export unavailable",
+    "Staff leave balance export unavailable",
+    "Legacy named approver routes have not been migrated",
+    "Old leave calculator applies sandwich counting even when the exported flag is false; HRMS follows the exported false flag"
+  ],
+  "attendance_name_changes": [
+    {
+      "id": "0c42c1c6-34e8-5a58-b49f-fca06c43d4ee",
+      "before": "Operation Weekoff",
+      "after": "Operations Week Off"
+    },
+    {
+      "id": "ec645f30-a17d-5c11-a4bd-cc233f17634e",
+      "before": "HO Weekoff",
+      "after": "Head Office Week Off"
+    },
+    {
+      "id": "bcb67a23-bcde-5c70-8b66-e87488ef82a2",
+      "before": "NOVUSHA WEEKOFF POLICY",
+      "after": "Novusha Week Off"
+    },
+    {
+      "id": "a70a8902-c0d1-5705-a7c1-a4d88686fe1d",
+      "before": "General Week Off",
+      "after": "General Week Off (RABS)"
+    },
+    {
+      "id": "ada9cbda-50a1-5c84-a091-7eb375330a16",
+      "before": "Legacy Sunday fallback",
+      "after": "Sunday Week Off (Fallback)"
+    }
+  ]
+}

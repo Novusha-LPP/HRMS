@@ -18,9 +18,9 @@ export function StatCard({ label, value, icon: Icon, iconTone = "blue", delta, d
 }) {
   const good = delta !== undefined && (invertDelta ? delta <= 0 : delta >= 0);
   return (
-    <div className="card flex flex-col p-5">
+    <div className="stat-card card flex flex-col p-5">
       <div className="flex items-center justify-between gap-3">
-        <span className="text-[13px] font-medium text-fg-muted">{label}</span>
+        <span className="stat-label text-[13px] font-medium text-fg-muted">{label}</span>
         <span data-icon-tone={iconTone} className="stat-icon grid h-8 w-8 place-items-center rounded-lg border border-line bg-panel text-fg-subtle">
           <Icon size={15} />
         </span>
@@ -30,7 +30,7 @@ export function StatCard({ label, value, icon: Icon, iconTone = "blue", delta, d
           {loading ? (
             <Skeleton className="h-8 w-20" />
           ) : (
-            <div className="text-[28px] font-semibold leading-none tracking-tight tabular-nums text-fg">{value}</div>
+            <div className="stat-value text-[28px] font-semibold leading-none tracking-tight tabular-nums text-fg">{value}</div>
           )}
           <div className="mt-2.5 flex flex-wrap items-center gap-x-1.5 gap-y-1 text-xs text-fg-subtle">
             {delta !== undefined && (

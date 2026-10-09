@@ -9,7 +9,9 @@ Authoritative system design and architecture specifications for the HRMS Platfor
 | Document | Description |
 |---|---|
 | [System Design Specification](system-design/README.md) | **Primary System Design Document**: Component & container architecture, multi-tenant dual planes (Platform vs Tenant), dual-role PostgreSQL RLS security, 13 domain modules breakdown, and Alembic schema evolution (0001–0019). |
+| [API documentation](API.md) | Swagger UI (`/docs`), ReDoc (`/redoc`) and the OpenAPI schema: how the frontend team and third-party integrators use them, how to export the spec, and how to keep it accurate. |
 | [Technology Stack Reference](TECH_STACK.md) | Concrete inventory of frameworks, runtimes, ORMs, libraries, and dev tools across backend, frontend, database, and DevOps. |
+| [Enterprise completion plan](enterprise-plan/README.md) | **Build programme** from today's code to the full requirements v2.0, with every rule configurable from the UI: platform foundations, module plans, industry coverage, roadmap, and the critique with decisions needed. |
 
 ---
 

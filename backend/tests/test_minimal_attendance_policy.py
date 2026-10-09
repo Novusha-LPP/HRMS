@@ -69,6 +69,7 @@ async def test_minimal_policy_recomputed_attendance(
     if check_out:
         events.append(SimpleNamespace(punch_type="OUT", punched_at=stamp(check_out)))
     monkeypatch.setattr(service, "events_for_day", AsyncMock(return_value=events))
+    monkeypatch.setattr(service, "is_off_day", AsyncMock(return_value=False))
     # Judged on the work day: an open session becomes a missed punch only 24 hours later.
     monkeypatch.setattr(service, "now_utc", lambda: stamp("20:00"))
     session = SimpleNamespace(add=Mock(), flush=AsyncMock())
@@ -85,7 +86,10 @@ async def test_minimal_policy_recomputed_attendance(
     assert result.late_by_minutes == late
     assert result.early_departure_minutes == early
     assert result.status == status
-    assert result.ot_minutes == 0 and result.ot_status == "NONE"
+    # Overtime is off in this policy: time past the 09:00-17:00 shift is shown only (INFO).
+    extra = max(0, worked - 480) if check_out else 0
+    assert result.ot_minutes == extra
+    assert result.ot_status == ("INFO" if extra else "NONE")
     assert result.first_punch_in == stamp(check_in)
     assert result.last_punch_out == (stamp(check_out) if check_out else None)
 
@@ -128,6 +132,7 @@ async def test_minimal_overnight_schedule(monkeypatch):
         SimpleNamespace(punch_type="OUT", punched_at=stamp("06:00", date(2026, 9, 29))),
     ]
     monkeypatch.setattr(service, "events_for_day", AsyncMock(return_value=events))
+    monkeypatch.setattr(service, "is_off_day", AsyncMock(return_value=False))
     session = SimpleNamespace(add=Mock(), flush=AsyncMock())
     tenant, employment = uuid4(), uuid4()
     ad = AttendanceDay(

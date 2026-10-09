@@ -16,7 +16,7 @@ import {
   CalendarCheck2,
   PenLine,
 } from "lucide-react";
-import type { LeaveType, Holiday } from "../api/leave";
+import type { LeaveType } from "../api/leave";
 import { leaveApi } from "../api/leave";
 import { peopleApi } from "../api/people";
 import { useAuth } from "../context/AuthContext";
@@ -26,6 +26,7 @@ import { Skeleton, Notice } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { usePeopleDirectory } from "../lib/usePeopleDirectory";
 import { LeavePolicySetsTab } from "../components/leave/LeavePolicySetsTab";
+import { HolidayCalendars } from "../components/policy/HolidayCalendars";
 
 export type LeavePolicySection = "policy-sets" | "types" | "holidays" | "operations";
 
@@ -76,9 +77,7 @@ export function LeavePoliciesView({
     setParams(nextParams, { replace: true });
   };
 
-  const year = new Date().getFullYear();
   const types = useQuery<LeaveType[]>({ queryKey: ["leave-types"], queryFn: () => leaveApi.listTypes() });
-  const holidays = useQuery<Holiday[]>({ queryKey: ["holidays", year], queryFn: () => leaveApi.listHolidays(year) });
   const employees = useQuery({ queryKey: ["employees-picker"], queryFn: () => peopleApi.listAllEmployees() });
   const directory = usePeopleDirectory(true);
   const employeeOptions = (employees.data ?? []).map((e) => ({
@@ -137,9 +136,7 @@ export function LeavePoliciesView({
         {section === "types" && (
           <LeaveTypesCard types={types.data ?? []} loading={types.isPending} />
         )}
-        {section === "holidays" && (
-          <HolidaysCard holidays={holidays.data ?? []} loading={holidays.isPending} year={year} />
-        )}
+        {section === "holidays" && <HolidayCalendars />}
         {section === "operations" && (
           <div className="grid gap-5 lg:grid-cols-2">
             <CompOffCard employees={employeeOptions} />
@@ -420,104 +417,6 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
           </div>
         )}
       </div>
-    </div>
-  );
-}
-
-function HolidaysCard({ holidays, loading, year }: { holidays: Holiday[]; loading: boolean; year: number }) {
-  const qc = useQueryClient();
-  const toast = useToast();
-  const [date, setDate] = useState("");
-  const [name, setName] = useState("");
-  const [optional, setOptional] = useState(false);
-
-  const invalidate = () => qc.invalidateQueries({ queryKey: ["holidays", year] });
-  const create = useMutation({
-    mutationFn: () => leaveApi.createHoliday({ holiday_date: date, name: name.trim(), is_optional: optional }),
-    onSuccess: () => {
-      invalidate();
-      setDate("");
-      setName("");
-      setOptional(false);
-      toast.success("Holiday added");
-    },
-    onError: (e) => toast.error("Couldn’t add holiday", errorMessage(e)),
-  });
-  const remove = useMutation({
-    mutationFn: (id: string) => leaveApi.deleteHoliday(id),
-    onSuccess: () => {
-      invalidate();
-      toast.success("Holiday removed");
-    },
-    onError: (e) => toast.error("Couldn’t remove holiday", errorMessage(e)),
-  });
-
-  return (
-    <div className="card p-5">
-      <h3 className="card-title mb-1 flex items-center gap-2">
-        <CalendarDays size={15} /> Holiday calendar · {year}
-      </h3>
-      <p className="mb-4 text-xs text-fg-subtle">
-        Excluded from working-day counts on leave requests and shown as Holiday in Daily Analysis.
-      </p>
-      {loading ? (
-        <div className="space-y-2">{[0, 1].map((i) => <Skeleton key={i} className="h-9" />)}</div>
-      ) : holidays.length === 0 ? (
-        <p className="mb-4 text-xs text-fg-subtle">No holidays added for {year} yet.</p>
-      ) : (
-        <ul className="mb-4 divide-y divide-line">
-          {holidays.map((h) => (
-            <li key={h.id} className="flex items-center justify-between gap-3 py-2 text-[13px]">
-              <span className="text-fg-subtle tabular-nums">{format(new Date(h.holiday_date), "d MMM yyyy")}</span>
-              <span className="flex-1 truncate text-fg">
-                {h.name}
-                {h.is_optional && <span className="ml-1.5 text-xs text-fg-subtle">(optional)</span>}
-              </span>
-              <button
-                className="text-fg-subtle transition-colors hover:text-danger"
-                onClick={() => remove.mutate(h.id)}
-                aria-label={`Remove ${h.name}`}
-              >
-                <Trash2 size={14} />
-              </button>
-            </li>
-          ))}
-        </ul>
-      )}
-      <form
-        className="flex flex-wrap items-end gap-2"
-        onSubmit={(e) => {
-          e.preventDefault();
-          if (date && name.trim()) create.mutate();
-        }}
-      >
-        <div>
-          <label className="label" htmlFor="hol-date">Date</label>
-          <input id="hol-date" type="date" className="input" value={date} onChange={(e) => setDate(e.target.value)} />
-        </div>
-        <div className="min-w-0 flex-1">
-          <label className="label" htmlFor="hol-name">Name</label>
-          <input
-            id="hol-name"
-            className="input"
-            placeholder="e.g. Independence Day"
-            value={name}
-            onChange={(e) => setName(e.target.value)}
-          />
-        </div>
-        <label className="mb-2 flex items-center gap-1.5 text-xs text-fg-subtle">
-          <input
-            type="checkbox"
-            className="checkbox"
-            checked={optional}
-            onChange={(e) => setOptional(e.target.checked)}
-          />{" "}
-          Optional
-        </label>
-        <button className="btn-secondary btn-sm" type="submit" disabled={!date || !name.trim() || create.isPending}>
-          <Plus size={14} /> Add
-        </button>
-      </form>
     </div>
   );
 }

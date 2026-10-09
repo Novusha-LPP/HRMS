@@ -37,10 +37,16 @@ For a 09:30–18:30 shift with a 60-minute break and overtime from 40 extra minu
 
 | Punches | Total | Deducted | Worked | Overtime |
 |---|---:|---:|---:|---:|
-| IN 09:30, OUT 18:30 | 540 min | 0 | 540 min | 60 min, PENDING |
+| IN 09:30, OUT 18:30 | 540 min | 0 | 540 min | 0 — the whole shift, not overtime |
 | IN 09:30, OUT 13:30, IN 14:30, OUT 18:30 | 540 min | 60 min | 480 min | 0 |
-| IN 09:30, BREAK 13:00–13:30, OUT 18:30 | 540 min | 30 min | 510 min | 0: excess 30 is below threshold 40 |
+| IN 09:30, OUT 19:10 | 580 min | 0 | 580 min | 40 min, PENDING |
 | IN 09:30, OUT 12:00, IN 12:30, OUT 14:00 | 270 min | 30 min | 240 min | 0 (early departure) |
+
+**Overtime (rule since 2026-10-05).** Overtime is worked time beyond the full shift (start to end;
+09:30–18:30 is 540 minutes). With overtime enabled in the policy, its threshold and daily cap apply
+and the minutes go to approval (PENDING → APPROVED/REJECTED) for payroll. With overtime disabled the
+plain extra time is still recorded, as ot_status **INFO**: visible in Daily Analysis and the
+attendance history, never sent for approval and never payable.
 
 Present / late / half day / early departure and overtime are derived from worked time, lateness from
 the first check-in and early departure from the last check-out.

@@ -238,6 +238,8 @@ def is_working_day(d: date, work_days: str, saturday_pattern: str = "ALL") -> bo
         return False
     if d.weekday() == 5 and saturday_pattern != "ALL":
         week_of_month = (d.day - 1) // 7 + 1
+        if saturday_pattern == "SECOND_OFF":
+            return week_of_month != 2
         if saturday_pattern == "SECOND_FOURTH_OFF":
             return week_of_month not in (2, 4)
         if saturday_pattern == "FIRST_THIRD_OFF":
@@ -268,6 +270,37 @@ def working_days_between(
             days += 1
         current += timedelta(days=1)
     return float(days)
+
+
+def shift_lateness(
+    punch_in: datetime,
+    expected_start: time,
+    expected_end: time,
+    grace_minutes: int,
+    tz_name: str,
+    rounding_minutes: int = 0,
+    rounding_direction: str = "NONE",
+) -> LatenessResult:
+    """
+    Lateness of a first check-in against the shift it belongs to — the one place this is
+    worked out, whether or not the employee has checked out yet. The check-in is rounded as
+    the policy rounds; a night shift (end before start) is judged against the shift that
+    began the previous evening when the check-in is after midnight.
+    """
+    pi = apply_punch_rounding(punch_in, rounding_minutes, rounding_direction, tz_name)
+    if expected_end > expected_start:
+        return calc_lateness(pi, expected_start, grace_minutes, tz_name)
+    local_in = to_tz(pi, tz_name)
+    boundary = (
+        (expected_start.hour * 60 + expected_start.minute)
+        + (expected_end.hour * 60 + expected_end.minute)
+    ) // 2
+    anchor = local_in.date() - timedelta(days=int(local_in.hour * 60 + local_in.minute < boundary))
+    scheduled_start = localize_date(anchor, tz_name).replace(
+        hour=expected_start.hour, minute=expected_start.minute
+    )
+    late = max(0, int((local_in - scheduled_start).total_seconds() / 60) - grace_minutes)
+    return LatenessResult(late > 0, late)
 
 
 def compute_day(
@@ -302,7 +335,15 @@ def compute_day(
 
     standard = compute_standard_minutes(expected_start, expected_end, break_minutes)
 
-    late_res = calc_lateness(pi, expected_start, grace_late_minutes, tz_name)
+    late_res = shift_lateness(
+        punch_in,
+        expected_start,
+        expected_end,
+        grace_late_minutes,
+        tz_name,
+        punch_rounding_minutes,
+        punch_rounding_direction,
+    )
     early_res = calc_early_departure(po, expected_end, grace_early_departure_minutes, tz_name)
     if expected_end > expected_start and to_tz(po, tz_name).date() != to_tz(pi, tz_name).date():
         # A day shift worked past midnight: the schedule ends on the work date (the date of
@@ -325,21 +366,14 @@ def compute_day(
         anchor = local_in.date() - timedelta(
             days=int(local_in.hour * 60 + local_in.minute < boundary)
         )
-        scheduled_start = localize_date(anchor, tz_name).replace(
-            hour=expected_start.hour, minute=expected_start.minute
-        )
         scheduled_end = localize_date(anchor + timedelta(days=1), tz_name).replace(
             hour=expected_end.hour, minute=expected_end.minute
-        )
-        late = max(
-            0, int((to_tz(pi, tz_name) - scheduled_start).total_seconds() / 60) - grace_late_minutes
         )
         early = max(
             0,
             int((scheduled_end - to_tz(po, tz_name)).total_seconds() / 60)
             - grace_early_departure_minutes,
         )
-        late_res = LatenessResult(late > 0, late)
         early_res = EarlyDepartureResult(early > 0, early)
     ot_res = calc_overtime(
         effective, standard, ot_enabled, ot_qualifying_minutes, ot_daily_cap_minutes

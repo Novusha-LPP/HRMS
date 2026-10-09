@@ -13,6 +13,24 @@ export default defineConfig({
     __APP_VERSION__: JSON.stringify(version),
     __GIT_SHA__: JSON.stringify((process.env.GIT_SHA ?? 'dev').slice(0, 7)),
   },
+  resolve: {
+    dedupe: ['react', 'react-dom'],
+  },
+  optimizeDeps: {
+    include: [
+      'react',
+      'react-dom',
+      'react-dom/client',
+      'react-router-dom',
+      '@tanstack/react-query',
+      'date-fns',
+      'lucide-react',
+      '@dnd-kit/core',
+      '@dnd-kit/sortable',
+      '@dnd-kit/utilities',
+      '@sentry/react',
+    ],
+  },
   server: {
     allowedHosts: ['testinghrms.alvision.in'],
     cors: true,

@@ -229,6 +229,90 @@ async def test_employee_and_manager_dashboards_work_for_ordinary_users(api):
     assert (await client.get("/v1/dashboard/hr", headers=token)).status_code == 403
 
 
+async def _login(client, email, password):
+    response = await ok(
+        client, "POST", "/v1/auth/login", json={"identifier": email, "password": password}
+    )
+    return bearer(response["access_token"])
+
+
+async def test_employee_dashboard_lists_upcoming_holidays(api):
+    client, _ = api
+    admin = await tenant(client)
+    le = admin["user"]["legal_entities"][0]["id"]
+    placement = await org_basics(client, le)
+    emp = await person_and_employment(client, le)
+    await hire(client, emp["id"], placement)
+    soon, past = TODAY + timedelta(days=10), TODAY - timedelta(days=3)
+    for day, name, optional in (
+        (soon, "Founders Day", False),
+        (soon + timedelta(days=1), "Floating day", True),
+        (past, "Yesterday's holiday", False),
+    ):
+        body = {"holiday_date": str(day), "name": name, "is_optional": optional}
+        await ok(client, "POST", "/v1/time/holidays", json=body)
+    email, pw, _ = await make_user(client, emp["id"])
+    me = await ok(client, "GET", "/v1/dashboard/employee", headers=await _login(client, email, pw))
+    assert me["upcoming_holidays"] == [
+        {"date": soon.isoformat(), "name": "Founders Day", "is_optional": False, "days_away": 10},
+        {
+            "date": (soon + timedelta(days=1)).isoformat(),
+            "name": "Floating day",
+            "is_optional": True,
+            "days_away": 11,
+        },
+    ]
+
+
+async def test_team_overview_shows_only_the_callers_readable_line_reports(api):
+    client, engine = api
+    admin = await tenant(client)
+    le = admin["user"]["legal_entities"][0]["id"]
+    placement = await org_basics(client, le)
+    boss = await person_and_employment(client, le, "BOSS")
+    await hire(client, boss["id"], placement)
+    report = await person_and_employment(client, le, "R1")
+    await hire(client, report["id"], {**placement, "manager_employment_id": boss["id"]})
+    outsider = await person_and_employment(client, le, "O1")
+    await hire(client, outsider["id"], placement)
+
+    r_email, r_pw, _ = await make_user(client, report["id"])
+    report_token = await _login(client, r_email, r_pw)
+    await ok(client, "POST", "/v1/time/punches", headers=report_token, json={"punch_type": "IN"})
+
+    b_email, b_pw, _ = await make_user(
+        client, boss["id"], role="MANAGER", scope_type="DIRECT_REPORTS"
+    )
+    boss_token = await _login(client, b_email, b_pw)
+    team = await ok(client, "GET", "/v1/dashboard/team", headers=boss_token)
+    assert [m["employee_number"] for m in team["members"]] == ["R1"]
+    member = team["members"][0]
+    assert member["designation"] == "Executive" and member["department"] == "Ops"
+    assert member["today"]["is_checked_in"] is True and member["today"]["first_punch_in"]
+    assert member["month"]["present"] == 1
+    assert team["upcoming_leave"] == []
+
+    # A plain employee has no reports; an admin login has no employment at all.
+    assert (await ok(client, "GET", "/v1/dashboard/team", headers=report_token))["members"] == []
+    assert (await client.get("/v1/dashboard/team")).status_code == 400
+
+    # Named someone's line manager but without people.read: nothing beyond themselves.
+    o_email, o_pw, _ = await make_user(client, outsider["id"])
+    await _sql(
+        engine,
+        """INSERT INTO assignment_managers
+               (tenant_id, id, assignment_id, manager_employment_id, manager_type, effective_from)
+           SELECT a.tenant_id, gen_random_uuid(), a.id, :mgr, 'LINE', DATE '2020-01-01'
+           FROM assignments a WHERE a.employment_id = :emp""",
+        mgr=to_uuid(outsider["id"]),
+        emp=to_uuid(report["id"]),
+    )
+    seen = await ok(
+        client, "GET", "/v1/dashboard/team", headers=await _login(client, o_email, o_pw)
+    )
+    assert seen["members"] == []
+
+
 # ─── daily analysis ──────────────────────────────────────────────────────────
 
 
@@ -335,8 +419,8 @@ async def test_hr_dashboard_query_budget_stays_below_alert_threshold(api):
             "/v1/dashboard/hr?sections=headcount,org_summary,entity_distribution,department_distribution",
         )
         overview_queries = seen[-1].count
-        assert (
-            overview_queries <= 10
-        ), f"Expected <= 10 queries for org overview sections, got {overview_queries}"
+        assert overview_queries <= 10, (
+            f"Expected <= 10 queries for org overview sections, got {overview_queries}"
+        )
     finally:
         perf.REQUEST_OBSERVER = None

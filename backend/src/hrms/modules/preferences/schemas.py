@@ -2,8 +2,8 @@ from typing import Literal
 
 from pydantic import BaseModel
 
-# "classic-teal" is the original theme; "midnight-blue" the blue/navy one.
-ColorTheme = Literal["classic-teal", "midnight-blue"]
+# Colour palette ids shared with the frontend theme registry.
+ColorTheme = Literal["classic-teal", "midnight-blue", "ember-sand"]
 # "widgets": the customisable widget grid; "overview": the fixed HRMS overview layout.
 DashboardStyle = Literal["widgets", "overview"]
 

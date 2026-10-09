@@ -389,8 +389,8 @@ async def test_overtime_requires_each_stage_and_restarts_after_changed_minutes(a
         ),
     )
     day = date(2026, 9, 28)
-    # Nothing is auto-deducted: 09:30-18:10 is 520 worked, 40 over the 8-hour standard.
-    for kind, h, m in [("IN", 9, 30), ("OUT", 18, 10)]:
+    # Overtime starts after the 09:30-18:30 shift: 19:10 is 40 minutes over.
+    for kind, h, m in [("IN", 9, 30), ("OUT", 19, 10)]:
         stamp = datetime(2026, 9, 28, h, m, tzinfo=ZoneInfo("Asia/Kolkata")).astimezone(UTC)
         monkeypatch.setattr(clock, "now_utc", lambda stamp=stamp: stamp)
         await ok(
@@ -416,7 +416,7 @@ async def test_overtime_requires_each_stage_and_restarts_after_changed_minutes(a
         json=dict(
             work_date=str(day),
             correction_type="PUNCH_OUT",
-            requested_punch_out=f"{day}T18:20:00+05:30",
+            requested_punch_out=f"{day}T19:20:00+05:30",
             reason="OT changed",
         ),
     )
@@ -431,7 +431,7 @@ async def test_overtime_requires_each_stage_and_restarts_after_changed_minutes(a
     for actor in actors[:4]:
         result = await decide(client, newer, actor)
         assert result.status_code == 200, result.text
-    for end, expected in [("17:30", 0), ("18:20", 50)]:
+    for end, expected in [("18:30", 0), ("19:20", 50)]:
         await ok(
             client,
             "POST",

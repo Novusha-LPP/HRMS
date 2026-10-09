@@ -1,4 +1,4 @@
-/** Reference-inspired Midnight Blue artwork. Classic Teal always renders the original Lucide glyph. */
+/** Each palette owns its treatment; Classic Teal keeps the original Lucide glyph. */
 import { forwardRef } from "react";
 import type { LucideIcon, LucideProps, IconNode } from "lucide-react";
 import { createLucideIcon } from "lucide-react";
@@ -93,6 +93,9 @@ function themed(name: string, Classic: LucideIcon, nodes: IconNode): LucideIcon 
   const Midnight = createLucideIcon(`Midnight${name}`, nodes.map(([tag, attrs], index) => [tag, { ...attrs, key: String(index) }]));
   const themedIcon = forwardRef<SVGSVGElement, LucideProps>((props, ref) => {
     const { colorTheme } = useTheme();
+    if (colorTheme === "ember-sand") {
+      return <Classic ref={ref} {...props} strokeWidth={1.75} data-icon-set="ember-sand" data-icon-name={name} />;
+    }
     return colorTheme === "midnight-blue"
       ? <Midnight ref={ref} strokeWidth={1.7} {...props} data-icon-set="midnight-blue" data-icon-name={name} />
       : <Classic ref={ref} {...props} />;
@@ -101,7 +104,7 @@ function themed(name: string, Classic: LucideIcon, nodes: IconNode): LucideIcon 
   return themedIcon;
 }
 
-export const Users = themed("Users", ClassicUsers, [circle(12, 6, 4, solid), path("M2.5 22v-4c0-4 4.3-6 9.5-6s9.5 2 9.5 6v4Z", solid), circle(12,16,1.1,{fill:"white",stroke:"none"})]);
+export const Users = themed("Users", ClassicUsers, [circle(12, 6, 4, solid), path("M2.5 22v-4c0-4 4.3-6 9.5-6s9.5 2 9.5 6v4Z", solid)]);
 export const UserPlus = themed("UserPlus", ClassicUserPlus, [circle(8, 6, 4, solid), path("M0 22v-4c0-3.7 3.5-5.5 8-5.5s8 1.8 8 5.5v4Z", solid), path("M20 8v8m-4-4h8",{strokeWidth:2})]);
 export const UserMinus = themed("UserMinus", ClassicUserMinus, [circle(8, 6, 3.4, solid), path("M1.5 21v-3.3c0-3.3 2.9-5.2 6.5-5.2s6.5 1.9 6.5 5.2V21Z", solid), path("M16 11h7")]);
 export const UserCheck = themed("UserCheck", ClassicUserCheck, [circle(12, 6, 3.5, solid), circle(4, 8, 2.8, solid), circle(20, 8, 2.8, solid), path("M5.5 22v-5c0-3.3 2.7-5.1 6.5-5.1s6.5 1.8 6.5 5.1v5ZM0 20v-4c0-2.6 1.8-4.3 4-4.3h1.8C4 13.1 3.5 15 3.5 17v3Zm24 0v-4c0-2.6-1.8-4.3-4-4.3h-1.8c1.8 1.4 2.3 3.3 2.3 5.3v3Z", solid)]);

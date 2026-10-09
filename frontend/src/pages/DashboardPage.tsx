@@ -1,18 +1,22 @@
 import { Link } from "react-router-dom";
 import { useQuery } from "@tanstack/react-query";
 import {
-  Users, UserCheck, CalendarCheck, CalendarX2, Umbrella,
-  CheckCheck, BarChart3, FilePenLine, Timer, LayoutGrid, LayoutDashboard,
+  Users, UserCheck, CalendarX2, Umbrella,
+  CheckCheck, BarChart3, FilePenLine, LayoutGrid, LayoutDashboard,
 } from "../components/icons/ThemeIcons";
 import { dashboardApi } from "../api/dashboard";
-import { leaveApi } from "../api/leave";
-import type { LeaveBalance } from "../api/leave";
 import { useAuth } from "../context/AuthContext";
 import { PendingApprovalsQueue } from "../components/dashboard/PendingApprovalsQueue";
 import type { PendingRequestItem } from "../components/dashboard/PendingApprovalsQueue";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatCard } from "../components/ui/StatCard";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
+import { Avatar } from "../components/ui/Avatar";
+import { StatusBadge } from "../components/ui/StatusBadge";
+import {
+  KycTodo, LeaveBalanceCard, MonthStats, MyRequestsCard, UpcomingHolidaysCard, WeekStrip,
+} from "../components/dashboard/EmployeeHome";
+import { memberState } from "../components/team/teamStatus";
 import { PunchClock } from "../components/attendance/PunchClock";
 import { OnboardingChecklist } from "../components/onboarding/OnboardingChecklist";
 
@@ -65,7 +69,68 @@ function DashboardStyleSwitch({ style }: { style: DashboardStyle }) {
   );
 }
 
+/* ─────────────────────────── Your own cards ─────────────────────────── */
+function useEmployeeDashboard(employmentId: string) {
+  return useQuery({
+    queryKey: ["dash-emp", employmentId],
+    queryFn: () => dashboardApi.employee(employmentId),
+  });
+}
+
+/** The personal half of the home page, shared by employees and managers. */
+function PersonalSections({ employmentId }: { employmentId: string }) {
+  const { data, isPending } = useEmployeeDashboard(employmentId);
+  return (
+    <>
+      <div className="grid gap-4 lg:grid-cols-3">
+        <LeaveBalanceCard employmentId={employmentId} />
+        <MyRequestsCard employmentId={employmentId} />
+        <UpcomingHolidaysCard holidays={data?.upcoming_holidays} loading={isPending} />
+      </div>
+      <OnboardingChecklist employmentId={employmentId} hideWhenEmpty />
+    </>
+  );
+}
+
 /* ─────────────────────────── Manager ─────────────────────────── */
+function TeamTodayCard() {
+  const { data, isPending } = useQuery({ queryKey: ["dash-team"], queryFn: () => dashboardApi.team(), refetchInterval: 60_000 });
+  const rows = (data?.members ?? []).map((m) => ({ m, s: memberState(m) }));
+  return (
+    <div className="card">
+      <div className="card-header">
+        <div>
+          <h3 className="card-title">Team today</h3>
+          <p className="card-desc">Who’s in, who’s late and who’s away</p>
+        </div>
+        <Link to="/team" className="link text-xs">Open my team</Link>
+      </div>
+      {isPending ? (
+        <div className="space-y-3 px-5 pb-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-9" />)}</div>
+      ) : !rows.length ? (
+        <EmptyState icon={Users} title="No direct reports yet" description="People appear here once HR sets you as their line manager." className="py-10" />
+      ) : (
+        <ul className="divide-y divide-line border-t border-line">
+          {rows.slice(0, 6).map(({ m, s }) => (
+            <li key={m.employment_id} className="flex items-center gap-3 px-5 py-2.5 text-[13px]">
+              <Avatar name={m.name} size="sm" />
+              <span className="min-w-0 flex-1">
+                <span className="block truncate font-medium text-fg">{m.name}</span>
+                <span className="block truncate text-xs text-fg-subtle">{s.firstIn ? `In ${s.firstIn}${s.lastOut ? ` · Out ${s.lastOut}` : ""}` : m.designation ?? m.employee_number}</span>
+              </span>
+              {s.late && <span className="badge badge-warning">Late</span>}
+              <StatusBadge tone={s.tone} label={s.label} />
+            </li>
+          ))}
+          {rows.length > 6 && (
+            <li><Link to="/team" className="block px-5 py-2.5 text-center text-xs font-medium text-accent hover:bg-muted/50">See all {rows.length}</Link></li>
+          )}
+        </ul>
+      )}
+    </div>
+  );
+}
+
 function ManagerDashboard({ employmentId }: { employmentId: string }) {
   const { data, isPending: isLoading, isError, refetch } = useQuery({
     queryKey: ["dash-mgr", employmentId],
@@ -77,81 +142,47 @@ function ManagerDashboard({ employmentId }: { employmentId: string }) {
   return (
     <div className="space-y-6">
       {isError && <ApiNotice onRetry={() => refetch()} />}
-      <div className="grid gap-4 sm:grid-cols-2 xl:grid-cols-4">
-        <StatCard label="Team size" icon={Users} loading={isLoading} value={num(data?.team_size)} />
-        <StatCard label="Present today" icon={UserCheck} loading={isLoading} value={num(today.present)} />
-        <StatCard label="Absent today" icon={CalendarX2} loading={isLoading} value={num(today.absent)} />
+      <KycTodo />
+      <div className="grid grid-cols-2 gap-3 sm:gap-4 xl:grid-cols-4">
+        <StatCard label="Team size" icon={Users} loading={isLoading} value={num(data?.team_size)} hint={<Link to="/team" className="link">View team</Link>} />
+        <StatCard label="Present today" icon={UserCheck} iconTone="green" loading={isLoading} value={num(today.present)} />
+        <StatCard label="Absent today" icon={CalendarX2} iconTone="red" loading={isLoading} value={num(today.absent)} />
         <StatCard label="On leave" icon={Umbrella} loading={isLoading} value={num(today.on_leave)} />
       </div>
       <div className="grid gap-4 lg:grid-cols-3">
-        <div className="lg:col-span-2">
+        <div className="space-y-4 lg:col-span-2">
           <PendingApprovalsQueue
             items={approvals}
             isLoading={isLoading}
-            queryKeyToRefresh={[["dash-mgr", employmentId], ["leave-applications"], ["corrections"]]}
+            queryKeyToRefresh={[["dash-mgr", employmentId], ["dash-team"], ["leave-applications"], ["corrections"]]}
             emptyHint="New requests from your team will appear here."
           />
+          <TeamTodayCard />
+          <WeekStrip employmentId={employmentId} />
         </div>
         <PunchClock employmentId={employmentId} />
       </div>
+      <PersonalSections employmentId={employmentId} />
     </div>
   );
 }
 
 /* ─────────────────────────── Employee ─────────────────────────── */
 function EmployeeDashboard({ employmentId }: { employmentId: string }) {
-  const { data, isPending: isLoading, isError, refetch } = useQuery({
-    queryKey: ["dash-emp", employmentId],
-    queryFn: () => dashboardApi.employee(employmentId),
-  });
-  const { data: balances, isPending: balLoading } = useQuery<LeaveBalance[]>({
-    queryKey: ["leave-balances", employmentId],
-    queryFn: () => leaveApi.getBalances(employmentId),
-  });
-  const m = (data?.month_summary as Dict) ?? {};
+  const { data, isPending: isLoading, isError, refetch } = useEmployeeDashboard(employmentId);
 
   return (
     <div className="space-y-6">
       {isError && <ApiNotice onRetry={() => refetch()} />}
+      <KycTodo />
       <div className="grid gap-4 lg:grid-cols-3">
         <PunchClock employmentId={employmentId} />
         <div className="space-y-4 lg:col-span-2">
-          <div className="grid gap-4 sm:grid-cols-3">
-            <StatCard label="Days present" icon={CalendarCheck} loading={isLoading} value={num(m.present)} hint={String(m.month ?? "This month")} />
-            <StatCard label="Late arrivals" icon={Timer} loading={isLoading} value={num(m.late)} hint="this month" />
-            <StatCard label="Days absent" icon={CalendarX2} loading={isLoading} value={num(m.absent)} hint="this month" />
-          </div>
-          <div className="card">
-            <div className="card-header">
-              <h3 className="card-title">Leave balance</h3>
-              <Link to="/leave" className="link text-xs">View leave</Link>
-            </div>
-            {balLoading ? (
-              <div className="space-y-3 px-5 pb-5">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-8" />)}</div>
-            ) : !balances?.length ? (
-              <EmptyState icon={Umbrella} title="No leave balances yet" description="Balances appear once HR sets up leave types for your year." className="py-10" />
-            ) : (
-              <ul className="space-y-3 px-5 pb-5">
-                {balances.map((b) => {
-                  const total = b.allocated_days + b.carry_forward_days;
-                  return (
-                    <li key={b.id}>
-                      <div className="mb-1.5 flex items-center justify-between text-[13px]">
-                        <span className="flex items-center gap-2 text-fg"><span className="h-2 w-2 rounded-full" style={{ background: b.color }} />{b.leave_type_name}</span>
-                        <span className="tabular-nums text-fg-muted"><b className="font-semibold text-fg">{b.available_days}</b> / {total} days</span>
-                      </div>
-                      <div className="h-1.5 overflow-hidden rounded-full bg-muted">
-                        <div className="h-full rounded-full" style={{ width: `${total ? (b.available_days / total) * 100 : 0}%`, background: b.color }} />
-                      </div>
-                    </li>
-                  );
-                })}
-              </ul>
-            )}
-          </div>
+          <MonthStats data={data} loading={isLoading} />
+          <WeekStrip employmentId={employmentId} />
         </div>
       </div>
-      <OnboardingChecklist employmentId={employmentId} hideWhenEmpty />
+      <PersonalSections employmentId={employmentId} />
     </div>
   );
 }
@@ -176,6 +207,7 @@ export function DashboardPage() {
     </>
   ) : (
     <>
+      {user.role === "MANAGER" && <Link to="/team" className="btn-secondary"><Users size={15} /> My team</Link>}
       <Link to="/corrections?new=1" className="btn-secondary"><FilePenLine size={15} /> Request correction</Link>
       <Link to="/leave?new=1" className="btn-primary"><Umbrella size={15} /> Apply leave</Link>
     </>

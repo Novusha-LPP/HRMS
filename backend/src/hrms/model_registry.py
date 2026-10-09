@@ -85,7 +85,14 @@ RELATIONS = {
     },
     "punches": {"employment_id": "employments", "original_punch_id": "punches"},
     "attendance_days": {"employment_id": "employments"},
-    "holidays": {"legal_entity_id": "legal_entities"},
+    "holidays": {"legal_entity_id": "legal_entities", "calendar_id": "holiday_calendars"},
+    "holiday_calendar_assignments": {
+        "employment_id": "employments",
+        "calendar_id": "holiday_calendars",
+        "legal_entity_id": "legal_entities",
+        "org_unit_id": "org_units",
+    },
+    "holiday_calendar_days": {"calendar_id": "holiday_calendars", "holiday_id": "holidays"},
     "leave_balances": {"employment_id": "employments", "leave_type_id": "leave_types"},
     "leave_applications": {
         "employment_id": "employments",
@@ -271,6 +278,11 @@ for unique_table, unique_columns, unique_name in (
         "uq_dashboard_layout_user",
     ),
     ("user_preferences", ("tenant_id", "user_account_id"), "uq_user_preferences_user"),
+    (
+        "holiday_calendar_days",
+        ("tenant_id", "calendar_id", "holiday_id"),
+        "uq_holiday_calendar_day",
+    ),
     ("leave_type_bucket_mapping", ("tenant_id", "leave_type_id"), "uq_leave_type_bucket_mapping"),
     (
         "leave_bucket_policies",

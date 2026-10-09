@@ -1,0 +1,1478 @@
+{
+  "scope": "Local exports only; no database migration or mutation.",
+  "source_fingerprints": {
+    "leavequotas": "f971054511dbe3be0f6eff4e8ada15f4be33483f1d79c85f708b5fceb2a9ad66",
+    "leavepolicies": "d41dc369169c094e6f7a0f18bfd29b94dcc947c39d7505a15b376ae016a519ff",
+    "users": "1d1f0e9b3d64165afc08f92586411b84577d90a007afa1fcfecdda794c5495e1"
+  },
+  "quotas": {
+    "documents": 100,
+    "drivers": 25,
+    "years": {
+      "2026": 100
+    },
+    "types": {
+      "Casual": {
+        "records": 25,
+        "allocated": 250,
+        "used": 2,
+        "remaining": 248
+      },
+      "Emergency": {
+        "records": 25,
+        "allocated": 75,
+        "used": 0,
+        "remaining": 75
+      },
+      "Paid": {
+        "records": 25,
+        "allocated": 300,
+        "used": 0,
+        "remaining": 300
+      },
+      "Sick": {
+        "records": 25,
+        "allocated": 125,
+        "used": 0,
+        "remaining": 125
+      }
+    },
+    "total_days": 750,
+    "used_days": 2,
+    "remaining_days": 748,
+    "duplicate_ids": 0,
+    "duplicate_driver_type_year": [],
+    "invalid_balances": 0,
+    "matched_source_users": 25,
+    "source_user_roles": {
+      "driver": 25
+    },
+    "users_missing_company": 25
+  },
+  "policies": {
+    "documents": 25,
+    "companies": 11,
+    "status": {
+      "inactive": 4,
+      "active": 21
+    },
+    "duplicate_ids": 0,
+    "active_duplicate_company_code": [
+      [
+        "69cd1e3b50e6c73acc73a926",
+        "PL",
+        2
+      ]
+    ],
+    "active_empty_approval_levels": 19,
+    "active_explicit_hod_approvals": 2,
+    "source_users_with_explicit_policy_refs": 181,
+    "source_policy_references": 306,
+    "unresolved_refs": [],
+    "inactive_refs": [],
+    "cross_company_refs": [
+      {
+        "user_id": "6672a2501aa931b68b091fce",
+        "user_company_id": "69cd1e3b50e6c73acc73a91c",
+        "policy_id": "69ce0c8b9303f74d13e81d9d",
+        "policy_company_id": "69cd1e3b50e6c73acc73a91a"
+      },
+      {
+        "user_id": "6672a2501aa931b68b091fce",
+        "user_company_id": "69cd1e3b50e6c73acc73a91c",
+        "policy_id": "69ce0c8b9303f74d13e81d9e",
+        "policy_company_id": "69cd1e3b50e6c73acc73a91a"
+      },
+      {
+        "user_id": "68b1594f02de992bfa6d446a",
+        "user_company_id": "69cd1e3b50e6c73acc73a91c",
+        "policy_id": "69ce0c8b9303f74d13e81daa",
+        "policy_company_id": "69cd1e3b50e6c73acc73a920"
+      },
+      {
+        "user_id": "68b1594f02de992bfa6d446a",
+        "user_company_id": "69cd1e3b50e6c73acc73a91c",
+        "policy_id": "69ce0c8b9303f74d13e81dab",
+        "policy_company_id": "69cd1e3b50e6c73acc73a920"
+      },
+      {
+        "user_id": "6a214b90b4d2a71c5d27397f",
+        "user_company_id": null,
+        "policy_id": "6a3cdd866660f902a7b34cfe",
+        "policy_company_id": "69cd1e3b50e6c73acc73a926"
+      }
+    ],
+    "definitions": [
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81d96"
+        },
+        "company_id": {
+          "$oid": "69cd1351ff5301f416796cec"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "inactive",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.267Z"
+        },
+        "updatedAt": {
+          "$date": "2026-07-01T05:50:54.707Z"
+        },
+        "explicit_user_references": 0
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81d95"
+        },
+        "company_id": {
+          "$oid": "69cd1351ff5301f416796cec"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "inactive",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.267Z"
+        },
+        "updatedAt": {
+          "$date": "2026-07-01T05:50:54.707Z"
+        },
+        "explicit_user_references": 0
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81d9a"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a918"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 0,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0,
+          "gender": ""
+        },
+        "carry_forward": {
+          "allowed": false,
+          "max_days": 0,
+          "encashment_allowed": false,
+          "encashment_percentage": 0
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "max_consecutive_days": 10,
+          "min_gap_between_applications": 0,
+          "advance_notice_days": 1,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "document_required_after_days": 0,
+          "clubbing_allowed_with": [],
+          "half_day_allowed": true,
+          "can_apply_on_probation": true
+        },
+        "approval_workflow": {
+          "levels": [],
+          "auto_approve_if_balance": false
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.310Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:43:57.155Z"
+        },
+        "accrual": {
+          "accrual_type": "yearly",
+          "accrual_rate": 1,
+          "accrual_start_date": "calendar_year"
+        },
+        "explicit_user_references": 16
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81d99"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a918"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.310Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.310Z"
+        },
+        "explicit_user_references": 22
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81d9e"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a91a"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.348Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.348Z"
+        },
+        "explicit_user_references": 15
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81d9d"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a91a"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.348Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.348Z"
+        },
+        "explicit_user_references": 29
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81da2"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a91c"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.383Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.383Z"
+        },
+        "explicit_user_references": 7
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81da3"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a91c"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.383Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.383Z"
+        },
+        "explicit_user_references": 9
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81da7"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a91e"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.416Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.416Z"
+        },
+        "explicit_user_references": 7
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81da6"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a91e"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.416Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.416Z"
+        },
+        "explicit_user_references": 6
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81daa"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a920"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.449Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.449Z"
+        },
+        "explicit_user_references": 12
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81dab"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a920"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.449Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.449Z"
+        },
+        "explicit_user_references": 14
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81daf"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a922"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.485Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.485Z"
+        },
+        "explicit_user_references": 1
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81dae"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a922"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.485Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.485Z"
+        },
+        "explicit_user_references": 2
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81db3"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a924"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.519Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.519Z"
+        },
+        "explicit_user_references": 19
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81db2"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a924"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.519Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.519Z"
+        },
+        "explicit_user_references": 17
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81db6"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a926"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.552Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.552Z"
+        },
+        "explicit_user_references": 0
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81db7"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a926"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "inactive",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.552Z"
+        },
+        "updatedAt": {
+          "$date": "2026-07-01T05:50:21.360Z"
+        },
+        "explicit_user_references": 0
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81dbb"
+        },
+        "company_id": {
+          "$oid": "69cd1e3c50e6c73acc73a928"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 0,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0,
+          "gender": ""
+        },
+        "carry_forward": {
+          "allowed": false,
+          "max_days": 0,
+          "encashment_allowed": false,
+          "encashment_percentage": 0
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "max_consecutive_days": 10,
+          "min_gap_between_applications": 0,
+          "advance_notice_days": 1,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "document_required_after_days": 0,
+          "clubbing_allowed_with": [],
+          "half_day_allowed": true,
+          "can_apply_on_probation": true
+        },
+        "approval_workflow": {
+          "levels": [],
+          "auto_approve_if_balance": false
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.586Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:41:48.681Z"
+        },
+        "accrual": {
+          "accrual_type": "yearly",
+          "accrual_rate": 1,
+          "accrual_start_date": "calendar_year"
+        },
+        "explicit_user_references": 17
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81dba"
+        },
+        "company_id": {
+          "$oid": "69cd1e3c50e6c73acc73a928"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.586Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.586Z"
+        },
+        "explicit_user_references": 13
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81dbf"
+        },
+        "company_id": {
+          "$oid": "69cd1e3c50e6c73acc73a92a"
+        },
+        "policy_name": "Leave Without Pay",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 999,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": false,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 30,
+          "advance_notice_days": 1,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": true,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": true
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.620Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.620Z"
+        },
+        "explicit_user_references": 3
+      },
+      {
+        "_id": {
+          "$oid": "69ce0c8b9303f74d13e81dbe"
+        },
+        "company_id": {
+          "$oid": "69cd1e3c50e6c73acc73a92a"
+        },
+        "policy_name": "Privilege Leave",
+        "leave_type": "privilege",
+        "leave_code": "PL",
+        "annual_quota": 25,
+        "eligibility": {
+          "employment_types": [],
+          "min_service_months": 0
+        },
+        "carry_forward": {
+          "allowed": true,
+          "max_days": 15,
+          "encashment_allowed": false
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 15,
+          "advance_notice_days": 7,
+          "half_day_allowed": true,
+          "can_apply_on_probation": true,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "clubbing_allowed_with": []
+        },
+        "approval_workflow": {
+          "auto_approve_if_balance": false,
+          "levels": []
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": false,
+          "counted_as_absence": false
+        },
+        "status": "active",
+        "__v": 0,
+        "createdAt": {
+          "$date": "2026-04-02T06:28:27.620Z"
+        },
+        "updatedAt": {
+          "$date": "2026-04-02T06:28:27.620Z"
+        },
+        "explicit_user_references": 1
+      },
+      {
+        "_id": {
+          "$oid": "6a3520f05130edb9cc16b9cc"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a926"
+        },
+        "policy_name": "Paid Leave",
+        "leave_type": "casual",
+        "leave_code": "PL",
+        "annual_quota": 12,
+        "eligibility": {
+          "employment_types": [
+            "permanent"
+          ],
+          "min_service_months": 6,
+          "gender": ""
+        },
+        "accrual": {
+          "accrual_type": "yearly",
+          "accrual_rate": 1,
+          "accrual_start_date": "calendar_year"
+        },
+        "carry_forward": {
+          "allowed": false,
+          "max_days": 0,
+          "encashment_allowed": false,
+          "encashment_percentage": 0
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 5,
+          "max_consecutive_days": 5,
+          "min_gap_between_applications": 0,
+          "advance_notice_days": 7,
+          "backdated_allowed": true,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": true,
+          "requires_document": false,
+          "document_required_after_days": 0,
+          "clubbing_allowed_with": [],
+          "half_day_allowed": true,
+          "can_apply_on_probation": true
+        },
+        "approval_workflow": {
+          "levels": [
+            {
+              "level": 1,
+              "approver_role": "HOD",
+              "is_mandatory": true,
+              "_id": {
+                "$oid": "6a3520f05130edb9cc16b9cd"
+              }
+            }
+          ],
+          "auto_approve_if_balance": false
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": false
+        },
+        "created_by": {
+          "$oid": "6a059ab3d065f33262fa04fe"
+        },
+        "updated_by": {
+          "$oid": "6a059ab3d065f33262fa04fe"
+        },
+        "status": "inactive",
+        "createdAt": {
+          "$date": "2026-06-19T10:58:56.881Z"
+        },
+        "updatedAt": {
+          "$date": "2026-07-01T05:50:21.388Z"
+        },
+        "__v": 0,
+        "explicit_user_references": 0
+      },
+      {
+        "_id": {
+          "$oid": "6a3cdd866660f902a7b34cfe"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a926"
+        },
+        "policy_name": "Unpaid Leave",
+        "leave_type": "lwp",
+        "leave_code": "LWP",
+        "annual_quota": 12,
+        "eligibility": {
+          "employment_types": [
+            "probation",
+            "contract",
+            "permanent",
+            "full_time"
+          ],
+          "min_service_months": 0,
+          "gender": ""
+        },
+        "accrual": {
+          "accrual_type": "yearly",
+          "accrual_rate": 1,
+          "accrual_start_date": "calendar_year"
+        },
+        "carry_forward": {
+          "allowed": false,
+          "max_days": 0,
+          "encashment_allowed": false,
+          "encashment_percentage": 0
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 1,
+          "max_consecutive_days": 1,
+          "min_gap_between_applications": 0,
+          "advance_notice_days": 1,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": true,
+          "requires_document": false,
+          "document_required_after_days": 0,
+          "clubbing_allowed_with": [],
+          "half_day_allowed": true,
+          "can_apply_on_probation": true
+        },
+        "approval_workflow": {
+          "levels": [
+            {
+              "level": 1,
+              "approver_role": "HOD",
+              "is_mandatory": true,
+              "_id": {
+                "$oid": "6a3cdd866660f902a7b34cff"
+              }
+            }
+          ],
+          "auto_approve_if_balance": false
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": false
+        },
+        "created_by": {
+          "$oid": "6a059ab3d065f33262fa04fe"
+        },
+        "updated_by": {
+          "$oid": "6a059ab3d065f33262fa04fe"
+        },
+        "status": "active",
+        "createdAt": {
+          "$date": "2026-06-25T07:49:26.641Z"
+        },
+        "updatedAt": {
+          "$date": "2026-07-09T07:45:48.561Z"
+        },
+        "__v": 0,
+        "explicit_user_references": 51
+      },
+      {
+        "_id": {
+          "$oid": "6a5616e19994cccbfbac3c24"
+        },
+        "company_id": {
+          "$oid": "69cd1e3b50e6c73acc73a926"
+        },
+        "policy_name": "Paid Leave",
+        "leave_type": "casual",
+        "leave_code": "PL",
+        "annual_quota": 12,
+        "eligibility": {
+          "employment_types": [
+            "permanent"
+          ],
+          "min_service_months": 6,
+          "gender": ""
+        },
+        "accrual": {
+          "accrual_type": "yearly",
+          "accrual_rate": 1,
+          "accrual_start_date": "calendar_year"
+        },
+        "carry_forward": {
+          "allowed": false,
+          "max_days": 0,
+          "encashment_allowed": false,
+          "encashment_percentage": 0
+        },
+        "rules": {
+          "min_days_per_application": 1,
+          "max_days_per_application": 10,
+          "max_consecutive_days": 10,
+          "min_gap_between_applications": 0,
+          "advance_notice_days": 1,
+          "backdated_allowed": false,
+          "backdated_max_days": 0,
+          "sandwich_rule_enabled": false,
+          "requires_document": false,
+          "document_required_after_days": 0,
+          "clubbing_allowed_with": [],
+          "half_day_allowed": true,
+          "can_apply_on_probation": false
+        },
+        "approval_workflow": {
+          "levels": [
+            {
+              "level": 1,
+              "approver_role": "HOD",
+              "is_mandatory": true,
+              "_id": {
+                "$oid": "6a5616e19994cccbfbac3c25"
+              }
+            }
+          ],
+          "auto_approve_if_balance": false
+        },
+        "deduction_rules": {
+          "deduct_from_salary": false,
+          "affects_attendance_percentage": true,
+          "counted_as_absence": false
+        },
+        "created_by": {
+          "$oid": "6a059ab3d065f33262fa04fe"
+        },
+        "updated_by": {
+          "$oid": "6a059ab3d065f33262fa04fe"
+        },
+        "status": "active",
+        "createdAt": {
+          "$date": "2026-07-14T11:00:49.267Z"
+        },
+        "updatedAt": {
+          "$date": "2026-07-14T11:00:49.267Z"
+        },
+        "__v": 0,
+        "explicit_user_references": 45
+      }
+    ]
+  }
+}

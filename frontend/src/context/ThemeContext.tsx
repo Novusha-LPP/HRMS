@@ -2,7 +2,7 @@ import { createContext, useContext, useEffect, useState } from "react";
 import type { ReactNode } from "react";
 
 export type Theme = "light" | "dark" | "system";
-export type ColorTheme = "classic-teal" | "midnight-blue";
+export type ColorTheme = "classic-teal" | "midnight-blue" | "ember-sand";
 
 export interface ColorThemeOption {
   id: ColorTheme;
@@ -12,7 +12,8 @@ export interface ColorThemeOption {
 
 export const COLOR_THEMES: ColorThemeOption[] = [
   { id: "classic-teal", name: "Classic Teal", description: "The original teal and neutral palette" },
-  { id: "midnight-blue", name: "Midnight Blue", description: "Bright blue accents with a dark navy sidebar" },
+  { id: "midnight-blue", name: "Midnight Blue", description: "Luminous blue and violet details with an orbital navy backdrop" },
+  { id: "ember-sand", name: "Ember Sand", description: "Warm terracotta, sand surfaces and editorial headings" },
 ];
 
 interface ThemeContextValue {
@@ -41,7 +42,8 @@ function readStoredColorTheme(): ColorTheme {
   try {
     const ct = localStorage.getItem(COLOR_THEME_STORAGE_KEY);
     // "hrms-dashboard" is what Midnight Blue was stored as before it had a proper name.
-    return ct === "midnight-blue" || ct === "hrms-dashboard" ? "midnight-blue" : "classic-teal";
+    if (ct === "hrms-dashboard") return "midnight-blue";
+    return COLOR_THEMES.find((palette) => palette.id === ct)?.id ?? "classic-teal";
   } catch {
     return "classic-teal";
   }

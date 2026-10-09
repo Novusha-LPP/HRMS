@@ -1,5 +1,12 @@
 # Payroll Module — Design & Scoping
 
+> **Status update 2026-10-09:** decision D-2 puts final payroll **inside the HRMS**. The current scope, statutory approach and delivery plan are in [enterprise-plan/02-modules.md (M11)](enterprise-plan/02-modules.md) and the Payroll stream of [enterprise-plan/04-delivery-roadmap.md](enterprise-plan/04-delivery-roadmap.md). This document's open questions are answered there:
+>
+> 1. India first.
+> 2. Bank details stay in the KYC record and change only through `BANK_CHANGE`.
+> 3. Dedicated Payroll Administrator and Approver roles.
+> 4. A named payroll / tax reviewer certifies the calculators (D-13).
+
 **Status: scoping only, not implemented.** Written 2026-09-24 as part of a
 gap-fill pass across Attendance/OT, Leave, and reporting (see `RUNBOOK.md`
 for what that pass actually built). Payroll is a materially larger
