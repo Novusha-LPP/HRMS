@@ -64,6 +64,7 @@ import {
   ArrowDown as ClassicArrowDown,
   ArrowUpRight as ClassicArrowUpRight,
   ArrowDownRight as ClassicArrowDownRight,
+  Wallet as ClassicWallet,
   ExternalLink as ClassicExternalLink,
   Copy as ClassicCopy,
   GripVertical as ClassicGripVertical,
@@ -126,6 +127,7 @@ export const FileClock = themed("FileClock", ClassicFileClock, [...file.slice(0,
 export const ClipboardCheck = themed("ClipboardCheck", ClassicClipboardCheck, [rect(4,4,16,18,2),rect(8,2,8,4,1,{fill:"currentColor",fillOpacity:.15}),path("m7 14 3 3 7-7")]);
 export const ShieldCheck = themed("ShieldCheck", ClassicShieldCheck, [path("M12 2 3 6v6c0 5 4 8 9 10 5-2 9-5 9-10V6Z",{fill:"currentColor",fillOpacity:.12}),path("m7 12 3 3 7-7")]);
 export const IdCard = themed("IdCard", ClassicIdCard, [rect(2,4,20,16,2),circle(8,10,2.5,solid),path("M4 17c0-4 8-4 8 0Z",solid),path("M15 9h4m-4 4h4m-4 4h2")]);
+export const Wallet = themed("Wallet", ClassicWallet, [rect(2,6,20,15,2,{fill:"currentColor",fillOpacity:.1}),path("M5 6V4.5A1.5 1.5 0 0 1 6.5 3H18v3"),path("M15 11h7v6h-7a3 3 0 0 1 0-6Z"),circle(16.5,14,1.2,solid)]);
 export const Building2 = themed("Building2", ClassicBuilding2, [path("M3 22V7h7v15M10 22V2h11v20M1 22h22M5 10h2m-2 4h2m-2 4h2m7-12h3m-3 4h3m-3 4h3m-3 4h3"),path("M11 3h9v3h-9Z",{fill:"currentColor",fillOpacity:.15,stroke:"none"})]);
 export const Briefcase = themed("Briefcase", ClassicBriefcase, [rect(2,7,20,14,2),path("M8 7V3h8v4M2 12c6 4 14 4 20 0M10 12h4v5h-4Z")]);
 export const BookOpen = themed("BookOpen", ClassicBookOpen, [path("M12 5C9 2 4 2 2 3v17c4-1 7-1 10 2 3-3 6-3 10-2V3c-2-1-7-1-10 2Zm0 0v17M5 7h4M5 11h4m6-4h4m-4 4h4")]);

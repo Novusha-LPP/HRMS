@@ -106,6 +106,48 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
         }
     ),
     "ACCOUNTANT": frozenset({"people.read", "reports.read", "dashboard.hr", "kyc.read"}),
+    # Payroll is deliberately not part of HR_MANAGER: seeing what people are paid is a
+    # separate grant (enterprise plan M11). The Admin assigns these roles, scoped to the
+    # companies whose payroll the person runs, approves or reviews.
+    "PAYROLL_ADMIN": frozenset(
+        {
+            "self.read",
+            "self.write",
+            "leave.apply",
+            "corrections.request",
+            "kyc.self",
+            "people.read",
+            "reports.read",
+            "payroll.read",
+            "payroll.write",
+        }
+    ),
+    "PAYROLL_APPROVER": frozenset(
+        {
+            "self.read",
+            "self.write",
+            "leave.apply",
+            "corrections.request",
+            "kyc.self",
+            "people.read",
+            "reports.read",
+            "payroll.read",
+            "payroll.approve",
+        }
+    ),
+    # Checks the statutory values and the calculations (decision D-13).
+    "PAYROLL_REVIEWER": frozenset(
+        {
+            "self.read",
+            "self.write",
+            "leave.apply",
+            "corrections.request",
+            "kyc.self",
+            "people.read",
+            "payroll.read",
+            "payroll.review",
+        }
+    ),
 }
 
 # Roles that only ever act on the caller's own record, whatever scope their
@@ -121,6 +163,9 @@ ROLE_DESCRIPTIONS: dict[str, str] = {
     "MANAGER": "Manage workflows for led teams and reporting groups; approve requests",
     "EMPLOYEE": "Self-service only",
     "ACCOUNTANT": "Read-only people + reports access for companies in scope",
+    "PAYROLL_ADMIN": "Maintain salary structures and employee salaries, and run payroll",
+    "PAYROLL_APPROVER": "Approve and lock pay runs prepared by the payroll administrator",
+    "PAYROLL_REVIEWER": "Check statutory values and payroll calculations, and sign them off",
 }
 
 

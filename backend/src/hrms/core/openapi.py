@@ -239,6 +239,13 @@ TAGS_METADATA: list[dict[str, str]] = [
         "candidates and resumes, applications, and turning an application into a hire.",
     },
     {
+        "name": "Payroll",
+        "description": "Statutory values (PF, ESIC) with the date they apply from and who "
+        "verified them, pay components, versioned salary structures, the CTC breakup, and each "
+        "employee's salary history. Needs the `payroll.*` permissions, which HR managers don't "
+        "hold; the Admin grants the payroll roles.",
+    },
+    {
         "name": "Dashboard",
         "description": "Dashboards for each role, and each user's saved layout.",
     },
@@ -259,6 +266,7 @@ TAGS_METADATA: list[dict[str, str]] = [
 TAG_GROUPS: list[dict[str, Any]] = [
     {"name": "Access", "tags": ["Auth", "Users", "Preferences"]},
     {"name": "Core HR", "tags": ["Organisation", "People", "Onboarding", "Employee KYC"]},
+    {"name": "Pay", "tags": ["Payroll"]},
     {
         "name": "Time & leave",
         "tags": [
