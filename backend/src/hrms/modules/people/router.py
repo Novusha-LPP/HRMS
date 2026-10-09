@@ -85,8 +85,43 @@ _ASSIGNMENT_ACTIONS = {
     PersonnelActionType.CHANGE_MANAGER,
     PersonnelActionType.CHANGE_GRADE,
     PersonnelActionType.CHANGE_COST_CENTRE,
+    PersonnelActionType.CHANGE_JOB,
 }
 _INITIAL_PLACEMENT = {PersonnelActionType.HIRE, PersonnelActionType.REHIRE}
+
+# The employment states each status-changing action can start from. Checked when the
+# action is applied (at once, or on its date for a scheduled one, where a refusal parks
+# it as FAILED), so a confirmation can't reactivate someone who has already left.
+_ALLOWED_FROM: dict[PersonnelActionType, set[str]] = {
+    PersonnelActionType.CONFIRM: {EmploymentState.PROBATION},
+    PersonnelActionType.EXTEND_PROBATION: {EmploymentState.PROBATION},
+    PersonnelActionType.PLACE_ON_NOTICE: {
+        EmploymentState.ACTIVE,
+        EmploymentState.PROBATION,
+        EmploymentState.ON_HOLD,
+    },
+    PersonnelActionType.SEPARATION: {
+        EmploymentState.ACTIVE,
+        EmploymentState.PROBATION,
+        EmploymentState.NOTICE,
+        EmploymentState.ON_HOLD,
+    },
+    PersonnelActionType.REHIRE: {EmploymentState.SEPARATED},
+}
+_ACTION_LABEL = {
+    PersonnelActionType.CONFIRM: "Confirmation",
+    PersonnelActionType.EXTEND_PROBATION: "A probation extension",
+    PersonnelActionType.PLACE_ON_NOTICE: "Placing on notice",
+    PersonnelActionType.SEPARATION: "A separation",
+    PersonnelActionType.REHIRE: "A rehire",
+}
+_STATE_LABEL = {
+    EmploymentState.ACTIVE: "confirmed",
+    EmploymentState.PROBATION: "on probation",
+    EmploymentState.NOTICE: "on notice",
+    EmploymentState.ON_HOLD: "on hold",
+    EmploymentState.SEPARATED: "separated",
+}
 
 # The columns every employee list/detail response enriches with, joining the
 # employee's CURRENT (open) assignment. One shared fragment so the two
@@ -107,6 +142,8 @@ _EMPLOYEE_SELECT = """
         CASE WHEN ou.type = 'TEAM' THEN parent_ou.name ELSE ou.name END AS department,
         CASE WHEN ou.type = 'TEAM' THEN ou.name ELSE NULL END AS team_name,
         a.job_id, j.title AS designation,
+        a.grade_id, g.name AS grade,
+        a.position_id, pos.title AS position_title,
         a.location_id, l.name AS location,
         am.manager_employment_id,
         mp.legal_first_name || ' ' || mp.legal_last_name AS manager_name
@@ -134,6 +171,8 @@ _EMPLOYEE_SELECT = """
     LEFT JOIN org_units parent_ou ON parent_ou.tenant_id = ou.tenant_id
         AND parent_ou.id = ou.parent_id
     LEFT JOIN jobs j ON j.tenant_id = a.tenant_id AND j.id = a.job_id
+    LEFT JOIN grades g ON g.tenant_id = a.tenant_id AND g.id = a.grade_id
+    LEFT JOIN positions pos ON pos.tenant_id = a.tenant_id AND pos.id = a.position_id
     LEFT JOIN locations l ON l.tenant_id = a.tenant_id AND l.id = a.location_id
     LEFT JOIN assignment_managers am
         ON am.tenant_id = a.tenant_id AND am.assignment_id = a.id
@@ -217,6 +256,10 @@ def _employment_row_response(r, *, show_personal: bool = True) -> EmploymentResp
         team_name=r.team_name,
         job_id=to_typed_id("job", r.job_id) if r.job_id else None,
         designation=r.designation,
+        grade_id=to_typed_id("grade", r.grade_id) if r.grade_id else None,
+        grade=r.grade,
+        position_id=to_typed_id("position", r.position_id) if r.position_id else None,
+        position_title=r.position_title,
         location_id=to_typed_id("location", r.location_id) if r.location_id else None,
         location=r.location,
         manager_employment_id=to_typed_id("employment", r.manager_employment_id)
@@ -737,6 +780,8 @@ async def list_personnel_actions(
             status=r.status,
             submitted_at=r.submitted_at,
             failure_reason=r.failure_reason,
+            reason_code=r.reason_code,
+            changes=r.changes,
         )
         for r in rows.scalars()
     ]
@@ -970,6 +1015,14 @@ async def _apply_personnel_action(
 ) -> None:
     changes = pa.changes or {}
     action_type = PersonnelActionType(pa.type)
+
+    allowed = _ALLOWED_FROM.get(action_type)
+    if allowed is not None and emp.employment_state not in allowed:
+        state = _STATE_LABEL.get(emp.employment_state, emp.employment_state.lower())
+        raise HTTPException(
+            status.HTTP_409_CONFLICT,
+            f"{_ACTION_LABEL[action_type]} isn't possible while the employee is {state}",
+        )
 
     if action_type in _ASSIGNMENT_ACTIONS:
         current = await _current_assignment(session, tenant_id, pa.employment_id)

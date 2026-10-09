@@ -25,6 +25,10 @@ export interface Employment {
   team_name?: string | null;
   job_id: string | null;
   designation: string | null;
+  grade_id?: string | null;
+  grade?: string | null;
+  position_id?: string | null;
+  position_title?: string | null;
   location_id: string | null;
   location: string | null;
   manager_employment_id: string | null;
@@ -57,7 +61,7 @@ export interface MyProfile {
 export type PersonnelActionType =
   | "HIRE" | "REHIRE" | "TRANSFER" | "PROMOTION" | "DEMOTION" | "CONFIRM"
   | "EXTEND_PROBATION" | "PLACE_ON_NOTICE" | "SEPARATION" | "CHANGE_MANAGER"
-  | "CHANGE_GRADE" | "CHANGE_COST_CENTRE";
+  | "CHANGE_GRADE" | "CHANGE_COST_CENTRE" | "CHANGE_JOB";
 
 export interface PersonnelActionChanges {
   org_unit_id?: string;
@@ -67,6 +71,11 @@ export interface PersonnelActionChanges {
   position_id?: string;
   cost_centre_id?: string;
   manager_employment_id?: string;
+  /** Informational dates recorded with status actions (not placements). */
+  probation_extended_until?: string;
+  expected_last_working_day?: string;
+  last_working_day?: string;
+  note?: string;
 }
 
 export interface PersonnelAction {
@@ -86,6 +95,9 @@ export interface PersonnelActionListItem {
   effective_date: string;
   status: string;
   submitted_at: string | null;
+  failure_reason?: string | null;
+  reason_code?: string | null;
+  changes?: PersonnelActionChanges | null;
 }
 
 // The list endpoints cap a single response at 200 rows. A group with more people
@@ -140,4 +152,5 @@ export const personnelActionsApi = {
   }) => api.post<PersonnelAction>("/v1/personnel-actions", body),
   list: (employmentId: string) =>
     api.get<PersonnelActionListItem[]>(`/v1/personnel-actions?employment_id=${employmentId}`),
+  cancel: (actionId: string) => api.post<PersonnelAction>(`/v1/personnel-actions/${actionId}/cancel`, {}),
 };

@@ -57,6 +57,8 @@ class PersonnelActionType(enum.StrEnum):
     CHANGE_MANAGER = "CHANGE_MANAGER"
     CHANGE_GRADE = "CHANGE_GRADE"
     CHANGE_COST_CENTRE = "CHANGE_COST_CENTRE"
+    # A new designation (job title) that isn't a promotion (§7 "Designation change").
+    CHANGE_JOB = "CHANGE_JOB"
 
 
 class Person(SQLModel, table=True):

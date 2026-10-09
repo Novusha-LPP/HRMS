@@ -7,7 +7,7 @@ import { formatDateOnly } from "../lib/dates";
 import {
   Download, Plus, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Users,
   Mail, MapPin, Briefcase, Building2, CalendarDays, Hash, UserRound, SearchX, ArrowLeftRight,
-  Landmark, Cake, Shield,
+  Landmark, Cake, Shield, ChevronDown, Layers, Armchair,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
@@ -24,6 +24,12 @@ import { AttendanceRegister } from "../components/attendance/AttendanceRegister"
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { KycSection } from "../components/kyc/KycSection";
+import { PlacementFields } from "../components/people/PlacementFields";
+import { PersonnelActionSheet } from "../components/people/PersonnelActionSheet";
+import { ACTION_META, actionsFor } from "../lib/personnelActions";
+import type { ActionKind } from "../lib/personnelActions";
+import { PersonnelHistory } from "../components/people/PersonnelHistory";
+import { usePopover } from "../components/ui/Popover";
 import { AccessSection } from "../components/users/AccessPanel";
 
 interface Row {
@@ -44,10 +50,14 @@ interface Row {
   state: string;
   manager?: string;
   stage?: string;
-  // Raw ids for the transfer form.
+  grade?: string;
+  positionTitle?: string;
+  // Raw ids for the transfer and personnel-action forms.
   legalEntityId?: string;
   orgUnitId?: string;
   jobId?: string;
+  gradeId?: string;
+  positionId?: string;
   locationId?: string;
   managerEmploymentId?: string;
 }
@@ -55,8 +65,9 @@ interface Row {
 type StatusTab = "ALL" | "ACTIVE" | "PROBATION" | "ON_NOTICE" | "INACTIVE";
 type SortKey = "name" | "hireDate";
 
+// The API's state is NOTICE; the tab is called ON_NOTICE.
 const bucket = (s: string): StatusTab =>
-  s === "ACTIVE" || s === "PROBATION" || s === "ON_NOTICE" ? s : "INACTIVE";
+  s === "NOTICE" || s === "ON_NOTICE" ? "ON_NOTICE" : s === "ACTIVE" || s === "PROBATION" ? s : "INACTIVE";
 
 function tenure(hireDate: string) {
   const m = Math.max(differenceInMonths(new Date(), new Date(hireDate)), 0);
@@ -80,11 +91,15 @@ function toRow(e: Employment, name: string, company?: string, dob?: string | nul
     department: e.department ?? undefined,
     team: e.team_name ?? undefined,
     designation: e.designation ?? undefined,
+    grade: e.grade ?? undefined,
+    positionTitle: e.position_title ?? undefined,
     location: e.location ?? undefined,
     manager: e.manager_name ?? undefined,
     legalEntityId: e.legal_entity_id,
     orgUnitId: e.org_unit_id ?? undefined,
     jobId: e.job_id ?? undefined,
+    gradeId: e.grade_id ?? undefined,
+    positionId: e.position_id ?? undefined,
     locationId: e.location_id ?? undefined,
     managerEmploymentId: e.manager_employment_id ?? undefined,
   };
@@ -143,6 +158,7 @@ export function EmployeePage() {
     }
   };
   const [transferring, setTransferring] = useState<Row | null>(null);
+  const [acting, setActing] = useState<{ row: Row; kind: ActionKind } | null>(null);
 
   const search = params.get("q") ?? "";
   const setSearch = (v: string) => {
@@ -453,18 +469,20 @@ export function EmployeePage() {
         canManageAccess={canManageAccess}
         onClose={() => setDetail(null)}
         onTransfer={() => { if (detail) { setTransferring(detail); setDetail(null); } }}
+        onAction={(kind) => { if (detail) { setActing({ row: detail, kind }); setDetail(null); } }}
       />
       <AddEmployeeSheet open={adding} onClose={closeAdding} />
       <TransferSheet row={transferring} onClose={() => setTransferring(null)} />
+      <PersonnelActionSheet subject={acting?.row ?? null} kind={acting?.kind ?? null} onClose={() => setActing(null)} />
     </>
   );
 }
 
 type EmployeeSheetTab = "overview" | "attendance" | "kyc" | "access" | "workflow";
 
-function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose, onTransfer }: {
+function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose, onTransfer, onAction }: {
   row: Row | null; canPlace: boolean; canViewAccess: boolean; canManageAccess: boolean;
-  onClose: () => void; onTransfer: () => void;
+  onClose: () => void; onTransfer: () => void; onAction: (kind: ActionKind) => void;
 }) {
   const { user } = useAuth();
   const canConfigureWorkflow = !!user?.permissions.some((p) => p === "*" || p === "approvals.manage");
@@ -478,6 +496,8 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
         { icon: Building2, label: "Department", value: row.department },
         { icon: Users, label: "Team", value: row.team },
         { icon: Briefcase, label: "Designation", value: row.designation },
+        ...(row.grade ? [{ icon: Layers, label: "Grade", value: row.grade }] : []),
+        ...(row.positionTitle ? [{ icon: Armchair, label: "Position", value: row.positionTitle }] : []),
         ...(row.role ? [{ icon: Shield, label: "Role", value: row.role }] : []),
         { icon: UserRound, label: "Reports to", value: row.manager },
         { icon: MapPin, label: "Location", value: row.location },
@@ -489,6 +509,10 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
       ]
     : [];
   const isPlaced = !!row?.department;
+  // HR can't run personnel actions on their own record (no self-promotion or self-confirmation).
+  const isSelf = !!row && row.id === user?.employmentId;
+  const available = row && canPlace && !isSelf ? actionsFor(row.state, isPlaced) : [];
+  const { open: menuOpen, setOpen: setMenuOpen, ref: menuRef } = usePopover();
 
   return (
     <Sheet
@@ -503,10 +527,35 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
               Back to Overview
             </button>
           ) : <span />}
-          {canPlace && activeTab === "overview" && (
-            <button className="btn-primary btn-sm" onClick={onTransfer}>
-              <ArrowLeftRight size={14} /> {isPlaced ? "Transfer" : "Place in a department"}
-            </button>
+          {canPlace && activeTab === "overview" && !isSelf && (
+            <div className="flex items-center gap-2">
+              {available.length > 0 && (
+                <div ref={menuRef} className="relative">
+                  <button type="button" className="btn-secondary btn-sm" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+                    Actions <ChevronDown size={14} />
+                  </button>
+                  {menuOpen && (
+                    <div role="menu" className="popover absolute bottom-full right-0 mb-1 w-56">
+                      {available.map((kind) => (
+                        <button key={kind} type="button" role="menuitem"
+                          className={`menu-item w-full ${kind === "SEPARATION" ? "hover:text-danger" : ""}`}
+                          onClick={() => { setMenuOpen(false); onAction(kind); }}>
+                          {ACTION_META[kind].menu}
+                        </button>
+                      ))}
+                    </div>
+                  )}
+                </div>
+              )}
+              {row.state !== "SEPARATED" && (
+                <button className="btn-primary btn-sm" onClick={onTransfer}>
+                  <ArrowLeftRight size={14} /> {isPlaced ? "Transfer" : "Place in a department"}
+                </button>
+              )}
+            </div>
+          )}
+          {canPlace && activeTab === "overview" && isSelf && (
+            <span className="text-xs text-fg-subtle">Changes to your own employment are made by another HR user.</span>
           )}
         </div>
       ) : undefined}
@@ -557,6 +606,7 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
                   ))}
                 </dl>
               </div>
+              <PersonnelHistory employmentId={row.id} canCancel={canPlace && !isSelf} />
             </>
           )}
           {activeTab === "attendance" && (
@@ -585,74 +635,6 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
         </div>
       )}
     </Sheet>
-  );
-}
-
-/** Shared department/designation/location/manager picker used by both hiring and transferring. */
-function PlacementFields({ legalEntityId, values, onChange, excludeEmploymentId }: {
-  legalEntityId: string;
-  values: { orgUnitId: string; jobId: string; locationId: string; managerEmploymentId: string };
-  onChange: (v: Partial<typeof values>) => void;
-  excludeEmploymentId?: string;
-}) {
-  const orgUnits = useQuery({ queryKey: ["org-units"], queryFn: () => orgApi.listOrgUnits() });
-  const locations = useQuery({ queryKey: ["locations"], queryFn: () => orgApi.listLocations() });
-  const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => orgApi.listJobs() });
-  const employees = useQuery({ queryKey: ["employees"], queryFn: () => peopleApi.listAllEmployees() });
-  const persons = useQuery({ queryKey: ["persons"], queryFn: () => peopleApi.listAllPersons(), enabled: !!employees.data?.length });
-  const personName = new Map((persons.data ?? []).map((p) => [p.id, `${p.preferred_name || p.legal_first_name} ${p.legal_last_name}`]));
-
-  const departments = (orgUnits.data ?? []).filter((o) => o.type === "DEPARTMENT" && o.legal_entity_id === legalEntityId);
-  const selectedUnit = orgUnits.data?.find((o) => o.id === values.orgUnitId);
-  const departmentId = selectedUnit?.type === "TEAM" ? selectedUnit.parent_id ?? "" : values.orgUnitId;
-  const teams = (orgUnits.data ?? []).filter((o) => o.type === "TEAM" && o.parent_id === departmentId && o.legal_entity_id === legalEntityId);
-  const entityLocations = (locations.data ?? []).filter((l) => !l.legal_entity_id || l.legal_entity_id === legalEntityId);
-  const managers = (employees.data ?? []).filter((e) => e.legal_entity_id === legalEntityId && e.id !== excludeEmploymentId);
-
-  const loading = orgUnits.isPending || locations.isPending || jobs.isPending;
-  if (loading) return <div className="space-y-3">{[0, 1, 2].map((i) => <Skeleton key={i} className="h-9" />)}</div>;
-
-  return (
-    <>
-      <div>
-        <label className="label" htmlFor="pl-dept">Department</label>
-        <select id="pl-dept" className="input" value={departmentId} onChange={(e) => onChange({ orgUnitId: e.target.value })}>
-          <option value="">{departments.length ? "Choose department…" : "No departments yet for this company"}</option>
-          {departments.map((o) => <option key={o.id} value={o.id}>{o.name}</option>)}
-        </select>
-      </div>
-      {departmentId && <div>
-        <label className="label" htmlFor="pl-team">Team (optional)</label>
-        <select id="pl-team" className="input" value={selectedUnit?.type === "TEAM" ? values.orgUnitId : departmentId}
-          onChange={(e) => onChange({ orgUnitId: e.target.value })}>
-          <option value={departmentId}>No team</option>
-          {teams.map((t) => <option key={t.id} value={t.id}>{t.name}</option>)}
-        </select>
-      </div>}
-      <div className="grid grid-cols-2 gap-3">
-        <div>
-          <label className="label" htmlFor="pl-job">Designation</label>
-          <select id="pl-job" className="input" value={values.jobId} onChange={(e) => onChange({ jobId: e.target.value })}>
-            <option value="">{jobs.data?.length ? "Choose…" : "No jobs yet"}</option>
-            {jobs.data?.map((j) => <option key={j.id} value={j.id}>{j.title}</option>)}
-          </select>
-        </div>
-        <div>
-          <label className="label" htmlFor="pl-loc">Location</label>
-          <select id="pl-loc" className="input" value={values.locationId} onChange={(e) => onChange({ locationId: e.target.value })}>
-            <option value="">{entityLocations.length ? "Choose…" : "No locations yet"}</option>
-            {entityLocations.map((l) => <option key={l.id} value={l.id}>{l.name}</option>)}
-          </select>
-        </div>
-      </div>
-      <div>
-        <label className="label" htmlFor="pl-mgr">Reports to <span className="font-normal text-fg-subtle">(optional)</span></label>
-        <select id="pl-mgr" className="input" value={values.managerEmploymentId} onChange={(e) => onChange({ managerEmploymentId: e.target.value })}>
-          <option value="">No manager</option>
-          {managers.map((m) => <option key={m.id} value={m.id}>{personName.has(m.person_id) ? `${personName.get(m.person_id)} · ${m.employee_number}` : m.employee_number}</option>)}
-        </select>
-      </div>
-    </>
   );
 }
 

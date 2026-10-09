@@ -680,7 +680,7 @@ const CHANGE_LABEL: Record<string, string> = {
   TRANSFER: "Transfer", PROMOTION: "Promotion", DEMOTION: "Demotion", CONFIRM: "Confirmation",
   EXTEND_PROBATION: "Probation extended", PLACE_ON_NOTICE: "Notice", SEPARATION: "Separation",
   REHIRE: "Rehire", CHANGE_MANAGER: "Manager change", CHANGE_GRADE: "Grade change",
-  CHANGE_COST_CENTRE: "Cost centre change", HIRE: "Hire",
+  CHANGE_COST_CENTRE: "Cost centre change", CHANGE_JOB: "Designation change", HIRE: "Hire",
 };
 
 export function ScheduledChanges({ data, loading }: WidgetProps) {
