@@ -1,5 +1,5 @@
 from datetime import date, datetime
-from typing import Any
+from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
@@ -180,6 +180,94 @@ class JobResponse(BaseModel):
     code: str | None
     function: str | None
     status: str
+    version: int
+
+
+MasterStatus = Literal["ACTIVE", "INACTIVE"]
+
+
+class GradeCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=50)
+    name: str = Field(min_length=1, max_length=100)
+    # Rank order: lower comes first in pickers and reports (e.g. W1 < W2 < M1).
+    sequence: int = Field(default=0, ge=0)
+
+
+class GradeUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=50)
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    sequence: int | None = Field(default=None, ge=0)
+    status: MasterStatus | None = None
+
+
+class GradeResponse(BaseModel):
+    id: str  # typed: "grd_..."
+    code: str
+    name: str
+    sequence: int
+    status: str
+    version: int
+
+
+class CostCentreCreate(BaseModel):
+    code: str = Field(min_length=1, max_length=50)
+    name: str = Field(min_length=1, max_length=255)
+
+
+class CostCentreUpdate(BaseModel):
+    code: str | None = Field(default=None, min_length=1, max_length=50)
+    name: str | None = Field(default=None, min_length=1, max_length=255)
+    status: MasterStatus | None = None
+
+
+class CostCentreResponse(BaseModel):
+    id: str  # typed: "cc_..."
+    code: str
+    name: str
+    status: str
+    version: int
+
+
+class PositionCreate(BaseModel):
+    title: str = Field(min_length=1, max_length=255)
+    code: str | None = Field(default=None, max_length=50)
+    org_unit_id: str
+    job_id: str | None = None
+    grade_id: str | None = None
+    # None = no limit: the position exists but doesn't count towards vacancies.
+    max_headcount: int | None = Field(default=None, ge=1)
+    effective_from: date | None = None  # defaults to today
+    effective_to: date | None = None
+
+
+class PositionUpdate(BaseModel):
+    title: str | None = Field(default=None, min_length=1, max_length=255)
+    code: str | None = Field(default=None, max_length=50)
+    job_id: str | None = None
+    grade_id: str | None = None
+    max_headcount: int | None = Field(default=None, ge=1)
+    status: MasterStatus | None = None
+    effective_to: date | None = None
+
+
+class PositionResponse(BaseModel):
+    id: str  # typed: "pos_..."
+    title: str
+    code: str | None
+    org_unit_id: str
+    org_unit_name: str | None
+    legal_entity_id: str | None
+    job_id: str | None
+    job_title: str | None
+    grade_id: str | None
+    grade_name: str | None
+    max_headcount: int | None
+    # Current employees placed in this position; vacancies = max_headcount - filled.
+    filled: int
+    vacancies: int | None
+    status: str
+    effective_from: date
+    effective_to: date | None
     version: int
 
 
