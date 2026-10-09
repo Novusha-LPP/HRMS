@@ -39,6 +39,25 @@ class PasswordReset(BaseModel):
     _password_bytes = field_validator("password")(check_password_bytes)
 
 
+class SignInSlipsRequest(BaseModel):
+    """Issue temporary sign-in details to employees, typically shop-floor staff without email."""
+
+    employment_ids: list[str] = Field(min_length=1, max_length=100)
+    # 8 digits, easy to type on a phone or kiosk; otherwise 10 letters and digits.
+    numeric: bool = True
+
+
+class SignInSlip(BaseModel):
+    employment_id: str
+    employee_number: str
+    name: str
+    company: str | None = None
+    outcome: Literal["CREATED", "RESET", "SKIPPED"]
+    reason: str | None = None
+    # Shown once, in this response only. Never stored in plain text or logged.
+    temporary_password: str | None = None
+
+
 class RoleResponse(BaseModel):
     name: str
     description: str | None = None

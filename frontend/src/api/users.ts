@@ -25,7 +25,21 @@ export interface UserAccount {
   must_change_password: boolean;
 }
 
+export interface SignInSlip {
+  employment_id: string;
+  employee_number: string;
+  name: string;
+  company: string | null;
+  outcome: "CREATED" | "RESET" | "SKIPPED";
+  reason: string | null;
+  /** Shown once, in this response only. */
+  temporary_password: string | null;
+}
+
 export const usersApi = {
+  /** Up to 100 employees per call; the server returns one slip (or skip reason) each. */
+  issueSignInSlips: (employmentIds: string[], numeric: boolean) =>
+    api.post<SignInSlip[]>("/v1/users/sign-in-slips", { employment_ids: employmentIds, numeric }),
   listRoles: () => api.get<Role[]>("/v1/roles"),
   listUsersPage: (offset = 0, limit = 200) => api.get<UserAccount[]>(`/v1/users?limit=${limit}&offset=${offset}`),
   listUsers: async () => {

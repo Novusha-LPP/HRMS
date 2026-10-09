@@ -7,7 +7,7 @@ import { formatDateOnly } from "../lib/dates";
 import {
   Download, Plus, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Users,
   Mail, MapPin, Briefcase, Building2, CalendarDays, Hash, UserRound, SearchX, ArrowLeftRight,
-  Landmark, Cake, Shield, ChevronDown, Layers, Armchair,
+  Landmark, Cake, Shield, ChevronDown, Layers, Armchair, KeyRound,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
@@ -29,6 +29,8 @@ import { PersonnelActionSheet } from "../components/people/PersonnelActionSheet"
 import { ACTION_META, actionsFor } from "../lib/personnelActions";
 import type { ActionKind } from "../lib/personnelActions";
 import { PersonnelHistory } from "../components/people/PersonnelHistory";
+import { SignInSlipsSheet } from "../components/people/SignInSlips";
+import type { SlipEmployee } from "../components/people/SignInSlips";
 import { usePopover } from "../components/ui/Popover";
 import { AccessSection } from "../components/users/AccessPanel";
 
@@ -159,6 +161,7 @@ export function EmployeePage() {
   };
   const [transferring, setTransferring] = useState<Row | null>(null);
   const [acting, setActing] = useState<{ row: Row; kind: ActionKind } | null>(null);
+  const [slipsFor, setSlipsFor] = useState<SlipEmployee[] | null>(null);
 
   const search = params.get("q") ?? "";
   const setSearch = (v: string) => {
@@ -344,6 +347,11 @@ export function EmployeePage() {
             <button className="btn-secondary btn-sm" onClick={() => downloadCsv(rows.filter((r) => selected.has(r.id)))}>
               <Download size={13} /> Export selected
             </button>
+            {canManageAccess && (
+              <button className="btn-secondary btn-sm" onClick={() => setSlipsFor(rows.filter((r) => selected.has(r.id)).map((r) => ({ id: r.id, name: r.name, employeeNumber: r.employeeNumber })))}>
+                <KeyRound size={13} /> Sign-in slips
+              </button>
+            )}
             <button className="btn-ghost btn-sm" onClick={() => setSelected(new Set())}>Clear selection</button>
           </div>
         )}
@@ -474,6 +482,7 @@ export function EmployeePage() {
       <AddEmployeeSheet open={adding} onClose={closeAdding} />
       <TransferSheet row={transferring} onClose={() => setTransferring(null)} />
       <PersonnelActionSheet subject={acting?.row ?? null} kind={acting?.kind ?? null} onClose={() => setActing(null)} />
+      <SignInSlipsSheet employees={slipsFor} onClose={() => setSlipsFor(null)} />
     </>
   );
 }

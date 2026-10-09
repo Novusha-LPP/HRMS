@@ -157,6 +157,25 @@ API returns `403 PASSWORD_CHANGE_REQUIRED`. All of the user's existing sessions 
 Send the temporary password to the user through a channel you trust. The API doesn't email it.
 """,
     ),
+    "issue_sign_in_slips": (
+        "Issue sign-in slips",
+        """
+Gives up to 100 employees temporary sign-in details at once, for staff without email who sign
+in with their **employee number**. An employee login (role `EMPLOYEE`, own record only) is
+created where there is none; an existing employee login gets a new temporary password and its
+sessions end. Everyone must choose their own password at first sign-in.
+
+`numeric: true` (default) makes 8-digit passwords, easy to type on a phone or kiosk.
+
+Each result's `outcome` is `CREATED`, `RESET` or `SKIPPED` with a `reason`: people who have
+left, switched-off logins, logins with more than self-service (HR, managers, admins: reset those
+one at a time), your own login, and employees outside your companies are skipped.
+
+**`temporary_password` is returned only in this response.** It is not stored in plain text,
+not logged, and not shown again; print or hand out the slips straight away. The change history
+records that a password was issued, never the password.
+""",
+    ),
     # ─── Preferences ─────────────────────────────────────────────────────────
     "get_preferences": (
         "Get your preferences",
