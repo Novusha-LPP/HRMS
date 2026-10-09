@@ -9,8 +9,8 @@ import {
   Clock3, CircleCheck, CircleX,
 } from "lucide-react";
 import { useAuth } from "../context/AuthContext";
-import { timeApi } from "../api/time";
-import type { AttendanceDay, PendingOvertimeItem } from "../api/time";
+import { timeApi, REVIEW_FLAG_LABEL } from "../api/time";
+import type { RegisterDay, RegisterResponse, PendingOvertimeItem } from "../api/time";
 import { PunchClock } from "../components/attendance/PunchClock";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatusBadge } from "../components/ui/StatusBadge";
@@ -20,7 +20,7 @@ import { useToast, errorMessage } from "../components/ui/Toast";
 
 const DOT: Record<string, string> = {
   PRESENT: "bg-success", LATE: "bg-warning", ABSENT: "bg-danger", ON_LEAVE: "bg-info",
-  HOLIDAY: "bg-plum", HALF_DAY: "bg-warning", WEEKEND: "bg-line-strong",
+  HOLIDAY: "bg-plum", HALF_DAY: "bg-warning", WEEKEND: "bg-line-strong", OFF_DAY_WORKED: "bg-plum",
 };
 
 const CELL: Record<string, string> = {
@@ -29,7 +29,9 @@ const CELL: Record<string, string> = {
   ABSENT: "bg-danger/[0.07] border-danger/20",
   ON_LEAVE: "bg-info/[0.07] border-info/20",
   HOLIDAY: "bg-plum/[0.07] border-plum/20",
+  OFF_DAY_WORKED: "bg-plum/[0.07] border-plum/20",
   HALF_DAY: "bg-warning/[0.08] border-warning/25",
+  WEEKEND: "border-transparent bg-muted/60",
 };
 
 function fmtMins(m: number) {
@@ -39,7 +41,7 @@ function fmtMins(m: number) {
   return `${h}h ${mins}m`;
 }
 
-const PRESENT_STATUSES = ["PRESENT", "LATE", "HALF_DAY", "EARLY_DEPARTURE", "MISSED_PUNCH"];
+const PRESENT_STATUSES = ["PRESENT", "LATE", "HALF_DAY", "EARLY_DEPARTURE", "MISSED_PUNCH", "OFF_DAY_WORKED"];
 
 export function AttendancePage() {
   const { user } = useAuth();
@@ -49,9 +51,9 @@ export function AttendancePage() {
   const to = format(endOfMonth(month), "yyyy-MM-dd");
   const isCurrentMonth = isSameDay(month, startOfMonth(new Date()));
 
-  const { data, isPending: isLoading, isError, refetch } = useQuery<AttendanceDay[]>({
-    queryKey: ["attendance-days", user?.employmentId, from, to],
-    queryFn: () => timeApi.attendanceDays(user!.employmentId!, from, to),
+  const { data, isPending: isLoading, isError, refetch } = useQuery<RegisterResponse>({
+    queryKey: ["attendance-register", user?.employmentId, from],
+    queryFn: () => timeApi.register(user!.employmentId!, from, to),
     enabled: !!user?.employmentId,
   });
 
@@ -63,7 +65,12 @@ export function AttendancePage() {
         <PageHeader
           title="Attendance"
           description="Your check-ins, working hours and monthly record."
-          actions={canReview ? <Link to="/daily-analysis" className="btn-secondary"><CalendarCheck size={15} /> Daily Analysis</Link> : undefined}
+          actions={canReview ? (
+            <div className="flex items-center gap-2">
+              <Link to="/attendance/register" className="btn-secondary"><CalendarDays size={15} /> Attendance register</Link>
+              <Link to="/daily-analysis" className="btn-secondary"><CalendarCheck size={15} /> Daily Analysis</Link>
+            </div>
+          ) : undefined}
         />
         {canReview && <div className="mb-4"><OvertimeApprovals /></div>}
         <NoEmployeeRecord feature="attendance record" />
@@ -71,7 +78,7 @@ export function AttendancePage() {
     );
   }
 
-  const days = data ?? [];
+  const days = data?.days ?? [];
   const byDate = new Map(days.map((d) => [d.work_date.slice(0, 10), d]));
   // Same buckets as the dashboard (backend time/presence.py): any day with a check-in is a
   // present day — including half days and early departures — and a day is late when it
@@ -94,9 +101,14 @@ export function AttendancePage() {
         actions={
           <div className="flex items-center gap-2">
             {["HR", "SUPER_ADMIN", "MANAGER"].includes(user.role) && (
-              <Link to="/daily-analysis" className="btn-secondary">
-                <CalendarCheck size={15} /> Daily Analysis
-              </Link>
+              <>
+                <Link to="/attendance/register" className="btn-secondary">
+                  <CalendarDays size={15} /> Attendance register
+                </Link>
+                <Link to="/daily-analysis" className="btn-secondary">
+                  <CalendarCheck size={15} /> Daily Analysis
+                </Link>
+              </>
             )}
             <Link to="/corrections?new=1" className="btn-secondary">
               <FilePenLine size={15} /> Request correction
@@ -170,9 +182,26 @@ export function AttendancePage() {
                 </thead>
                 <tbody>
                   {days.map((d) => (
-                    <tr key={d.id}>
+                    <tr key={d.work_date}>
                       <td className="whitespace-nowrap font-medium text-fg">{format(new Date(d.work_date), "EEE, d MMM")}</td>
-                      <td><StatusBadge status={d.status} /></td>
+                      <td>
+                        <div className="flex flex-wrap items-center gap-1.5">
+                          {d.status === "WEEKEND"
+                            ? <span className="badge badge-neutral">Weekly off</span>
+                            : <StatusBadge status={d.status} />}
+                          {d.needs_review && (
+                            <span
+                              className="badge badge-warning text-[10px]"
+                              title={`${d.review_flags.map((f) => REVIEW_FLAG_LABEL[f]).join(", ")} — HR will review this day`}
+                            >
+                              HR review
+                            </span>
+                          )}
+                          {d.comp_off_days > 0 && (
+                            <span className="badge badge-plum text-[10px]">+{d.comp_off_days} comp-off</span>
+                          )}
+                        </div>
+                      </td>
                       <td className="tabular-nums">{d.first_punch_in ? format(new Date(d.first_punch_in), "hh:mm a") : "—"}</td>
                       <td className="tabular-nums">{d.last_punch_out ? format(new Date(d.last_punch_out), "hh:mm a") : "—"}</td>
                       <td className="text-right tabular-nums">{fmtMins(d.effective_minutes)}</td>
@@ -188,7 +217,7 @@ export function AttendancePage() {
   );
 }
 
-function MonthGrid({ month, byDate }: { month: Date; byDate: Map<string, AttendanceDay> }) {
+function MonthGrid({ month, byDate }: { month: Date; byDate: Map<string, RegisterDay> }) {
   const today = new Date();
   const days = eachDayOfInterval({ start: month, end: endOfMonth(month) });
   const lead = (getDay(month) + 6) % 7; // Monday-first
@@ -203,21 +232,23 @@ function MonthGrid({ month, byDate }: { month: Date; byDate: Map<string, Attenda
         {days.map((day) => {
           const rec = byDate.get(format(day, "yyyy-MM-dd"));
           const future = isAfter(day, today);
-          const weekend = getDay(day) === 0 || getDay(day) === 6;
+          const label = rec?.status === "WEEKEND" ? "Weekly off"
+            : rec?.holiday_name ?? rec?.status.replace(/_/g, " ").toLowerCase();
           const isToday = isSameDay(day, today);
           return (
             <div
               key={day.toISOString()}
-              title={rec ? `${format(day, "d MMM")} · ${rec.status.replace(/_/g, " ").toLowerCase()}` : undefined}
-              className={`flex h-14 flex-col justify-between rounded-lg border p-1.5 text-left sm:h-16 sm:p-2 ${rec ? CELL[rec.status] ?? "border-line bg-surface" : weekend ? "border-transparent bg-muted/60" : "border-line bg-surface"
+              data-date={format(day, "yyyy-MM-dd")}
+              title={rec ? `${format(day, "d MMM")} · ${label}` : undefined}
+              className={`flex h-14 flex-col justify-between rounded-lg border p-1.5 text-left sm:h-16 sm:p-2 ${rec ? CELL[rec.status] ?? "border-line bg-surface" : "border-line bg-surface"
                 } ${future ? "opacity-40" : ""} ${isToday ? "ring-2 ring-brand-500 ring-offset-1 ring-offset-surface" : ""}`}
             >
               <span className={`text-xs font-medium tabular-nums ${isToday ? "text-accent" : "text-fg-muted"}`}>{format(day, "d")}</span>
               {rec && (
                 <span className="flex items-center gap-1">
                   <span className={`h-1.5 w-1.5 shrink-0 rounded-full ${DOT[rec.status] ?? "bg-fg-subtle"}`} />
-                  <span className="hidden truncate text-[10px] tabular-nums text-fg-subtle sm:inline">
-                    {rec.effective_minutes ? fmtMins(rec.effective_minutes) : rec.status.replace(/_/g, " ").toLowerCase()}
+                  <span className="truncate text-[10px] tabular-nums text-fg-subtle">
+                    {rec.effective_minutes ? fmtMins(rec.effective_minutes) : label}
                   </span>
                 </span>
               )}
@@ -226,7 +257,7 @@ function MonthGrid({ month, byDate }: { month: Date; byDate: Map<string, Attenda
         })}
       </div>
       <div className="mt-4 flex flex-wrap gap-x-4 gap-y-1.5 text-[11px] text-fg-subtle">
-        {[["Present", "bg-success"], ["Late", "bg-warning"], ["Absent", "bg-danger"], ["On leave", "bg-info"], ["Holiday", "bg-plum"]].map(([l, c]) => (
+        {[["Present", "bg-success"], ["Late", "bg-warning"], ["Absent", "bg-danger"], ["On leave", "bg-info"], ["Holiday", "bg-plum"], ["Weekly off", "bg-line-strong"]].map(([l, c]) => (
           <span key={l} className="flex items-center gap-1.5"><span className={`h-1.5 w-1.5 rounded-full ${c}`} />{l}</span>
         ))}
       </div>

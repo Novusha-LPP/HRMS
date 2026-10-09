@@ -1,0 +1,14 @@
+{
+  "existing_rows_checked": 2172,
+  "changed_rows": {
+    "leave_policy_sets": 1,
+    "leave_types": 2,
+    "policy_templates": 5
+  },
+  "new_rows": {
+    "employee_policy_assignments": 64
+  },
+  "all_other_fields_and_rows_preserved": true,
+  "other_tenants_unchanged": true,
+  "isolated_tests_passed": 6
+}

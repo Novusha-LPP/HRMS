@@ -140,3 +140,6 @@ Sharanga_Production.*.csv
 credential.md
 # Performance harness output (backend/perf/)
 backend/perf/out/
+
+# Local database backups and user export snapshots
+/backups/

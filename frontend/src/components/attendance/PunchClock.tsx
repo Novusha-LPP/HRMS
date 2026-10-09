@@ -2,10 +2,12 @@ import { useEffect, useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { LogIn, LogOut, MapPinOff } from "lucide-react";
 import { format } from "date-fns";
+import { ApiError } from "../../api/client";
 import { timeApi } from "../../api/time";
 import type { TodayStatus } from "../../api/time";
 import { StatusBadge } from "../ui/StatusBadge";
 import { Skeleton } from "../ui/Feedback";
+import { ConfirmDialog } from "../ui/Overlay";
 import { useToast, errorMessage } from "../ui/Toast";
 
 function fmtMins(minutes: number) {
@@ -32,6 +34,8 @@ export function PunchClock({ employmentId }: { employmentId: string }) {
   const toast = useToast();
   const now = useNow();
   const [noGps, setNoGps] = useState(false);
+  // Set when the server asks to confirm a check-out over 16 h after check-in.
+  const [longDay, setLongDay] = useState<string | null>(null);
 
   const { data, isPending: isLoading, isError } = useQuery<TodayStatus>({
     queryKey: ["today", employmentId],
@@ -40,7 +44,7 @@ export function PunchClock({ employmentId }: { employmentId: string }) {
   });
 
   const mutation = useMutation({
-    mutationFn: async (type: "IN" | "OUT") => {
+    mutationFn: async ({ type, confirm = false }: { type: "IN" | "OUT"; confirm?: boolean }) => {
       let lat: number | undefined;
       let lng: number | undefined;
       try {
@@ -53,18 +57,29 @@ export function PunchClock({ employmentId }: { employmentId: string }) {
       } catch {
         setNoGps(true);
       }
-      return timeApi.punch(employmentId, type, lat, lng);
+      return timeApi.punch(employmentId, type, lat, lng, confirm);
     },
-    onSuccess: (_, type) => {
+    onSuccess: (_, { type, confirm }) => {
+      setLongDay(null);
       qc.invalidateQueries({ queryKey: ["today", employmentId] });
       // Everything that counts today's punch: the month grid and the dashboards.
       qc.invalidateQueries({ queryKey: ["attendance-days"] });
+      qc.invalidateQueries({ queryKey: ["attendance-register", employmentId] });
       qc.invalidateQueries({ queryKey: ["dash-emp", employmentId] });
       qc.invalidateQueries({ queryKey: ["dash-mgr", employmentId] });
       qc.invalidateQueries({ queryKey: ["dash-hr"] });
-      toast.success(type === "IN" ? "Checked in" : "Checked out", `Recorded at ${format(new Date(), "hh:mm a")}`);
+      toast.success(
+        type === "IN" ? "Checked in" : "Checked out",
+        confirm ? "Recorded — HR will review this day" : `Recorded at ${format(new Date(), "hh:mm a")}`,
+      );
     },
-    onError: (e) => toast.error("Couldn’t record your punch", errorMessage(e)),
+    onError: (e) => {
+      if (e instanceof ApiError && e.code === "LONG_DAY_CONFIRM") {
+        setLongDay(e.message);
+        return;
+      }
+      toast.error("Couldn’t record your punch", errorMessage(e));
+    },
   });
 
   const punchedIn = data?.is_punched_in ?? false;
@@ -100,14 +115,32 @@ export function PunchClock({ employmentId }: { employmentId: string }) {
           ))}
         </dl>
 
+        {punchedIn && data?.first_punch_in && (
+          <p className="mt-3 text-xs text-fg-muted">
+            Active check-in from {format(new Date(data.first_punch_in), "d MMM, hh:mm a")}.
+            {format(new Date(data.first_punch_in), "yyyy-MM-dd") !== format(now, "yyyy-MM-dd") &&
+              " This session is from a previous day. If you forgot to check out, request an attendance correction."}
+          </p>
+        )}
+
         <button
-          onClick={() => mutation.mutate(punchedIn ? "OUT" : "IN")}
+          onClick={() => mutation.mutate({ type: punchedIn ? "OUT" : "IN" })}
           disabled={mutation.isPending || isLoading}
           className={`${punchedIn ? "btn-secondary" : "btn-primary"} mt-4 h-10 w-full`}
         >
           {punchedIn ? <LogOut size={16} /> : <LogIn size={16} />}
           {mutation.isPending ? "Recording…" : punchedIn ? "Check out" : "Check in"}
         </button>
+
+        <ConfirmDialog
+          open={longDay !== null}
+          onClose={() => setLongDay(null)}
+          onConfirm={() => mutation.mutate({ type: "OUT", confirm: true })}
+          title="Check out after a very long day?"
+          description={longDay}
+          confirmLabel="Check out anyway"
+          loading={mutation.isPending}
+        />
 
         {noGps && (
           <p className="mt-2.5 flex items-center gap-1.5 text-xs text-warning">

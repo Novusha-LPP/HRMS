@@ -84,7 +84,26 @@ and paths that match no route share the single label `unmatched`.
 | Blackbox exporter | `127.0.0.1:9115` | Probes `/health/ready` locally (`hrms-ready`) and both public URLs through Cloudflare (`hrms-public`) |
 | Node exporter | `127.0.0.1:9100` | Host memory and disk (`hrms-host`), plus the backup-age metrics written as text files to `HRMS_MONITORING_TEXTFILE_DIR` (default `/srv/hrms-monitoring`) |
 | Alertmanager | `127.0.0.1:9093` | Groups alerts and sends them to the receiver in `ops/alertmanager/alertmanager.yml` |
-| Grafana | `127.0.0.1:3100` | The *HRMS → HRMS API* dashboard and both data sources are provisioned from `ops/grafana/` |
+| Grafana | `127.0.0.1:3100` | Four dashboards in *HRMS* and both data sources are provisioned from `ops/grafana/` |
+
+The dashboards link to each other and share the selected time range:
+
+- **HRMS Overview** (`/d/hrms-overview`): API/public availability, response speed, errors,
+  CPU, memory, disk, database pool utilization, background-job freshness and active alerts.
+  **Active users** counts distinct authenticated users with successful API activity during
+  the dashboard's selected time range. `hrms_user_last_activity_timestamp_seconds` uses
+  stable HMAC fingerprints instead of account or tenant IDs, allowing Grafana to deduplicate
+  users across instances. Logout retains historical activity. Per-process last-seen records
+  are kept for up to 30 days; Prometheus retains historical samples according to its TSDB
+  retention. History starts when this metric was introduced and is sampled on each scrape.
+  Changing the API signing key changes fingerprints, so a range spanning key rotation may
+  count the same user twice. All instances must use the same key for deduplication.
+- **HRMS API** (`/d/hrms-api`): traffic, latency, errors, slow endpoints and sign-in outcomes.
+- **HRMS Database** (`/d/hrms-db`): API connection-pool usage, SQL volume and SQL time by
+  endpoint. These are application observations; PostgreSQL locks, replication and internal
+  statistics require a separate PostgreSQL exporter, which is not currently configured.
+- **HRMS Infrastructure** (`/d/hrms-infra`): host CPU, load per core, memory, disk capacity,
+  disk/network throughput, public-site probes and infrastructure alerts.
 
 Secrets, all gitignored: `ops/.env` (`GRAFANA_ADMIN_PASSWORD`, user `admin`),
 `ops/secrets/<environment>-metrics-token` (each equals that environment's
@@ -202,3 +221,29 @@ A scheduled job (`hrms.jobs`: `accrual` or `scheduled-actions`) hasn't succeeded
 3. Fix the cause, then run the job once by hand:
    `docker compose … run --rm jobs python -m hrms.jobs run accrual`.
    Accrual is idempotent per month, so running it again is safe.
+
+### Local testing API scheduler
+
+When testing still runs from `backend/` on port 8015 rather than from the deployed
+Compose stack, the API does not start background jobs. Run a separate scheduler.
+`deploy/hrms-local-jobs.service` is a systemd unit for this host's checkout at
+`/home/aiserver/HRMS`, running as `aiserver`. Adjust those paths and the user for other hosts.
+It reads `backend/.env`, runs a catch-up cycle immediately, then runs daily at
+`HRMS_JOBS_DAILY_AT` (default 00:30 Asia/Kolkata). It retries failed cycles and restarts
+after process exit or host reboot. Jobs credit leave under the configured policies,
+apply due personnel actions, and flag overdue open attendance sessions.
+
+After approval to enable those jobs on the testing database:
+
+```bash
+sudo install -m 0644 deploy/hrms-local-jobs.service /etc/systemd/system/hrms-local-jobs.service
+sudo systemctl daemon-reload
+sudo systemctl enable --now hrms-local-jobs.service
+systemctl status hrms-local-jobs.service
+journalctl -u hrms-local-jobs.service --since '10 minutes ago'
+```
+
+Verify new `SUCCEEDED` rows in `job_runs` and fresh
+`hrms_job_last_success_timestamp_seconds` values after the next Prometheus scrape.
+If testing switches to the deployed Compose stack, disable this local service and
+use that stack's `jobs` service instead.

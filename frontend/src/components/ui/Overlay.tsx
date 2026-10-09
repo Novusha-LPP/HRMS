@@ -4,6 +4,9 @@ import { createPortal } from "react-dom";
 import { X, TriangleAlert } from "lucide-react";
 
 /** Esc-to-close, initial focus, and focus restore for modal surfaces. */
+// Open modals, innermost last: Escape closes only the top one (a dialog opened from a sheet).
+const openModals: object[] = [];
+
 function useModal(open: boolean, onClose: () => void) {
   const panelRef = useRef<HTMLDivElement>(null);
   const onCloseRef = useRef(onClose);
@@ -12,7 +15,11 @@ function useModal(open: boolean, onClose: () => void) {
   useEffect(() => {
     if (!open) return;
     const previous = document.activeElement as HTMLElement | null;
-    const onKey = (e: KeyboardEvent) => { if (e.key === "Escape") onCloseRef.current(); };
+    const token = {};
+    openModals.push(token);
+    const onKey = (e: KeyboardEvent) => {
+      if (e.key === "Escape" && openModals[openModals.length - 1] === token) onCloseRef.current();
+    };
     document.addEventListener("keydown", onKey);
     const first = panelRef.current?.querySelector<HTMLElement>(
       "[autofocus], input:not([type=hidden]), select, textarea, [data-autofocus]",
@@ -20,6 +27,7 @@ function useModal(open: boolean, onClose: () => void) {
     (first ?? panelRef.current)?.focus();
     return () => {
       document.removeEventListener("keydown", onKey);
+      openModals.splice(openModals.indexOf(token), 1);
       previous?.focus?.();
     };
   }, [open]);
@@ -69,11 +77,13 @@ export function Sheet({ open, onClose, title, description, children, footer, cla
   );
 }
 
-export function Dialog({ open, onClose, children, className = "max-w-md" }: {
+export function Dialog({ open, onClose, children, className = "max-w-md", labelledBy, describedBy }: {
   open: boolean;
   onClose: () => void;
   children: ReactNode;
   className?: string;
+  labelledBy?: string;
+  describedBy?: string;
 }) {
   const panelRef = useModal(open, onClose);
   if (!open) return null;
@@ -84,6 +94,8 @@ export function Dialog({ open, onClose, children, className = "max-w-md" }: {
         ref={panelRef}
         role="dialog"
         aria-modal="true"
+        aria-labelledby={labelledBy}
+        aria-describedby={describedBy}
         tabIndex={-1}
         className={`relative w-full overflow-hidden rounded-2xl border border-line bg-surface shadow-pop outline-none animate-scale-in ${className}`}
       >

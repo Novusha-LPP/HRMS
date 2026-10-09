@@ -9,7 +9,7 @@ export interface PolicyTemplate {
   expected_start_time: string;
   expected_end_time: string;
   work_days: string;
-  saturday_pattern: "ALL" | "SECOND_FOURTH_OFF" | "FIRST_THIRD_OFF";
+  saturday_pattern: "ALL" | "SECOND_OFF" | "SECOND_FOURTH_OFF" | "FIRST_THIRD_OFF";
   break_minutes: number;
   break_auto_deduct: boolean;
   grace_late_minutes: number;
@@ -19,6 +19,8 @@ export interface PolicyTemplate {
   ot_qualifying_minutes: number;
   ot_rate: number;
   ot_daily_cap_minutes: number | null;
+  /** Work on a weekly off or holiday: all overtime, or a comp-off day credited to leave. */
+  off_day_work: "OVERTIME" | "COMP_OFF";
   punch_rounding_minutes: number;
   punch_rounding_direction: string;
   correction_requires_approval: boolean;

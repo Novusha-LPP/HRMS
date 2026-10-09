@@ -11,23 +11,17 @@
     "to": "now"
   },
   "refresh": "1m",
-  "editable": true,
+  "editable": false,
   "templating": {
     "list": [
-      {
-        "name": "datasource",
-        "type": "datasource",
-        "query": "prometheus",
-        "label": "Data source"
-      },
       {
         "name": "instance",
         "type": "query",
         "datasource": {
           "type": "prometheus",
-          "uid": "${datasource}"
+          "uid": "prometheus"
         },
-        "label": "Instance",
+        "label": "API instance",
         "query": "label_values(hrms_http_requests_total{job=\"hrms-api\"}, instance)",
         "includeAll": true,
         "multi": true,
@@ -35,35 +29,287 @@
           "text": "All",
           "value": "$__all"
         },
-        "refresh": 2
+        "refresh": 2,
+        "allValue": ".*"
       }
     ]
   },
   "panels": [
     {
-      "type": "row",
-      "title": "Traffic & errors",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 0
-      },
-      "collapsed": false
-    },
-    {
-      "type": "timeseries",
-      "title": "Requests / s",
-      "description": "",
+      "type": "stat",
+      "title": "API availability",
+      "description": "Current Prometheus scrape status for selected API instances.",
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
+          },
+          "expr": "min(up{job=\"hrms-api\", instance=~\"$instance\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "gridPos": {
+        "x": 0,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "none",
+          "decimals": 0,
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          },
+          "mappings": [
+            {
+              "type": "value",
+              "options": {
+                "0": {
+                  "text": "DOWN",
+                  "color": "red"
+                },
+                "1": {
+                  "text": "UP",
+                  "color": "green"
+                }
+              }
+            }
+          ]
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "id": 1
+    },
+    {
+      "type": "stat",
+      "title": "Response time (p95)",
+      "description": "95% of API requests finish within this time. Target: 300 ms. Health and metrics requests excluded.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "histogram_quantile(0.95, sum by (le) (rate(hrms_http_request_duration_seconds_bucket{job=\"hrms-api\", instance=~\"$instance\",route!~\"/health.*|/metrics\"}[$__rate_interval])))",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "gridPos": {
+        "x": 6,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "s",
+          "decimals": 2,
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.3
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "id": 2
+    },
+    {
+      "type": "stat",
+      "title": "Server error rate",
+      "description": "Share of API requests returning 5xx. No data means no matching requests in this interval.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "(sum(rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\",status=~\"5..\"}[$__rate_interval])) or (0 * sum(rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\"}[$__rate_interval])))) / sum(rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\"}[$__rate_interval]))",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "gridPos": {
+        "x": 12,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "fieldConfig": {
+        "defaults": {
+          "unit": "percentunit",
+          "decimals": 2,
+          "noValue": "No data",
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              },
+              {
+                "color": "red",
+                "value": 0.01
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "justifyMode": "auto",
+        "textMode": "auto"
+      },
+      "id": 3
+    },
+    {
+      "type": "stat",
+      "title": "Active requests",
+      "description": "Requests currently being served.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
+          },
+          "expr": "sum(hrms_http_requests_in_progress{job=\"hrms-api\",instance=~\"$instance\"})",
+          "refId": "A",
+          "instant": true
+        }
+      ],
+      "fieldConfig": {
+        "defaults": {
+          "unit": "short",
+          "noValue": "No data",
+          "decimals": 2,
+          "color": {
+            "mode": "thresholds"
+          },
+          "thresholds": {
+            "mode": "absolute",
+            "steps": [
+              {
+                "color": "green",
+                "value": null
+              }
+            ]
+          }
+        },
+        "overrides": []
+      },
+      "options": {
+        "reduceOptions": {
+          "calcs": [
+            "lastNotNull"
+          ],
+          "fields": "",
+          "values": false
+        },
+        "colorMode": "value",
+        "graphMode": "none",
+        "textMode": "auto"
+      },
+      "gridPos": {
+        "x": 18,
+        "y": 0,
+        "w": 6,
+        "h": 4
+      },
+      "id": 4
+    },
+    {
+      "type": "timeseries",
+      "title": "Request traffic",
+      "description": "API request rate, including client and server errors.",
+      "datasource": {
+        "type": "prometheus",
+        "uid": "prometheus"
+      },
+      "targets": [
+        {
+          "datasource": {
+            "type": "prometheus",
+            "uid": "prometheus"
           },
           "expr": "sum(rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\"}[$__rate_interval]))",
           "legendFormat": "all",
@@ -72,7 +318,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\",status=~\"5..\"}[$__rate_interval]))",
           "legendFormat": "5xx",
@@ -81,7 +327,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
           "expr": "sum(rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\",status=~\"4..\"}[$__rate_interval]))",
           "legendFormat": "4xx",
@@ -89,10 +335,10 @@
         }
       ],
       "gridPos": {
-        "h": 8,
-        "w": 8,
         "x": 0,
-        "y": 1
+        "y": 4,
+        "w": 12,
+        "h": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -106,110 +352,23 @@
           "placement": "bottom",
           "calcs": []
         }
-      }
+      },
+      "interval": "30s",
+      "id": 5
     },
     {
       "type": "timeseries",
-      "title": "5xx error rate",
-      "description": "Alert HrmsHighErrorRate fires above 1% for 10 minutes.",
+      "title": "Response times",
+      "description": "Response-time distribution. Target p95: under 300 ms.",
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum(rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\",status=~\"5..\"}[$__rate_interval])) / sum(rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\"}[$__rate_interval]))",
-          "legendFormat": "5xx share",
-          "refId": "A"
-        }
-      ],
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 8,
-        "y": 1
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "percentunit"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "In progress",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum(hrms_http_requests_in_progress{job=\"hrms-api\", instance=~\"$instance\"})",
-          "legendFormat": "requests",
-          "refId": "A"
-        }
-      ],
-      "gridPos": {
-        "h": 8,
-        "w": 8,
-        "x": 16,
-        "y": 1
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "type": "row",
-      "title": "Latency",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 9
-      },
-      "collapsed": false
-    },
-    {
-      "type": "timeseries",
-      "title": "Latency p50 / p95 / p99",
-      "description": "Target: p95 under 300 ms (alert HrmsSlowResponses).",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
           "expr": "histogram_quantile(0.5, sum by (le) (rate(hrms_http_request_duration_seconds_bucket{job=\"hrms-api\", instance=~\"$instance\",route!~\"/health.*|/metrics\"}[$__rate_interval])))",
           "legendFormat": "p50",
@@ -218,7 +377,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
           "expr": "histogram_quantile(0.95, sum by (le) (rate(hrms_http_request_duration_seconds_bucket{job=\"hrms-api\", instance=~\"$instance\",route!~\"/health.*|/metrics\"}[$__rate_interval])))",
           "legendFormat": "p95",
@@ -227,7 +386,7 @@
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
           "expr": "histogram_quantile(0.99, sum by (le) (rate(hrms_http_request_duration_seconds_bucket{job=\"hrms-api\", instance=~\"$instance\",route!~\"/health.*|/metrics\"}[$__rate_interval])))",
           "legendFormat": "p99",
@@ -235,10 +394,10 @@
         }
       ],
       "gridPos": {
-        "h": 8,
+        "x": 12,
+        "y": 4,
         "w": 12,
-        "x": 0,
-        "y": 10
+        "h": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -252,21 +411,23 @@
           "placement": "bottom",
           "calcs": []
         }
-      }
+      },
+      "interval": "30s",
+      "id": 6
     },
     {
       "type": "timeseries",
-      "title": "Slowest routes (p95)",
-      "description": "",
+      "title": "Slowest endpoints",
+      "description": "Find which endpoints cause slow responses.",
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
           "expr": "topk(10, histogram_quantile(0.95, sum by (le, method, route) (rate(hrms_http_request_duration_seconds_bucket{job=\"hrms-api\", instance=~\"$instance\",route!~\"/health.*|/metrics\"}[$__rate_interval]))))",
           "legendFormat": "{{method}} {{route}}",
@@ -274,10 +435,10 @@
         }
       ],
       "gridPos": {
-        "h": 8,
+        "x": 0,
+        "y": 12,
         "w": 12,
-        "x": 12,
-        "y": 10
+        "h": 8
       },
       "fieldConfig": {
         "defaults": {
@@ -294,95 +455,38 @@
             "max"
           ]
         }
-      }
-    },
-    {
-      "type": "row",
-      "title": "Database",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 18
       },
-      "collapsed": false
+      "interval": "30s",
+      "id": 7
     },
     {
       "type": "timeseries",
-      "title": "Connection pool",
-      "description": "Alert HrmsDatabasePoolSaturated fires above 80% of the limit for 5 minutes.",
+      "title": "Server errors by endpoint",
+      "description": "An empty chart means no matching server-error series.",
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "prometheus"
       },
+      "interval": "30s",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
-          "expr": "sum by (instance) (hrms_db_pool_checked_out{job=\"hrms-api\", instance=~\"$instance\"})",
-          "legendFormat": "in use {{instance}}",
-          "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "max(hrms_db_pool_limit{job=\"hrms-api\", instance=~\"$instance\"})",
-          "legendFormat": "limit per instance",
-          "refId": "B"
-        }
-      ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 19
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "SQL statements per request (p95) by route",
-      "description": "A route that climbs with data is an N+1 loop (alert HrmsQueryCountRegression above 50).",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "topk(10, histogram_quantile(0.95, sum by (le, route) (rate(hrms_db_statements_per_request_bucket{job=\"hrms-api\", instance=~\"$instance\",route!~\"/health.*|/metrics\"}[$__rate_interval]))))",
-          "legendFormat": "{{route}}",
+          "expr": "topk(10,sum by (method,route) (rate(hrms_http_requests_total{job=\"hrms-api\",instance=~\"$instance\",status=~\"5..\"}[$__rate_interval])))",
+          "legendFormat": "{{method}} {{route}}",
           "refId": "A"
         }
       ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 12,
-        "y": 19
-      },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
         },
         "overrides": []
       },
@@ -391,240 +495,167 @@
           "displayMode": "table",
           "placement": "bottom",
           "calcs": [
-            "mean",
+            "lastNotNull",
             "max"
           ]
-        }
-      }
-    },
-    {
-      "type": "timeseries",
-      "title": "SQL time per request (p95)",
-      "description": "",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(hrms_db_time_per_request_seconds_bucket{job=\"hrms-api\", instance=~\"$instance\",route!~\"/health.*|/metrics\"}[$__rate_interval])))",
-          "legendFormat": "p95 DB time",
-          "refId": "A"
         },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(hrms_http_request_duration_seconds_bucket{job=\"hrms-api\", instance=~\"$instance\",route!~\"/health.*|/metrics\"}[$__rate_interval])))",
-          "legendFormat": "p95 total",
-          "refId": "B"
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
-      ],
+      },
       "gridPos": {
-        "h": 8,
-        "w": 24,
-        "x": 0,
-        "y": 27
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "s"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "type": "row",
-      "title": "Sign-in & security",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 35
-      },
-      "collapsed": false
-    },
-    {
-      "type": "timeseries",
-      "title": "Sign-in outcomes",
-      "description": "200 signed in \u00b7 401 wrong credentials \u00b7 429 locked out \u00b7 403 suspended or inactive.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum by (status) (rate(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\",route=\"/v1/auth/login\"}[$__rate_interval]))",
-          "legendFormat": "{{status}}",
-          "refId": "A"
-        }
-      ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 36
-      },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "reqps"
-        },
-        "overrides": []
-      },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
-        }
-      }
-    },
-    {
-      "type": "stat",
-      "title": "Lockouts (last 10 min)",
-      "description": "Alert HrmsLoginLockoutSpike fires above 20.",
-      "datasource": {
-        "type": "prometheus",
-        "uid": "${datasource}"
-      },
-      "targets": [
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum(increase(hrms_http_requests_total{job=\"hrms-api\", instance=~\"$instance\",route=\"/v1/auth/login\",status=\"429\"}[10m]))",
-          "legendFormat": "lockouts",
-          "refId": "A"
-        }
-      ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 36
+        "y": 12,
+        "w": 12,
+        "h": 8
       },
-      "fieldConfig": {
-        "defaults": {
-          "unit": "short"
-        },
-        "overrides": []
-      },
-      "options": {}
-    },
-    {
-      "type": "row",
-      "title": "Jobs",
-      "gridPos": {
-        "h": 1,
-        "w": 24,
-        "x": 0,
-        "y": 44
-      },
-      "collapsed": false
+      "id": 8
     },
     {
       "type": "timeseries",
-      "title": "Leave accrual run duration",
-      "description": "",
+      "title": "Sign-in results",
+      "description": "Sign-in success and failure rates. Sparse traffic may produce no data.",
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "prometheus"
       },
+      "interval": "30s",
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
-          "expr": "histogram_quantile(0.95, sum by (le) (rate(hrms_leave_accrual_run_seconds_bucket{job=\"hrms-api\", instance=~\"$instance\"}[1h])))",
-          "legendFormat": "p95",
+          "expr": "sum by (status) (rate(hrms_http_requests_total{job=\"hrms-api\",instance=~\"$instance\",route=\"/v1/auth/login\"}[$__rate_interval]))",
+          "legendFormat": "HTTP {{status}}",
           "refId": "A"
-        },
-        {
-          "datasource": {
-            "type": "prometheus",
-            "uid": "${datasource}"
-          },
-          "expr": "sum(increase(hrms_leave_accruals_credited_total{job=\"hrms-api\", instance=~\"$instance\"}[1h]))",
-          "legendFormat": "credits / h",
-          "refId": "B"
         }
       ],
-      "gridPos": {
-        "h": 8,
-        "w": 12,
-        "x": 0,
-        "y": 45
-      },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "reqps",
+          "custom": {
+            "drawStyle": "line",
+            "lineWidth": 2,
+            "fillOpacity": 8
+          }
         },
         "overrides": []
       },
       "options": {
         "legend": {
-          "displayMode": "list",
+          "displayMode": "table",
           "placement": "bottom",
-          "calcs": []
+          "calcs": [
+            "lastNotNull",
+            "max"
+          ]
+        },
+        "tooltip": {
+          "mode": "multi",
+          "sort": "desc"
         }
-      }
+      },
+      "gridPos": {
+        "x": 0,
+        "y": 20,
+        "w": 12,
+        "h": 8
+      },
+      "id": 9
     },
     {
-      "type": "timeseries",
-      "title": "Scheduled personnel actions",
-      "description": "Any 'failed' needs HR attention (alert HrmsScheduledActionsFailing).",
+      "type": "table",
+      "title": "Alerts needing attention",
+      "description": "Current pending and firing alerts, including jobs, backups, security and infrastructure. An empty table means no active alerts.",
       "datasource": {
         "type": "prometheus",
-        "uid": "${datasource}"
+        "uid": "prometheus"
       },
       "targets": [
         {
           "datasource": {
             "type": "prometheus",
-            "uid": "${datasource}"
+            "uid": "prometheus"
           },
-          "expr": "sum by (outcome) (increase(hrms_scheduled_personnel_actions_total{job=\"hrms-api\", instance=~\"$instance\"}[1h]))",
-          "legendFormat": "{{outcome}}",
+          "expr": "ALERTS{alertstate=~\"pending|firing\",alertname=~\"HrmsApiDown|HrmsHighErrorRate|HrmsSlowResponses|HrmsLogin.*\"}",
+          "format": "table",
+          "instant": true,
           "refId": "A"
         }
       ],
       "gridPos": {
-        "h": 8,
-        "w": 12,
         "x": 12,
-        "y": 45
+        "y": 20,
+        "w": 12,
+        "h": 8
       },
       "fieldConfig": {
         "defaults": {
-          "unit": "short"
+          "unit": "none",
+          "decimals": 1
         },
         "overrides": []
       },
-      "options": {
-        "legend": {
-          "displayMode": "list",
-          "placement": "bottom",
-          "calcs": []
+      "transformations": [
+        {
+          "id": "organize",
+          "options": {
+            "excludeByName": {
+              "Time": true,
+              "__name__": true,
+              "job": true,
+              "Value": true
+            },
+            "renameByName": {
+              "Value": "Active",
+              "job_name": "Job",
+              "alertname": "Alert",
+              "alertstate": "State",
+              "severity": "Severity",
+              "instance": "Instance"
+            }
+          }
         }
-      }
+      ],
+      "options": {
+        "showHeader": true,
+        "cellHeight": "sm",
+        "footer": {
+          "show": false
+        },
+        "sortBy": []
+      },
+      "id": 10
     }
-  ]
+  ],
+  "description": "API traffic, latency, failures and slow endpoints.",
+  "links": [
+    {
+      "title": "Overview",
+      "url": "/d/hrms-overview",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Database",
+      "url": "/d/hrms-db",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    },
+    {
+      "title": "Infrastructure",
+      "url": "/d/hrms-infra",
+      "type": "link",
+      "keepTime": true,
+      "includeVars": true,
+      "targetBlank": false
+    }
+  ],
+  "version": 1
 }

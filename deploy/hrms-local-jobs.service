@@ -1,0 +1,20 @@
+[Unit]
+Description=HRMS local testing background jobs
+After=network-online.target docker.service
+Wants=network-online.target
+
+[Service]
+Type=simple
+User=aiserver
+WorkingDirectory=/home/aiserver/HRMS/backend
+ExecStart=/home/aiserver/HRMS/backend/.venv/bin/python -m hrms.jobs schedule
+Environment=HRMS_DEBUG=false
+Environment=HRMS_LOG_FORMAT=json
+Environment=PROMETHEUS_MULTIPROC_DIR=
+Restart=always
+RestartSec=30
+NoNewPrivileges=true
+UMask=0077
+
+[Install]
+WantedBy=multi-user.target

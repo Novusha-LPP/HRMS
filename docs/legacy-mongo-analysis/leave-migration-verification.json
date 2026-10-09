@@ -1,0 +1,34 @@
+{
+  "tenant": "suraj-group",
+  "existing_rows_unchanged": {
+    "leave_types": 10,
+    "leave_policy_sets": 2,
+    "leave_bucket_policies": 3,
+    "leave_policy_assignments": 1,
+    "leave_balance_buckets": 18,
+    "leave_type_bucket_mapping": 10,
+    "leave_monthly_ledger": 194,
+    "leave_balance_transactions": 195,
+    "leave_applications": 5,
+    "leave_balances": 0
+  },
+  "new_rows": {
+    "leave_types": 2,
+    "leave_policy_sets": 37,
+    "leave_bucket_policies": 58,
+    "leave_policy_assignments": 189,
+    "leave_balance_buckets": 2,
+    "leave_type_bucket_mapping": 2,
+    "leave_monthly_ledger": 0,
+    "leave_balance_transactions": 0,
+    "leave_applications": 0,
+    "leave_balances": 0
+  },
+  "exact_source_definitions_verified": 18,
+  "employee_assignments_verified": 189,
+  "privilege_leave_employees": 107,
+  "lwp_employees": 189,
+  "cross_company_references_reported": 4,
+  "rabs_unchanged": true,
+  "rerun_created_records": 0
+}

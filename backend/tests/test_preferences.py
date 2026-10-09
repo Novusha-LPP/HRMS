@@ -9,7 +9,8 @@ pytestmark = pytest.mark.database
 PASSWORD = "Test-password-123"
 
 
-async def test_defaults_then_independent_partial_updates(api):
+@pytest.mark.parametrize("color_theme", ["midnight-blue", "ember-sand"])
+async def test_defaults_then_independent_partial_updates(api, color_theme):
     client, _ = api
     await tenant(client)
     assert await ok(client, "GET", "/v1/me/preferences") == {
@@ -17,10 +18,11 @@ async def test_defaults_then_independent_partial_updates(api):
         "dashboard_style": "widgets",
     }
     # Changing one choice leaves the other alone, in either order.
-    themed = await ok(client, "PATCH", "/v1/me/preferences", json={"color_theme": "midnight-blue"})
-    assert themed == {"color_theme": "midnight-blue", "dashboard_style": "widgets"}
+    themed = await ok(client, "PATCH", "/v1/me/preferences", json={"color_theme": color_theme})
+    assert themed == {"color_theme": color_theme, "dashboard_style": "widgets"}
+    assert await ok(client, "GET", "/v1/me/preferences") == themed
     styled = await ok(client, "PATCH", "/v1/me/preferences", json={"dashboard_style": "overview"})
-    assert styled == {"color_theme": "midnight-blue", "dashboard_style": "overview"}
+    assert styled == {"color_theme": color_theme, "dashboard_style": "overview"}
     back = await ok(client, "PATCH", "/v1/me/preferences", json={"color_theme": "classic-teal"})
     assert back == {"color_theme": "classic-teal", "dashboard_style": "overview"}
     assert await ok(client, "GET", "/v1/me/preferences") == back

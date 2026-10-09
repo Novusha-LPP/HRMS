@@ -24,7 +24,9 @@ const CORRECTION_TYPES = [
   { value: "LATE_REASON", label: "Late arrival — reason" },
   { value: "EARLY_DEPARTURE_REASON", label: "Early departure — reason" },
 ];
-const typeLabel = (v: string) => CORRECTION_TYPES.find((t) => t.value === v)?.label ?? v;
+// DIRECT_EDIT is HR changing a day in the attendance register — never requested from this page.
+const typeLabel = (v: string) =>
+  v === "DIRECT_EDIT" ? "Edited by HR" : CORRECTION_TYPES.find((t) => t.value === v)?.label ?? v;
 
 const PENDING = ["PENDING_L1", "PENDING_L2", "PENDING_L3", "PENDING"];
 const NEEDS_IN = new Set(["PUNCH_IN", "MISSED_PUNCH", "REGULARIZE", "MARK_PRESENT"]);

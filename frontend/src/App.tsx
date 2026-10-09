@@ -27,6 +27,8 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ defaul
 const RecruitmentPage = lazy(() => import("./pages/RecruitmentPage").then(m => ({ default: m.RecruitmentPage })));
 const OpeningDetailPage = lazy(() => import("./pages/OpeningDetailPage").then(m => ({ default: m.OpeningDetailPage })));
 const DailyAnalysisPage = lazy(() => import("./pages/DailyAnalysisPage").then(m => ({ default: m.DailyAnalysisPage })));
+const AttendanceRegisterPage = lazy(() => import("./pages/AttendanceRegisterPage").then(m => ({ default: m.AttendanceRegisterPage })));
+const MyTeamPage = lazy(() => import("./pages/MyTeamPage").then(m => ({ default: m.MyTeamPage })));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage").then(m => ({ default: m.ChangePasswordPage })));
 
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
@@ -107,9 +109,11 @@ export default function App() {
                               <Route path="/" element={<Navigate to="/dashboard" replace />} />
                               <Route path="/dashboard" element={<DashboardPage />} />
                               <Route path="/employees" element={<EmployeePage />} />
+                              <Route path="/team" element={<MyTeamPage />} />
                               <Route path="/daily-analysis" element={<DailyAnalysisPage />} />
                               <Route path="/kyc" element={<Navigate to="/profile?tab=kyc" replace />} />
                               <Route path="/attendance" element={<AttendancePage />} />
+                              <Route path="/attendance/register" element={<AttendanceRegisterPage />} />
                               <Route path="/leave" element={<LeavePage />} />
                               <Route path="/corrections" element={<CorrectionsPage />} />
                               <Route path="/approvals" element={<ApprovalsPage />} />

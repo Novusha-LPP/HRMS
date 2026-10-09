@@ -1,0 +1,731 @@
+{
+  "scope": "Three supplied JSON exports only; no live database connection or writes.",
+  "collections": {
+    "weekoffpolicies": {
+      "documents": 4,
+      "field_presence": {
+        "_id": 4,
+        "policy_name": 4,
+        "description": 4,
+        "policy_type": 4,
+        "applicability": 4,
+        "day_rules": 4,
+        "status": 4,
+        "created_by": 4,
+        "createdAt": 4,
+        "updatedAt": 4,
+        "__v": 4,
+        "updated_by": 4,
+        "company_id": 2
+      },
+      "duplicate_ids": 0
+    },
+    "holidaypolicies": {
+      "documents": 3,
+      "field_presence": {
+        "_id": 3,
+        "policy_name": 3,
+        "company_id": 3,
+        "year": 3,
+        "applicability": 3,
+        "holidays": 3,
+        "status": 3,
+        "created_by": 3,
+        "createdAt": 3,
+        "updatedAt": 3,
+        "__v": 3,
+        "updated_by": 3
+      },
+      "duplicate_ids": 0
+    },
+    "attendancepunches": {
+      "documents": 33147,
+      "field_presence": {
+        "_id": 33147,
+        "employee_id": 33147,
+        "company_id": 33147,
+        "punch_type": 33147,
+        "punch_time": 33147,
+        "punch_date": 33147,
+        "punch_method": 33147,
+        "is_valid": 33147,
+        "validation_errors": 33147,
+        "is_regularized": 33147,
+        "createdAt": 33147,
+        "updatedAt": 33147,
+        "__v": 33147,
+        "punch_date_str": 33147
+      },
+      "duplicate_ids": 0
+    }
+  },
+  "attendance": {
+    "employees": 163,
+    "companies": 11,
+    "employee_company_days": 16788,
+    "utc_range": [
+      "2026-04-01T12:50:05.765Z",
+      "2026-10-06T06:05:28.319Z"
+    ],
+    "counts": {
+      "company_id": {
+        "69cd1351ff5301f416796cec": 25,
+        "69cd1e3b50e6c73acc73a918": 6278,
+        "69cd1e3b50e6c73acc73a920": 3342,
+        "69cd1e3c50e6c73acc73a928": 3173,
+        "69cd1e3b50e6c73acc73a91c": 1752,
+        "69cd1e3c50e6c73acc73a92a": 362,
+        "69cd1e3b50e6c73acc73a922": 425,
+        "69cd1e3b50e6c73acc73a91a": 7088,
+        "69cd1e3b50e6c73acc73a924": 5469,
+        "69cd1e3b50e6c73acc73a91e": 1853,
+        "69cd1e3b50e6c73acc73a926": 3380
+      },
+      "punch_type": {
+        "IN": 17572,
+        "OUT": 15575
+      },
+      "punch_method": {
+        "web": 22756,
+        "auto": 1089,
+        "mobile": 9302
+      },
+      "is_valid": {
+        "True": 33147
+      },
+      "is_regularized": {
+        "False": 33147
+      }
+    },
+    "monthly_punches": {
+      "2026-04": 5592,
+      "2026-05": 4991,
+      "2026-06": 5171,
+      "2026-07": 5741,
+      "2026-08": 5501,
+      "2026-09": 5367,
+      "2026-10": 784
+    },
+    "day_group_sizes": {
+      "1": 2922,
+      "2": 13233,
+      "3": 258,
+      "4": 256,
+      "5": 36,
+      "6": 40,
+      "7": 6,
+      "8": 8,
+      "9": 2,
+      "10": 4,
+      "11": 1,
+      "12": 6,
+      "13": 3,
+      "14": 2,
+      "16": 3,
+      "17": 1,
+      "18": 2,
+      "21": 1,
+      "22": 1,
+      "40": 1,
+      "349": 1,
+      "694": 1
+    },
+    "top_day_sequences": [
+      [
+        "IN OUT",
+        12994
+      ],
+      [
+        "IN",
+        2858
+      ],
+      [
+        "IN OUT IN OUT",
+        250
+      ],
+      [
+        "OUT IN",
+        213
+      ],
+      [
+        "IN OUT IN",
+        133
+      ],
+      [
+        "OUT",
+        64
+      ],
+      [
+        "IN IN OUT",
+        64
+      ],
+      [
+        "IN OUT IN OUT IN OUT",
+        39
+      ],
+      [
+        "OUT IN OUT",
+        29
+      ],
+      [
+        "IN OUT IN OUT IN",
+        27
+      ],
+      [
+        "IN IN",
+        23
+      ],
+      [
+        "IN OUT OUT",
+        22
+      ],
+      [
+        "OUT IN IN",
+        10
+      ],
+      [
+        "IN OUT IN OUT IN OUT IN OUT",
+        8
+      ],
+      [
+        "IN OUT IN OUT IN OUT IN OUT IN OUT IN OUT",
+        6
+      ]
+    ],
+    "duplicate_event_groups": 31,
+    "excess_duplicate_events": 1066,
+    "max_event_multiplicity": 693,
+    "punch_date_utc_day_mismatches": 2462,
+    "punch_time_utc_day_mismatches": 171,
+    "punch_time_ist_day_mismatches": 0,
+    "punch_date_time_components": {
+      "00:00:00": 30683,
+      "04:14:00": 1,
+      "02:31:00": 1,
+      "18:30:00": 2462
+    },
+    "employees_in_multiple_companies": 23,
+    "nonempty_validation_errors": 0,
+    "single_punch_days_before_last_export_day": 2822,
+    "largest_day_groups": [
+      {
+        "company_id": "69cd1e3b50e6c73acc73a924",
+        "employee_id": "68ad50ffd4e8150302c6ef74",
+        "day": "2026-04-02",
+        "punches": 694,
+        "distinct_times": 2,
+        "methods": {
+          "web": 1,
+          "auto": 693
+        }
+      },
+      {
+        "company_id": "69cd1e3b50e6c73acc73a924",
+        "employee_id": "68ad50ffd4e8150302c6ef74",
+        "day": "2026-04-03",
+        "punches": 349,
+        "distinct_times": 4,
+        "methods": {
+          "web": 3,
+          "auto": 346
+        }
+      },
+      {
+        "company_id": "69cd1e3c50e6c73acc73a928",
+        "employee_id": "6981c69dfd24d48e6c8597b0",
+        "day": "2026-05-14",
+        "punches": 40,
+        "distinct_times": 40,
+        "methods": {
+          "mobile": 27,
+          "web": 13
+        }
+      },
+      {
+        "company_id": "69cd1e3c50e6c73acc73a928",
+        "employee_id": "68e89c7ba5d41da1befe6d0c",
+        "day": "2026-05-13",
+        "punches": 22,
+        "distinct_times": 22,
+        "methods": {
+          "mobile": 22
+        }
+      },
+      {
+        "company_id": "69cd1e3c50e6c73acc73a928",
+        "employee_id": "68e89c7ba5d41da1befe6d0c",
+        "day": "2026-05-15",
+        "punches": 21,
+        "distinct_times": 21,
+        "methods": {
+          "mobile": 19,
+          "web": 2
+        }
+      }
+    ]
+  },
+  "weekoff_policies": [
+    {
+      "_id": {
+        "$oid": "69d4fb58e7c534f060707f72"
+      },
+      "policy_name": "Operation Weekoff",
+      "company_id": null,
+      "policy_type": "fixed",
+      "applicability": {
+        "teams": {
+          "all": true,
+          "list": []
+        }
+      },
+      "day_rules": [
+        {
+          "day_index": 0,
+          "rules": [
+            {
+              "week_number": 0,
+              "off_type": "full_day"
+            }
+          ]
+        },
+        {
+          "day_index": 6,
+          "rules": [
+            {
+              "week_number": 2,
+              "off_type": "full_day"
+            }
+          ]
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "_id": {
+        "$oid": "69d4fba3e7c534f060708032"
+      },
+      "policy_name": "HO Weekoff",
+      "company_id": {
+        "$oid": "69cd1e3b50e6c73acc73a918"
+      },
+      "policy_type": "fixed",
+      "applicability": {
+        "teams": {
+          "all": true,
+          "list": []
+        }
+      },
+      "day_rules": [
+        {
+          "day_index": 0,
+          "rules": [
+            {
+              "week_number": 0,
+              "off_type": "full_day"
+            }
+          ]
+        },
+        {
+          "day_index": 6,
+          "rules": [
+            {
+              "week_number": 2,
+              "off_type": "full_day"
+            }
+          ]
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "_id": {
+        "$oid": "69d4ffc72110716b00fff3d8"
+      },
+      "policy_name": "NOVUSHA WEEKOFF POLICY",
+      "company_id": null,
+      "policy_type": "fixed",
+      "applicability": {
+        "teams": {
+          "all": true,
+          "list": []
+        }
+      },
+      "day_rules": [
+        {
+          "day_index": 0,
+          "rules": [
+            {
+              "week_number": 0,
+              "off_type": "full_day"
+            }
+          ]
+        },
+        {
+          "day_index": 6,
+          "rules": [
+            {
+              "week_number": 2,
+              "off_type": "full_day"
+            },
+            {
+              "week_number": 4,
+              "off_type": "full_day"
+            }
+          ]
+        }
+      ],
+      "status": "active"
+    },
+    {
+      "_id": {
+        "$oid": "6a3520076660f902a76e5cf7"
+      },
+      "policy_name": "General Week Off",
+      "company_id": {
+        "$oid": "69cd1e3b50e6c73acc73a926"
+      },
+      "policy_type": "fixed",
+      "applicability": {
+        "teams": {
+          "all": true,
+          "list": []
+        }
+      },
+      "day_rules": [
+        {
+          "day_index": 0,
+          "rules": [
+            {
+              "week_number": 0,
+              "off_type": "full_day"
+            }
+          ]
+        }
+      ],
+      "status": "active"
+    }
+  ],
+  "holiday_policies": [
+    {
+      "id": "69d4fd5beb8e901c4ae7a5cd",
+      "name": "HO Holiday",
+      "company_id": "69cd1e3b50e6c73acc73a918",
+      "year": 2026,
+      "status": "active",
+      "applicability": {
+        "teams": {
+          "all": true,
+          "list": []
+        }
+      },
+      "holiday_count": 10,
+      "holidays": [
+        {
+          "name": "Makar Sankranti",
+          "date": "2026-01-14",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Republic Day",
+          "date": "2026-01-26",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Holi",
+          "date": "2026-03-04",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Independence Day",
+          "date": "2026-08-15",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Gandhi Jayanti",
+          "date": "2026-10-02",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Dussehra",
+          "date": "2026-10-20",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Diwali",
+          "date": "2026-11-08",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "New Year",
+          "date": "2026-11-10",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Christmas",
+          "date": "2026-12-25",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Janmashtami",
+          "date": "2026-09-04",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        }
+      ]
+    },
+    {
+      "id": "69d4ff162110716b00fff133",
+      "name": "Operations Holiday",
+      "company_id": "69cd1e3b50e6c73acc73a918",
+      "year": 2026,
+      "status": "active",
+      "applicability": {
+        "teams": {
+          "all": true,
+          "list": []
+        }
+      },
+      "holiday_count": 19,
+      "holidays": [
+        {
+          "name": "Makar Sankranti",
+          "date": "2026-01-14",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Republic Day",
+          "date": "2026-01-26",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Holi",
+          "date": "2026-03-04",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Id-ul-Fitr",
+          "date": "2026-03-21",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Mahavir Jayanti",
+          "date": "2026-03-31",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Good Friday",
+          "date": "2026-04-03",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Budha Purnima",
+          "date": "2026-05-01",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Id-ul-Zuha(Bakrid)",
+          "date": "2026-05-28",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Muharram",
+          "date": "2026-06-26",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Independence Day",
+          "date": "2026-08-15",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Milad-un Nabi /Id-e-Milad",
+          "date": "2026-08-26",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Janmashtami",
+          "date": "2026-09-04",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Mahatma Gandhi's Birthday",
+          "date": "0206-10-02",
+          "year_matches_policy": false,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Dussehra",
+          "date": "2026-10-20",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Diwali",
+          "date": "2026-11-08",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Guru Nanak's Birthday",
+          "date": "2026-11-24",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Christmas Day",
+          "date": "2026-12-25",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "New Year",
+          "date": "2026-11-10",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Ambedkar Jayant",
+          "date": "2026-04-14",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        }
+      ]
+    },
+    {
+      "id": "6a35190548384a5ff5e2900e",
+      "name": "Holiday",
+      "company_id": "69cd1e3b50e6c73acc73a926",
+      "year": 2026,
+      "status": "active",
+      "applicability": {
+        "teams": {
+          "all": true,
+          "list": []
+        }
+      },
+      "holiday_count": 10,
+      "holidays": [
+        {
+          "name": "NEW YEAR",
+          "date": "2026-01-01",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "MAKAR SANKRANTI",
+          "date": "2026-01-14",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "REPUBLIC DAY",
+          "date": "2026-01-26",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "DHULETI",
+          "date": "2026-03-03",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "INDEPENDENCE DAY",
+          "date": "2026-08-15",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "Raksha Bandhan",
+          "date": "2026-08-28",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "GANDHI JAYANTI",
+          "date": "2026-10-02",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "DASHERA",
+          "date": "2026-10-20",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "DIWALI",
+          "date": "2026-11-08",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        },
+        {
+          "name": "NEW YEAR",
+          "date": "2026-11-10",
+          "year_matches_policy": true,
+          "optional": false,
+          "type": "national"
+        }
+      ]
+    }
+  ]
+}

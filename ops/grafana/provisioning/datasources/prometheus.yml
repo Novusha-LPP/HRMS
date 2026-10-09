@@ -9,6 +9,8 @@ datasources:
     url: http://127.0.0.1:9090
     isDefault: true
     editable: true
+    jsonData:
+      timeInterval: 30s
 
   # Shows Prometheus's firing alerts (and silences) under Alerting in Grafana.
   - name: Alertmanager

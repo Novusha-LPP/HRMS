@@ -393,6 +393,7 @@ def _tpl_response(t: PolicyTemplate) -> PolicyTemplateResponse:
         ot_qualifying_minutes=t.ot_qualifying_minutes,
         ot_rate=t.ot_rate,
         ot_daily_cap_minutes=t.ot_daily_cap_minutes,
+        off_day_work=t.off_day_work,
         punch_rounding_minutes=t.punch_rounding_minutes,
         punch_rounding_direction=t.punch_rounding_direction,
         correction_requires_approval=t.correction_requires_approval,

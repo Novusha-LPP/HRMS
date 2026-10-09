@@ -29,7 +29,7 @@ export function Avatar({ name, size = "md", className = "" }: {
   const tone = TONES[Math.abs(hash) % TONES.length];
   return (
     <span
-      className={`inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold ${SIZES[size]} ${tone} ${className}`}
+      className={`avatar inline-flex shrink-0 select-none items-center justify-center rounded-full font-semibold ${SIZES[size]} ${tone} ${className}`}
       aria-hidden
     >
       {initials(name)}

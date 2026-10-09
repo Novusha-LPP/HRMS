@@ -1,0 +1,48 @@
+{
+  "month": "2026-10",
+  "tenant": "rabs-industries-india-private-limited",
+  "existing_rows_unchanged": {
+    "punches": 665,
+    "attendance_days": 391,
+    "employee_policy_assignments": 125,
+    "holiday_calendar_assignments": 130,
+    "leave_policy_assignments": 190,
+    "leave_monthly_ledger": 194,
+    "leave_balance_transactions": 195
+  },
+  "new_rows": {
+    "punches": 5,
+    "attendance_days": 3,
+    "employee_policy_assignments": 0,
+    "holiday_calendar_assignments": 0,
+    "leave_policy_assignments": 0,
+    "leave_monthly_ledger": 0,
+    "leave_balance_transactions": 0
+  },
+  "source_punches": 131,
+  "source_employees": 25,
+  "punches_verified": 5,
+  "employee_days": 3,
+  "employee_code": "RI_039",
+  "deferred_punches": 126,
+  "unresolved_employees": 24,
+  "rerun_created_records": 0,
+  "rerun_recomputed_days": 0,
+  "attendance_days": [
+    {
+      "work_date": "2026-10-01",
+      "status": "PRESENT",
+      "review_flags": null
+    },
+    {
+      "work_date": "2026-10-05",
+      "status": "EARLY_DEPARTURE",
+      "review_flags": null
+    },
+    {
+      "work_date": "2026-10-06",
+      "status": "PRESENT",
+      "review_flags": null
+    }
+  ]
+}

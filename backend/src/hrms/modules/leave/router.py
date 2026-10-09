@@ -72,6 +72,7 @@ from hrms.modules.leave.engine import (
     record_accruals,
     record_transaction,
 )
+from hrms.modules.leave.legacy import validate_legacy_application
 from hrms.modules.leave.models import (
     CompOffGrant,
     LeaveApplication,
@@ -133,6 +134,7 @@ from hrms.modules.leave.schemas import (
     YearEndCloseResponse,
 )
 from hrms.modules.policy.engine import resolve_policy
+from hrms.modules.time.holidays import holiday_scope_sql
 
 router = APIRouter(prefix="/v1/leave", tags=["Leave Management"])
 
@@ -1689,10 +1691,9 @@ async def _allocate_days(session, tenant_id, employment_id, start, end, half_day
 
     holidays = (
         await session.execute(
-            text("""
-        SELECT holiday_date FROM holidays WHERE tenant_id = :tid AND archived_at IS NULL
-          AND (legal_entity_id IS NULL OR legal_entity_id =
-              (SELECT legal_entity_id FROM employments WHERE tenant_id = :tid AND id = :eid))
+            text(f"""
+        SELECT holiday_date FROM holidays h WHERE tenant_id = :tid AND archived_at IS NULL
+          AND {holiday_scope_sql()}
           AND holiday_date BETWEEN :start AND :end AND is_optional = false
     """),
             {"tid": tenant_id, "eid": employment_id, "start": start, "end": end},
@@ -1713,16 +1714,25 @@ async def _allocate_days(session, tenant_id, employment_id, start, end, half_day
 async def _validate_application(session, tenant_id, employment_id, lt, body, days):
     if not lt.is_active or lt.archived_at:
         raise HTTPException(422, "This leave type is inactive")
-    if days <= 0 or days < lt.min_days_per_application:
+    legacy_document = await validate_legacy_application(
+        session, tenant_id, employment_id, lt, body, days
+    )
+    if not lt.legacy_managed and (days <= 0 or days < lt.min_days_per_application):
         raise HTTPException(422, "Leave must cover the minimum number of working days")
-    if lt.max_days_per_application is not None and days > lt.max_days_per_application:
+    if (
+        not lt.legacy_managed
+        and lt.max_days_per_application is not None
+        and days > lt.max_days_per_application
+    ):
         raise HTTPException(422, "Leave exceeds the maximum application duration")
-    if lt.advance_notice_days and body.from_date < now_utc().date() + timedelta(
-        days=lt.advance_notice_days
+    if (
+        not lt.legacy_managed
+        and lt.advance_notice_days
+        and body.from_date < now_utc().date() + timedelta(days=lt.advance_notice_days)
     ):
         raise HTTPException(422, "This leave type requires more advance notice")
     document = getattr(body, "document_id", None)
-    if lt.requires_document and not document:
+    if (lt.requires_document or legacy_document) and not document:
         raise HTTPException(422, "This leave type requires a supporting KYC document")
     if document:
         document = to_uuid(document) if isinstance(document, str) else document

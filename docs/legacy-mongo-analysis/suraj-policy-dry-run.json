@@ -1,0 +1,27 @@
+{
+  "mode": "DRY_RUN_ROLLED_BACK",
+  "tenant": "suraj-group",
+  "attendance_names_corrected": 0,
+  "missing_weekoff_assignments_added": 0,
+  "leave_minimum_labels_corrected": 0,
+  "weekoff_assignments_verified": 189,
+  "attendance_assignment_counts": {
+    "Novusha Week Off": 17,
+    "Sunday Week Off (Fallback)": 60,
+    "Head Office Week Off": 93,
+    "Operations Week Off": 19
+  },
+  "calendar_rule_checks": 1825,
+  "exact_leave_definitions_verified": 18,
+  "leave_assignments_verified": 189,
+  "employees_with_privilege_leave": 107,
+  "existing_attendance_and_leave_balances_unchanged": true,
+  "other_tenants_unchanged": true,
+  "limitations": [
+    "Legacy shift, grace and overtime configuration export unavailable",
+    "Staff leave balance export unavailable",
+    "Legacy named approver routes have not been migrated",
+    "Old leave calculator applies sandwich counting even when the exported flag is false; HRMS follows the exported false flag"
+  ],
+  "attendance_name_changes": []
+}

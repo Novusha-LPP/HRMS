@@ -53,7 +53,8 @@ POLICY = dict(
     correction_approval_levels=1,
 )
 START, END, BREAK, GRACE = time(9, 30), time(18, 30), 60, 15
-STANDARD = 9 * 60 - BREAK
+STANDARD = 9 * 60 - BREAK  # 8 h: the half-day threshold is half of this
+SHIFT = 9 * 60  # 09:30-18:30: overtime only after the whole shift
 
 
 def at(day: date, clock: str, plus_days: int = 0) -> datetime:
@@ -157,7 +158,7 @@ def oracle(day: date, punches: list[tuple]) -> Expected:
             status = "EARLY_DEPARTURE"
         else:
             status = "PRESENT"
-    excess = effective - STANDARD
+    excess = effective - SHIFT
     ot = excess if (not is_open and excess >= 30) else 0
     return Expected(
         first_in,
@@ -381,7 +382,6 @@ async def test_multiple_punches_any_time_and_every_report_agrees(api, monkeypatc
 
 async def test_check_out_after_midnight_on_a_day_shift(api, monkeypatch):
     """Working late: IN 09:30 Friday, OUT 01:15 Saturday belongs to Friday."""
-    from hrms.modules.dashboard import router as dashboard_router
     from hrms.modules.time import router as time_router
 
     client, engine = api
@@ -389,14 +389,23 @@ async def test_check_out_after_midnight_on_a_day_shift(api, monkeypatch):
     day = date(2026, 9, 18)
     assert (await _punch(client, monkeypatch, headers, "IN", at(day, "09:30"))).status_code == 201
 
-    # 00:40: the clock still shows Friday's open session, so it offers Check out.
+    # A missed check-out on Friday must not show as Saturday's check-in, even
+    # within 24 hours. An explicit late check-out can still close Friday below.
     clock = at(day, "00:40", 1).astimezone(UTC)
     monkeypatch.setattr(time_router, "now_utc", lambda: clock)
-    monkeypatch.setattr(dashboard_router, "now_utc", lambda: clock)
     today = await ok(client, "GET", "/v1/time/today", headers=headers)
-    assert today["work_date"] == str(day) and today["is_punched_in"] is True
+    assert today["work_date"] == str(day + timedelta(days=1))
+    assert today["is_punched_in"] is False
+    assert today["punches"] == []
     dash = await ok(client, "GET", "/v1/dashboard/employee", headers=headers)
-    assert dash["today"]["is_punched_in"] is True
+    assert dash["today"]["is_punched_in"] is False
+
+    # Logging in the following day must not make an expired session look active.
+    monkeypatch.setattr(time_router, "now_utc", lambda: at(day, "10:00", 1).astimezone(UTC))
+    expired = await ok(client, "GET", "/v1/time/today", headers=headers)
+    assert expired["is_punched_in"] is False
+    dash = await ok(client, "GET", "/v1/dashboard/employee", headers=headers)
+    assert dash["today"]["is_punched_in"] is False
 
     out = await _punch(client, monkeypatch, headers, "OUT", at(day, "01:15", 1))
     assert out.status_code == 201, f"check-out after midnight refused: {out.status_code} {out.text}"
@@ -419,7 +428,7 @@ async def test_check_out_after_midnight_on_a_day_shift(api, monkeypatch):
     }
     friday = rows["2026-09-18"]
     assert friday["effective_minutes"] == 15 * 60 + 45
-    assert friday["ot_minutes"] == 15 * 60 + 45 - STANDARD
+    assert friday["ot_minutes"] == 15 * 60 + 45 - SHIFT
     assert friday["status"] == "PRESENT"
     assert rows["2026-09-19"]["effective_minutes"] == 4 * 60
     assert rows["2026-09-19"]["first_punch_in"].startswith("2026-09-19T04:30")
@@ -508,3 +517,63 @@ async def test_invalid_sequences_are_refused_and_change_nothing(api, monkeypatch
     today = await ok(client, "GET", f"/v1/time/today?work_date={day}", headers=headers)
     assert [p["punch_type"] for p in today["punches"]] == ["IN", "OUT"]
     assert today["effective_minutes"] == 9 * 60 + 30
+
+
+async def test_overtime_starts_after_the_shift_and_is_visible_only_without_a_policy(
+    api, monkeypatch
+):
+    """09:30-18:30 with no break is not overtime. Without an overtime policy the extra time is
+    shown (INFO) but never goes for approval, so it can't reach payroll."""
+    client, _ = api
+    admin, emp, headers = await _setup(client)
+    day = date(2026, 9, 14)
+    await _punch(client, monkeypatch, headers, "IN", at(day, "09:30"))
+    await _punch(client, monkeypatch, headers, "OUT", at(day, "18:30"))
+    row = (
+        await ok(
+            client,
+            "GET",
+            f"/v1/time/attendance-days?from_date={day}&to_date={day}",
+            headers=headers,
+        )
+    )[0]
+    assert (row["effective_minutes"], row["ot_minutes"], row["ot_status"]) == (540, 0, "NONE")
+
+    # With the overtime policy (threshold 30 min): 19:15 is 45 min past the shift.
+    tuesday = date(2026, 9, 15)
+    await _punch(client, monkeypatch, headers, "IN", at(tuesday, "09:30"))
+    await _punch(client, monkeypatch, headers, "OUT", at(tuesday, "19:15"))
+    row = (
+        await ok(
+            client,
+            "GET",
+            f"/v1/time/attendance-days?from_date={tuesday}&to_date={tuesday}",
+            headers=headers,
+        )
+    )[0]
+    assert (row["ot_minutes"], row["ot_status"]) == (45, "PENDING")
+
+    # Without an overtime policy the same 45 minutes are shown only.
+    template = next(t for t in await ok(client, "GET", "/v1/policies/templates") if t["is_default"])
+    await ok(
+        client, "PATCH", f"/v1/policies/templates/{template['id']}", json={"ot_enabled": False}
+    )
+    wednesday = date(2026, 9, 16)
+    await _punch(client, monkeypatch, headers, "IN", at(wednesday, "09:30"))
+    await _punch(client, monkeypatch, headers, "OUT", at(wednesday, "19:15"))
+    row = (
+        await ok(
+            client,
+            "GET",
+            f"/v1/time/attendance-days?from_date={wednesday}&to_date={wednesday}",
+            headers=headers,
+        )
+    )[0]
+    assert (row["ot_minutes"], row["ot_status"]) == (45, "INFO")
+    pending = await ok(client, "GET", "/v1/time/overtime/pending")
+    assert all(p["work_date"] != str(wednesday) for p in pending)
+    refused = await client.patch(f"/v1/time/overtime/{row['id']}", json={"status": "APPROVED"})
+    assert refused.status_code == 400
+    da = await ok(client, "GET", f"/v1/time/daily-analysis?work_date={wednesday}")
+    rec = next(e for e in da["employees"] if e["employment_id"] == emp["id"])
+    assert (rec["overtime_minutes"], rec["overtime_status"]) == (45, "INFO")

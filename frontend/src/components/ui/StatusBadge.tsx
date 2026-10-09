@@ -5,7 +5,7 @@ const TONE_BY_STATUS: Record<string, Tone> = {
   LATE: "warning", PROBATION: "warning", HALF_DAY: "warning", PENDING: "warning", ACTION_REQUIRED: "warning",
   ABSENT: "danger", MISSED_PUNCH: "danger", REJECTED: "danger", OVERDUE: "danger", ON_NOTICE: "danger", NOTICE: "danger",
   ON_LEAVE: "info", IN_PROGRESS: "info", CONTRACT: "info", SUBMITTED: "info",
-  HOLIDAY: "plum",
+  HOLIDAY: "plum", OFF_DAY_WORKED: "plum",
   WEEKEND: "neutral", SKIPPED: "neutral", CANCELLED: "neutral", SEPARATED: "neutral",
   INACTIVE: "neutral", DRAFT: "neutral", NOT_SUBMITTED: "neutral", CANCEL_REJECTED: "neutral",
 };
@@ -16,7 +16,12 @@ export function statusTone(status: string): Tone {
   return "neutral";
 }
 
+const LABEL_BY_STATUS: Record<string, string> = {
+  OFF_DAY_WORKED: "Worked on off day",
+};
+
 export function humanize(status: string) {
+  if (LABEL_BY_STATUS[status]) return LABEL_BY_STATUS[status];
   const level = status.match(/_L(\d)$/);
   const base = (level ? status.slice(0, -3) : status).toLowerCase().replace(/_/g, " ");
   const label = base.charAt(0).toUpperCase() + base.slice(1);

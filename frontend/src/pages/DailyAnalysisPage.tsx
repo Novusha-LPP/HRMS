@@ -1,13 +1,16 @@
 import { useRef, useState } from "react";
-import { useQuery } from "@tanstack/react-query";
+import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { Link, useSearchParams } from "react-router-dom";
 import { format, parseISO, subDays, addDays, isAfter, startOfDay } from "date-fns";
 import {
   Users, UserCheck, Timer, Umbrella, ChevronLeft, ChevronRight,
   Download, Search, X, Eye, ExternalLink, Coffee, ArrowDownRight,
-  ArrowUpRight, MapPin,
+  ArrowUpRight, MapPin, ShieldAlert, CalendarPlus, Pencil,
 } from "lucide-react";
-import { timeApi, type DailyEmployeeRecord, type DailyAnalysisResponse, type TodayStatus } from "../api/time";
+import {
+  timeApi, REVIEW_FLAG_LABEL, type DailyEmployeeRecord, type DailyAnalysisResponse, type TodayStatus,
+} from "../api/time";
+import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
 import { StatCard } from "../components/ui/StatCard";
 import { AreaChart, BarList, Donut, Legend, type AreaPoint } from "../components/ui/Charts";
@@ -19,7 +22,7 @@ import { Sheet } from "../components/ui/Overlay";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { Skeleton, EmptyState, Notice } from "../components/ui/Feedback";
 
-type StatusTab = "ALL" | "PRESENT" | "LATE" | "ABSENT" | "ON_LEAVE" | "HALF_DAY";
+type StatusTab = "ALL" | "PRESENT" | "LATE" | "ABSENT" | "ON_LEAVE" | "HALF_DAY" | "NEEDS_REVIEW";
 
 // Overtime is policy-computed but requires a human review (see
 // /v1/time/overtime/pending) before it's "approved" — these keep the label
@@ -27,12 +30,15 @@ type StatusTab = "ALL" | "PRESENT" | "LATE" | "ABSENT" | "ON_LEAVE" | "HALF_DAY"
 // instead of always claiming "Approved".
 const OT_LABEL: Record<string, string> = {
   NONE: "Overtime", PENDING: "Overtime — pending review", APPROVED: "Approved overtime", REJECTED: "Overtime — rejected",
+  INFO: "Extra time — no overtime policy (not paid)",
 };
 const OT_TONE: Record<string, string> = {
   NONE: "bg-muted text-fg-muted", PENDING: "bg-warning/10 text-warning", APPROVED: "bg-success/10 text-success", REJECTED: "bg-danger/10 text-danger",
+  INFO: "bg-info/10 text-info",
 };
 const OT_TEXT_TONE: Record<string, string> = {
   NONE: "text-fg-muted", PENDING: "text-warning", APPROVED: "text-success", REJECTED: "text-danger",
+  INFO: "text-info",
 };
 
 function fmtHours(minutes: number): string {
@@ -81,6 +87,10 @@ export function DailyAnalysisPage() {
   const perPage = 10;
   const [exporting, setExporting] = useState(false);
   const toast = useToast();
+  const qc = useQueryClient();
+  const { user } = useAuth();
+  const canReview = !!user && (user.permissions.includes("*") || user.permissions.includes("corrections.approve"));
+  const canEditDay = !!user && (user.permissions.includes("*") || user.permissions.includes("corrections.write"));
 
   // Inspection Drawer
   const reportSnapshot = useRef<{ date: string; id: string; expires: number } | null>(null);
@@ -116,6 +126,27 @@ export function DailyAnalysisPage() {
       reportSnapshot.current = { date: selectedDate, id: result.snapshot_id, expires: new Date(result.generated_at).getTime() + 240_000 };
       return result;
     },
+  });
+
+  // Accept a flagged day (break never ended, over 16 h) as recorded: overtime / comp-off follow.
+  const reviewDay = useMutation({
+    mutationFn: (attendanceDayId: string) => timeApi.reviewDay(attendanceDayId),
+    onSuccess: (day) => {
+      toast.success("Day reviewed", day.ot_minutes > 0 || day.comp_off_days > 0
+        ? "Its overtime / comp-off has been raised."
+        : "Recorded as worked.");
+      setInspectEmployee((current) => current && {
+        ...current,
+        needs_review: false,
+        overtime_minutes: day.ot_minutes,
+        overtime_status: day.ot_status,
+        comp_off_days: day.comp_off_days,
+      });
+      reportSnapshot.current = null;
+      qc.invalidateQueries({ queryKey: ["daily-analysis"] });
+      qc.invalidateQueries({ queryKey: ["pending-overtime"] });
+    },
+    onError: (e) => toast.error("Couldn’t mark the day reviewed", errorMessage(e)),
   });
 
   // Fetch employee punches when drawer is open
@@ -507,6 +538,7 @@ export function DailyAnalysisPage() {
               { value: "ABSENT", label: "Absent", count: isPending ? undefined : metrics.absent_count },
               { value: "ON_LEAVE", label: "On leave", count: isPending ? undefined : metrics.on_leave_count },
               { value: "HALF_DAY", label: "Half day", count: isPending ? undefined : metrics.half_day_count },
+              { value: "NEEDS_REVIEW", label: "Needs review" },
             ]}
           />
         </div>
@@ -654,6 +686,14 @@ export function DailyAnalysisPage() {
                       <td>
                         <div className="flex items-center gap-1.5">
                           <StatusBadge status={emp.status} />
+                          {emp.needs_review && (
+                            <span
+                              className="badge badge-warning text-[10px]"
+                              title={emp.review_flags.map((f) => REVIEW_FLAG_LABEL[f]).join(", ")}
+                            >
+                              <ShieldAlert size={10} /> Review
+                            </span>
+                          )}
                           {emp.leave_type && (
                             <span className="badge badge-info text-[10px]">
                               {emp.leave_type}
@@ -695,6 +735,10 @@ export function DailyAnalysisPage() {
                         {hasOvertime ? (
                           <span className={`inline-flex items-center gap-0.5 font-medium ${OT_TEXT_TONE[emp.overtime_status]}`}>
                             <ArrowUpRight size={12} /> +{fmtHours(emp.overtime_minutes)}
+                          </span>
+                        ) : emp.comp_off_days > 0 ? (
+                          <span className="inline-flex items-center gap-1 font-medium text-plum">
+                            <CalendarPlus size={12} /> {emp.comp_off_days} comp-off
                           </span>
                         ) : (
                           <span className="text-fg-subtle">—</span>
@@ -779,18 +823,21 @@ export function DailyAnalysisPage() {
         description={inspectEmployee ? fmtFriendlyDate(selectedDate) : undefined}
         footer={
           inspectEmployee ? (
-            <div className="flex w-full items-center justify-between">
+            <div className="flex w-full items-center justify-between gap-2">
+              {canEditDay && inspectEmployee.employment_id !== user?.employmentId && !isFutureDate ? (
+                <Link
+                  to={`/attendance/register?employee=${inspectEmployee.employment_id}&edit=${selectedDate}`}
+                  className="btn-primary btn-sm gap-1.5"
+                >
+                  <Pencil size={13} />
+                  <span>Edit this day</span>
+                </Link>
+              ) : <span />}
               <Link
-                to={`/corrections?new=1`}
-                className="btn-secondary btn-sm gap-1.5"
-              >
-                <span>Request correction</span>
-              </Link>
-              <Link
-                to={`/employees`}
+                to={`/attendance/register?employee=${inspectEmployee.employment_id}&month=${selectedDate.slice(0, 7)}`}
                 className="btn-ghost btn-sm gap-1.5"
               >
-                <span>View employee profile</span>
+                <span>Open attendance register</span>
                 <ExternalLink size={12} />
               </Link>
             </div>
@@ -857,6 +904,52 @@ export function DailyAnalysisPage() {
                   )}
                 </div>
               </div>
+
+              {inspectEmployee.review_flags.length > 0 && (
+                <div className={`rounded-lg p-3 text-xs ${inspectEmployee.needs_review ? "bg-warning/10 text-warning" : "bg-muted text-fg-muted"}`}>
+                  <div className="flex items-center gap-1.5 font-semibold">
+                    <ShieldAlert size={14} />
+                    {inspectEmployee.needs_review ? "Needs HR review" : "Reviewed by HR"}
+                  </div>
+                  <ul className="mt-1.5 list-disc space-y-0.5 pl-5">
+                    {inspectEmployee.review_flags.map((flag) => (
+                      <li key={flag}>
+                        {flag === "BREAK_NOT_ENDED"
+                          ? "A break was never ended — it was counted only up to the policy break."
+                          : "Over 16 hours from check-in to check-out — often a forgotten check-out."}
+                      </li>
+                    ))}
+                  </ul>
+                  {inspectEmployee.needs_review && (
+                    <>
+                      <p className="mt-1.5">
+                        Overtime and comp-off are held. Correct the punches, or accept the day as recorded.
+                      </p>
+                      {canReview && inspectEmployee.attendance_day_id && (
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm mt-2.5"
+                          disabled={reviewDay.isPending}
+                          onClick={() => reviewDay.mutate(inspectEmployee.attendance_day_id!)}
+                        >
+                          {reviewDay.isPending ? "Saving…" : "Accept as recorded"}
+                        </button>
+                      )}
+                    </>
+                  )}
+                </div>
+              )}
+
+              {inspectEmployee.comp_off_days > 0 && (
+                <div className="flex items-center justify-between rounded-lg bg-plum/10 p-2.5 text-xs font-medium text-plum">
+                  <span className="flex items-center gap-1.5">
+                    <CalendarPlus size={14} /> Comp-off credited to leave
+                  </span>
+                  <span className="font-bold tabular-nums">
+                    {inspectEmployee.comp_off_days} {inspectEmployee.comp_off_days === 1 ? "day" : "days"}
+                  </span>
+                </div>
+              )}
 
               {inspectEmployee.overtime_minutes > 0 && (
                 <div className={`flex items-center justify-between rounded-lg p-2.5 text-xs font-medium ${OT_TONE[inspectEmployee.overtime_status]}`}>

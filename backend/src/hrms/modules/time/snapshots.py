@@ -210,6 +210,8 @@ def filters(department, status, search):
     if status:
         if status.upper() == "PRESENT":
             clauses.append("payload->>'presence_bucket'='present'")
+        elif status.upper() == "NEEDS_REVIEW":
+            clauses.append("payload->>'needs_review'='true'")
         elif status.upper() == "LATE":
             clauses.append("payload->>'is_late'='true'")
         else:
@@ -324,6 +326,8 @@ async def export_snapshot(
                 "late_by_minutes",
                 "early_departure_minutes",
                 "overtime_minutes",
+                "comp_off_days",
+                "needs_review",
                 "leave_type",
                 "punches_count",
             ]

@@ -42,7 +42,7 @@ export function LoginPage() {
   return (
     <div className="flex min-h-screen bg-surface">
       {/* Brand panel */}
-      <div className="relative hidden w-[46%] max-w-[640px] flex-col justify-between overflow-hidden bg-zinc-950 p-12 text-white lg:flex">
+      <div className="login-brand-panel relative hidden w-[46%] max-w-[640px] flex-col justify-between overflow-hidden bg-zinc-950 p-12 text-white lg:flex">
         <div
           className="pointer-events-none absolute inset-0 opacity-[0.07]"
           style={{
