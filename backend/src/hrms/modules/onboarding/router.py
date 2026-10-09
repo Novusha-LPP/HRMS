@@ -1,7 +1,8 @@
 """
 Onboarding module.
 
-Templates:   GET/POST /v1/onboarding/templates
+Templates:   GET/POST /v1/onboarding/templates, PUT .../{id} (new version),
+             POST .../{id}/deactivate, POST .../standard
 Cases:       POST     /v1/onboarding/cases          (start onboarding)
              GET      /v1/onboarding/cases/{id}     (full checklist)
              GET      /v1/onboarding/cases          (list — filter by employment)
@@ -42,6 +43,7 @@ from hrms.modules.onboarding.schemas import (
     ItemUpdateRequest,
     OnboardingItemResponse,
     TemplateCreate,
+    TemplateItemCreate,
     TemplateItemResponse,
     TemplateResponse,
 )
@@ -89,24 +91,54 @@ async def list_templates(tenant_id: TenantDep, session: SessionDep) -> list[Temp
 async def create_template(
     body: TemplateCreate, tenant_id: TenantDep, session: SessionDep
 ) -> TemplateResponse:
+    tmpl, items = await _insert_template(session, tenant_id, body)
+    return _template_response(tmpl, items)
+
+
+async def _active_default_id(session, tenant_id: UUID) -> UUID | None:
+    return (
+        await session.execute(
+            select(OnboardingTemplate.id)
+            .where(OnboardingTemplate.tenant_id == tenant_id)
+            .where(OnboardingTemplate.is_default == True)  # noqa: E712
+            .where(OnboardingTemplate.status == "ACTIVE")
+        )
+    ).scalar()
+
+
+async def _insert_template(session, tenant_id: UUID, body: TemplateCreate):
+    """
+    Store a checklist and its items. There is only ever one default: marking this one
+    default clears the others, and the first active checklist becomes the default anyway,
+    so starting a case without a template always has something to use.
+    """
+    make_default = body.is_default or await _active_default_id(session, tenant_id) is None
+    if make_default:
+        defaults = await session.execute(
+            select(OnboardingTemplate)
+            .where(OnboardingTemplate.tenant_id == tenant_id)
+            .where(OnboardingTemplate.is_default == True)  # noqa: E712
+        )
+        for other in defaults.scalars():
+            other.is_default = False
+            session.add(other)
     tid = uuid4()
     tmpl = OnboardingTemplate(
         tenant_id=tenant_id,
         id=tid,
-        name=body.name,
+        name=body.name.strip(),
         description=body.description,
         trigger=body.trigger,
-        is_default=body.is_default,
+        is_default=make_default,
     )
     session.add(tmpl)
     items = []
     for i, item in enumerate(body.items):
-        iid = uuid4()
         ti = OnboardingTemplateItem(
             tenant_id=tenant_id,
-            id=iid,
+            id=uuid4(),
             template_id=tid,
-            title=item.title,
+            title=item.title.strip(),
             description=item.description,
             item_type=item.item_type,
             assignee_type=item.assignee_type,
@@ -117,6 +149,102 @@ async def create_template(
         session.add(ti)
         items.append(ti)
     await session.flush()
+    return tmpl, items
+
+
+async def _get_active_template(session, tenant_id: UUID, template_id: str) -> OnboardingTemplate:
+    tmpl = (
+        (
+            await session.execute(
+                select(OnboardingTemplate)
+                .where(OnboardingTemplate.tenant_id == tenant_id)
+                .where(OnboardingTemplate.id == to_uuid(template_id))
+                .where(OnboardingTemplate.status == "ACTIVE")
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if not tmpl:
+        raise HTTPException(404, "Checklist not found")
+    return tmpl
+
+
+@router.put(
+    "/templates/{template_id}",
+    response_model=TemplateResponse,
+    summary="Save a new version of an onboarding checklist",
+    dependencies=[require_global_permission("onboarding.write")],
+)
+async def replace_onboarding_template(
+    template_id: str, body: TemplateCreate, tenant_id: TenantDep, session: SessionDep
+) -> TemplateResponse:
+    """
+    Editing a checklist saves it as a new version and retires the old one. Onboarding that
+    has already started keeps the copy of the items it was given (each case item still
+    points at the template item it came from), so a change only affects cases started
+    from now on.
+    """
+    old = await _get_active_template(session, tenant_id, template_id)
+    await lock_resource(session, tenant_id, f"onboarding-template:{old.id}")
+    old.status = "RETIRED"
+    was_default = old.is_default
+    old.is_default = False
+    session.add(old)
+    await session.flush()
+    tmpl, items = await _insert_template(
+        session, tenant_id, body.model_copy(update={"is_default": body.is_default or was_default})
+    )
+    return _template_response(tmpl, items)
+
+
+@router.post(
+    "/templates/{template_id}/deactivate",
+    response_model=TemplateResponse,
+    summary="Stop using an onboarding checklist",
+    dependencies=[require_global_permission("onboarding.write")],
+)
+async def deactivate_onboarding_template(
+    template_id: str, tenant_id: TenantDep, session: SessionDep
+) -> TemplateResponse:
+    tmpl = await _get_active_template(session, tenant_id, template_id)
+    if tmpl.is_default:
+        raise HTTPException(
+            409, "This is the default checklist. Make another one the default first."
+        )
+    tmpl.status = "INACTIVE"
+    session.add(tmpl)
+    await session.flush()
+    return _template_response(tmpl, await _get_template_items(session, tenant_id, tmpl.id))
+
+
+@router.post(
+    "/templates/standard",
+    response_model=TemplateResponse,
+    status_code=201,
+    summary="Add the standard onboarding checklist",
+    dependencies=[require_global_permission("onboarding.write")],
+)
+async def create_standard_onboarding_template(
+    tenant_id: TenantDep, session: SessionDep
+) -> TemplateResponse:
+    """A ready-made starting point HR can edit: the platform's standard ten-item checklist."""
+    body = TemplateCreate(
+        name="Standard Employee Onboarding",
+        description="Default onboarding checklist for new hires",
+        items=[
+            TemplateItemCreate(
+                title=title,
+                item_type=itype,
+                assignee_type=atype,
+                due_days_from_hire=days,
+                required=req,
+                sequence=seq,
+            )
+            for title, itype, atype, days, req, seq in _DEFAULT_ITEMS
+        ],
+    )
+    tmpl, items = await _insert_template(session, tenant_id, body)
     return _template_response(tmpl, items)
 
 

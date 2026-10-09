@@ -279,8 +279,27 @@ and can't be cancelled (`409`). To correct one, apply a new action instead.
     "onboarding_create_template": (
         "Create an onboarding template",
         "Creates a checklist template with its `items` (title, `assignee_type`, "
-        "`due_days_from_hire`, `required`, `sequence`). "
-        "",
+        "`due_days_from_hire`, `required`, `sequence`). There is only one default: "
+        "`is_default` clears it elsewhere, and the first active checklist is the default anyway.",
+    ),
+    "replace_onboarding_template": (
+        "Save a new version of an onboarding checklist",
+        """
+Replaces a checklist's name, description, default flag and items. The old version is retired
+and a new one is returned, with a new ID. Onboarding already started keeps the items it was
+given; only cases started afterwards use the new version. A default checklist stays the default.
+""",
+    ),
+    "deactivate_onboarding_template": (
+        "Stop using an onboarding checklist",
+        "Retires a checklist so it can't be chosen for new cases. The default checklist can't be "
+        "retired (`409`): make another one the default first.",
+    ),
+    "create_standard_onboarding_template": (
+        "Add the standard onboarding checklist",
+        "Adds the platform's ready-made ten-item checklist (documents, bank details, policies, "
+        "IT setup, induction) as a starting point to edit. It becomes the default if there is "
+        "none.",
     ),
     "create_case": (
         "Start onboarding for a new hire",
