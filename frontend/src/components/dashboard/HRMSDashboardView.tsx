@@ -101,7 +101,7 @@ const CHANGE_LABEL: Record<string, string> = {
   TRANSFER: "Transfer", PROMOTION: "Promotion", DEMOTION: "Demotion", CONFIRM: "Confirmation",
   EXTEND_PROBATION: "Probation extension", PLACE_ON_NOTICE: "Notice", SEPARATION: "Separation",
   REHIRE: "Rehire", CHANGE_MANAGER: "Manager change", CHANGE_GRADE: "Grade change",
-  CHANGE_COST_CENTRE: "Cost centre change", HIRE: "Hire",
+  CHANGE_COST_CENTRE: "Cost centre change", CHANGE_JOB: "Designation change", HIRE: "Hire",
 };
 const titleCase = (s: string) => s.toLowerCase().replace(/_/g, " ").replace(/^\w/, (c) => c.toUpperCase());
 const TYPE_COLORS = [CHART.leave, CHART.present, CHART.late, CHART.brand, CHART.absent];

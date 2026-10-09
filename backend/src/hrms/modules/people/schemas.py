@@ -102,6 +102,10 @@ class EmploymentResponse(BaseModel):
     team_name: str | None = None
     job_id: str | None = None
     designation: str | None = None
+    grade_id: str | None = None
+    grade: str | None = None
+    position_id: str | None = None
+    position_title: str | None = None
     location_id: str | None = None
     location: str | None = None
     manager_employment_id: str | None = None
@@ -154,3 +158,5 @@ class PersonnelActionListItem(BaseModel):
     status: PersonnelActionStatus
     submitted_at: datetime | None
     failure_reason: str | None = None
+    reason_code: str | None = None
+    changes: dict[str, Any] | None = None
