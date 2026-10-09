@@ -248,6 +248,12 @@ confirmation, notice, separation, and so on.
 keep their current value. The first placement must include `org_unit_id`, `location_id` and
 `job_id`.
 
+**Status rules:** `CONFIRM` and `EXTEND_PROBATION` need an employee on probation;
+`PLACE_ON_NOTICE` needs a confirmed, probation or on-hold employee; `SEPARATION` needs anyone
+not already separated; `REHIRE` needs a separated employee. Otherwise `409`. A scheduled
+action is checked on its date and parked as `FAILED` if the rule no longer holds.
+`CHANGE_JOB` is a designation change that isn't a promotion.
+
 Send an `idempotency_key` so that a retried request is not applied twice.
 """,
     ),
