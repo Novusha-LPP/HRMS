@@ -4,7 +4,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 RequestType = Literal[
-    "LEAVE", "LEAVE_CANCELLATION", "CORRECTION", "OVERTIME", "JOB_REQUISITION"
+    "LEAVE", "LEAVE_CANCELLATION", "CORRECTION", "OVERTIME", "JOB_REQUISITION", "FIELD_OVERRIDE"
 ]
 
 

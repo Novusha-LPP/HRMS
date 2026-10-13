@@ -170,7 +170,10 @@ async def create_punch(
         punch_type=body.punch_type,
         punched_at=punched_at,
         work_date=day,
-        source=body.source,
+        # Through a connected app's employee session the source is the app, whatever the body
+        # says, so an app can't pass its punches off as web or device punches.
+        source=PunchSource.INTEGRATION if principal.via_key_id else body.source,
+        source_system=principal.via_app if principal.via_key_id else None,
         latitude=body.latitude,
         longitude=body.longitude,
         device_id=body.device_id,

@@ -35,9 +35,12 @@ from fastapi.routing import APIRoute, RouteContext, iter_route_contexts
 from hrms.core.authn import get_current_platform_principal, get_current_principal
 from hrms.core.endpoint_docs import ENDPOINT_DOCS
 from hrms.core.endpoint_docs.examples import REQUEST_EXAMPLES
+from hrms.modules.integrations.keys import get_integration_context
 
 TENANT_SCHEME = "TenantBearer"
 PLATFORM_SCHEME = "PlatformBearer"
+INTEGRATION_KEY_SCHEME = "IntegrationKey"
+INTEGRATION_TOKEN_SCHEME = "IntegrationToken"
 
 API_DESCRIPTION = """
 The HRMS platform API: core HR, time and attendance, leave, approvals, KYC, recruitment and
@@ -73,7 +76,8 @@ other request automatically. You can also paste a token into **Authorize** (top 
 
 | Who | Sign in with | Token works on |
 |---|---|---|
-| Employees, managers, HR, integrations | `POST /v1/auth/login` | all but `/v1/platform/*` |
+| Employees, managers, HR | `POST /v1/auth/login` | all but the two below |
+| Connected apps (ERP, CRM) | API key (`X-API-Key`) or OAuth | `/v1/integrations/*` only |
 | Platform operators | `POST /v1/platform/login` | `/v1/platform/*` only |
 
 - **Your company is in the token.** The token decides which company's data you see. No header
@@ -90,8 +94,9 @@ other request automatically. You can also paste a token into **Authorize** (top 
   change stop working at once.
 - **Too many failed sign-ins** return `429` with a `Retry-After` header (in seconds).
 
-**For integrations,** create a dedicated user account (*Users → Create a user account*). Give it
-only the role it needs. Never use a person's own login.
+**For integrations,** connect the system as an app (*Settings → Integrations*) and use its API
+key on `/v1/integrations/*`: employee sync, the events feed, read endpoints and employee sessions.
+See the *Integrations* section below. Never use a person's own login.
 
 ## What a caller can see
 
@@ -255,6 +260,22 @@ TAGS_METADATA: list[dict[str, str]] = [
         "and running a report.",
     },
     {
+        "name": "Integrations",
+        "description": "For connected apps (an ERP, a CRM, a BI tool), with the app's own API key "
+        "in `X-API-Key` or a 15-minute token from `/v1/integrations/oauth/token`. Sync "
+        "employees in (create, update, exit, rehire, bulk, link), read what changed from the "
+        "events feed and the read endpoints, and get a session token so an employee can punch "
+        "and see their own data inside the app. Every call is in the app's sync log. A key "
+        "only works here, never on the rest of the API.",
+    },
+    {
+        "name": "Integration settings",
+        "description": "Settings → Integrations, for the tenant administrator: connected apps, "
+        "their keys (shown once), versioned per-company settings with preview and publish "
+        "(field ownership, lifecycle, logins, self-service, safety), value mappings, the sync "
+        "log, possible duplicates and held exits.",
+    },
+    {
         "name": "Platform",
         "description": "For platform operators only: tenants, platform admins and the audit "
         "log. These endpoints need a **platform** token from `POST /v1/platform/login`. "
@@ -279,6 +300,7 @@ TAG_GROUPS: list[dict[str, Any]] = [
     },
     {"name": "Workflows & hiring", "tags": ["Approval workflows", "Recruitment"]},
     {"name": "Insights", "tags": ["Dashboard", "Reports"]},
+    {"name": "Integrations", "tags": ["Integrations", "Integration settings"]},
     {"name": "Platform operations", "tags": ["Platform"]},
 ]
 
@@ -352,6 +374,8 @@ def _walk(dependant: Dependant):
 
 def _route_security(route: RouteContext) -> str | None:
     calls = {d.call for d in _walk(route.dependant)}
+    if get_integration_context in calls:
+        return INTEGRATION_KEY_SCHEME
     if get_current_platform_principal in calls:
         return PLATFORM_SCHEME
     if get_current_principal in calls:
@@ -411,6 +435,24 @@ def build_openapi_schema(app: FastAPI) -> dict[str, Any]:
             "description": "The `access_token` from `POST /v1/platform/login`. Only works "
             "on `/v1/platform/*`.",
         },
+        INTEGRATION_KEY_SCHEME: {
+            "type": "apiKey",
+            "in": "header",
+            "name": "X-API-Key",
+            "description": "A connected app's API key (Settings → Integrations). Only works on "
+            "`/v1/integrations/*`.",
+        },
+        INTEGRATION_TOKEN_SCHEME: {
+            "type": "oauth2",
+            "description": "OAuth 2.0 client credentials: client_id is the key's public part "
+            "(`hrms_<env>_<prefix>`), client_secret is the whole key.",
+            "flows": {
+                "clientCredentials": {
+                    "tokenUrl": "/v1/integrations/oauth/token",
+                    "scopes": {},
+                }
+            },
+        },
     }
     schemas = components.setdefault("schemas", {})
     schemas["ErrorResponse"] = _ERROR_SCHEMA
@@ -441,7 +483,11 @@ def build_openapi_schema(app: FastAPI) -> dict[str, Any]:
             responses = op.setdefault("responses", {})
             scheme = _route_security(route)
             if scheme:
-                op["security"] = [{scheme: []}]
+                op["security"] = (
+                    [{INTEGRATION_KEY_SCHEME: []}, {INTEGRATION_TOKEN_SCHEME: []}]
+                    if scheme == INTEGRATION_KEY_SCHEME
+                    else [{scheme: []}]
+                )
                 for code, text in _COMMON_RESPONSES.items():
                     responses.setdefault(
                         code,
@@ -452,6 +498,16 @@ def build_openapi_schema(app: FastAPI) -> dict[str, Any]:
                     )
             else:
                 op["security"] = []  # public: sign-in, registration, password reset
+            if scheme == INTEGRATION_KEY_SCHEME:
+                responses.setdefault(
+                    "429",
+                    {
+                        "description": "Over this key's rate limit. Wait for the number of "
+                        "seconds in `Retry-After`.",
+                        "headers": {"Retry-After": {"schema": {"type": "integer"}}},
+                        "content": {"application/json": {"schema": _ERROR_REF}},
+                    },
+                )
             if path in _LOGIN_PATHS:
                 responses.setdefault(
                     "429",

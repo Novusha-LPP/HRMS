@@ -306,6 +306,10 @@ async def create_case(
         session.add(oi)
         items.append(oi)
     await session.flush()
+    from hrms.modules.integrations.hooks import add_onboarding_tasks
+
+    if await add_onboarding_tasks(session, tenant_id, case_id, emp_uuid, body.hire_date):
+        items = await _get_case_items(session, tenant_id, case_id)
     return _case_response(case, items)
 
 

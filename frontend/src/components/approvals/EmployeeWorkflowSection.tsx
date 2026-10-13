@@ -11,6 +11,7 @@ const TYPES: { type: RequestType; title: string }[] = [
   { type: "LEAVE", title: "Leave" }, { type: "LEAVE_CANCELLATION", title: "Leave cancellation" },
   { type: "CORRECTION", title: "Attendance correction" }, { type: "OVERTIME", title: "Overtime" },
   { type: "JOB_REQUISITION", title: "Job openings they raise" },
+  { type: "FIELD_OVERRIDE", title: "HR changes to fields their ERP manages" },
 ];
 
 function WorkflowChoice({ employmentId, type, title, flows, assigned, version, canManage }: {

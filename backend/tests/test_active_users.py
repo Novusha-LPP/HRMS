@@ -85,6 +85,8 @@ async def test_authenticated_http_activity_reaches_metrics(monkeypatch):
         return []
 
     monkeypatch.setattr(metrics, "_last_job_successes", no_job_history)
+    # Like the job history, the connected-apps health gauges read the shared database.
+    monkeypatch.setattr(metrics, "_integration_health", no_job_history)
     app = FastAPI()
     app.add_middleware(metrics.MetricsMiddleware)
     app.include_router(metrics.router)

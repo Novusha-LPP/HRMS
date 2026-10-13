@@ -162,3 +162,59 @@ groups:
         labels: {severity: critical}
         annotations:
           summary: "Password recovery delivery worker has not succeeded for five minutes"
+
+  # Connected apps (docs/erp-crm-integration-plan.md §12). Gauges come from integration_health().
+  - name: hrms-integrations
+    rules:
+      - alert: HrmsIntegrationRejectRateHigh
+        expr: |
+          sum by (app) (rate(hrms_integration_requests_total{outcome=~"REJECTED|FAILED"}[15m]))
+            / sum by (app) (rate(hrms_integration_requests_total[15m])) > 0.1
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.app }}: more than 10% of sync calls are refused or failing"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsintegrationrejectratehigh"
+
+      - alert: HrmsIntegrationFeedLagging
+        expr: |
+          hrms_integration_feed_lag_events > 0
+            and (time() - hrms_integration_feed_last_read_timestamp_seconds) > 900
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.tenant }}/{{ $labels.app }} has {{ $value }} unread events and hasn't polled for 15 minutes"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsintegrationfeedlagging"
+
+      - alert: HrmsIntegrationExitsHeld
+        expr: hrms_integration_held_exits > 0
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.tenant }}/{{ $labels.app }}: {{ $value }} exits held by the safety valve"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsintegrationexitsheld"
+
+      - alert: HrmsIntegrationUnlinkedHires
+        expr: hrms_integration_unlinked_hires > 0
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.tenant }}/{{ $labels.app }}: {{ $value }} HRMS hires not linked by the app after 24 hours"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsintegrationunlinkedhires"
+
+      - alert: HrmsApiKeyExpiring
+        expr: |
+          hrms_integration_key_expiry_timestamp_seconds > 0
+            and (hrms_integration_key_expiry_timestamp_seconds - time()) < 7 * 86400
+        for: 10m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.tenant }}/{{ $labels.app }}: an API key expires within 7 days"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsapikeyexpiring"
+
+      - alert: HrmsApiKeyNewAddress
+        expr: increase(hrms_integration_new_ip_total[15m]) > 0
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.app }}: an API key was used from a new address"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsapikeynewaddress"

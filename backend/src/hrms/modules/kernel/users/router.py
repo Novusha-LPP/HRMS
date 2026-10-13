@@ -55,6 +55,7 @@ from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.security import ahash_password
 from hrms.core.tenancy import TenantDep
+from hrms.modules.integrations.ownership import assert_fields_editable
 from hrms.modules.kernel.models import RoleAssignment, UserAccount
 from hrms.modules.kernel.users.schemas import (
     PasswordReset,
@@ -180,6 +181,7 @@ async def list_users(
 )
 async def create_user(
     body: UserCreate,
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
@@ -218,6 +220,20 @@ async def create_user(
     if body.employment_id:
         employment_uuid = to_uuid(body.employment_id)
         await authorize_employment(session, tenant_id, scope, employment_uuid)
+        if await assert_fields_editable(
+            session,
+            tenant_id,
+            employment_uuid,
+            {"email"},
+            actor="HR",
+            changed_by=principal.user_account_id,
+            override_reason=body.override_reason,
+        ):
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                "This employee's email is owned by a connected app and changing it needs "
+                "approval. Create the login without an email override, or change it in the app.",
+            )
 
     legal_entity_uuids: list[UUID] = []
     if body.scope_type == "ALL":

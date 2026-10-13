@@ -44,6 +44,13 @@ ENTITY_TYPES = frozenset(
         "pay_component",
         "salary_structure",
         "employee_compensation",
+        # Integrations (connected apps, their keys and settings, and HR overrides of fields an
+        # app owns)
+        "connected_app",
+        "api_key",
+        "integration_profile",
+        "integration_mapping",
+        "integration_override",
     }
 )
 

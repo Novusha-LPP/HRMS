@@ -8,6 +8,7 @@ throwaway database**. Never point any of this at a database holding real employe
 |---|---|
 | `seed_scale.py` | Generates a tenant of N employees: 4 companies, 100 org units, 3-level reporting lines, logins for every scope pattern, months of attendance history, and leave accruals and applications created through the real API |
 | `bench_endpoints.py` | Per endpoint and persona: p50/p95 latency, SQL statement count, DB time, and N+1 detection ("max repeat") |
+| `load_integrations.py` | Connected-app load: sync updates, creates and bulk, the morning rush of employee sessions and punches, and draining the events feed |
 | `locustfile.py` | Concurrent working-day mix: morning punch rush, employee self-service, managers, HR |
 | `src/hrms/core/perf.py` | `HRMS_QUERY_METRICS=true` adds `Server-Timing` / `X-DB-Queries` headers to every response |
 

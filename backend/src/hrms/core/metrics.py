@@ -93,6 +93,21 @@ SCHEDULED_ACTIONS = Counter(
     "Scheduled personnel actions processed when due",
     ["outcome"],
 )
+INTEGRATION_REQUESTS = Counter(
+    "hrms_integration_requests_total",
+    "Calls from connected apps, by app code, operation and outcome",
+    ["app", "operation", "outcome"],
+)
+INTEGRATION_NEW_IP = Counter(
+    "hrms_integration_new_ip_total",
+    "A connected app's key used from an address it had not been used from before",
+    ["app"],
+)
+INTEGRATION_SESSIONS = Counter(
+    "hrms_integration_sessions_total",
+    "Employee session tokens requested by connected apps",
+    ["app", "result"],
+)
 # A labelled series only appears once touched; start both at 0 so dashboards and increase()
 # have a baseline before the first action is ever processed.
 for _outcome in ("applied", "failed"):
@@ -184,6 +199,7 @@ async def metrics(request: Request) -> Response:
         registry.register(_PoolCollector())
     jobs = CollectorRegistry()
     jobs.register(_JobFreshness(await _last_job_successes()))
+    jobs.register(_IntegrationHealth(await _integration_health()))
     jobs.register(active_users)
     return Response(
         generate_latest(registry) + generate_latest(jobs), media_type=CONTENT_TYPE_LATEST
@@ -231,3 +247,64 @@ class _JobFreshness(Collector):
         for job in sorted(expected | values.keys()):
             family.add_metric([job], values.get(job, 0.0))
         yield family
+
+
+async def _integration_health() -> list[dict]:
+    """Per connected app: feed lag, held exits, unlinked hires, key expiry (numbers only)."""
+    from sqlalchemy import text
+
+    from hrms.core.database import AsyncSessionLocal
+
+    try:
+        async with asyncio.timeout(2), AsyncSessionLocal() as session:
+            rows = await session.execute(text("SELECT * FROM integration_health()"))
+            return [dict(r) for r in rows.mappings()]
+    except Exception:
+        return []
+
+
+class _IntegrationHealth(Collector):
+    """Gauges for the integration alerts in ops/prometheus/alerts.yml."""
+
+    def __init__(self, rows: list[dict]):
+        self.rows = rows
+
+    def collect(self):
+        labels = ["tenant", "app"]
+        families = {
+            "lag": GaugeMetricFamily(
+                "hrms_integration_feed_lag_events",
+                "Events available to a connected app that it has not confirmed reading",
+                labels=labels,
+            ),
+            "read": GaugeMetricFamily(
+                "hrms_integration_feed_last_read_timestamp_seconds",
+                "Unix time a connected app last read its events feed (0 = never)",
+                labels=labels,
+            ),
+            "held": GaugeMetricFamily(
+                "hrms_integration_held_exits",
+                "Exits a connected app sent that the safety valve is holding for HR",
+                labels=labels,
+            ),
+            "unlinked": GaugeMetricFamily(
+                "hrms_integration_unlinked_hires",
+                "Employees hired in HRMS over 24 hours ago that the app has not linked",
+                labels=labels,
+            ),
+            "expiry": GaugeMetricFamily(
+                "hrms_integration_key_expiry_timestamp_seconds",
+                "Unix time the app's soonest-expiring active key expires (0 = none expires)",
+                labels=labels,
+            ),
+        }
+        for row in self.rows:
+            key = [row["tenant"], row["app"]]
+            families["lag"].add_metric(key, float(row["feed_lag"]))
+            read_at = row["feed_read_at"]
+            families["read"].add_metric(key, read_at.timestamp() if read_at else 0.0)
+            families["held"].add_metric(key, float(row["held_exits"]))
+            families["unlinked"].add_metric(key, float(row["unlinked_hires"]))
+            expiry = row["next_key_expiry"]
+            families["expiry"].add_metric(key, expiry.timestamp() if expiry else 0.0)
+        yield from families.values()

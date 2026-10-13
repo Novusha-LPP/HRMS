@@ -79,6 +79,7 @@ import {
   Archive as ClassicArchive,
   ArchiveRestore as ClassicArchiveRestore,
   Loader2 as ClassicLoader2,
+  Cable as ClassicCable,
 } from "lucide-react";
 
 type Attributes = IconNode[number][1];
@@ -171,6 +172,8 @@ export const Copy = themed("Copy", ClassicCopy, [rect(7,7,15,15,2),path("M17 4V2
 export const GripVertical = themed("GripVertical", ClassicGripVertical, [rect(5,3,3,3,0,solid),rect(15,3,3,3,0,solid),rect(5,10.5,3,3,0,solid),rect(15,10.5,3,3,0,solid),rect(5,18,3,3,0,solid),rect(15,18,3,3,0,solid)]);
 export const RotateCcw = themed("RotateCcw", ClassicRotateCcw, [path("M2 9a10 10 0 1 1 1 9M2 2v7h7")]);
 export const RefreshCw = themed("RefreshCw", ClassicRefreshCw, [path("M3 9a9 9 0 0 1 16-4l3 4M22 2v7h-7M21 15a9 9 0 0 1-16 4l-3-4M2 22v-7h7")]);
+
+export const Cable = themed("Cable", ClassicCable, [path("M4 9V5a2 2 0 0 1 4 0v4M16 15v4a2 2 0 0 0 4 0v-4"),rect(2,9,8,5,1.5,{fill:"currentColor",fillOpacity:.15}),rect(14,10,8,5,1.5,{fill:"currentColor",fillOpacity:.15}),path("M6 14v3a4 4 0 0 0 4 4h0a4 4 0 0 0 4-4V7a4 4 0 0 1 4-4h0a4 4 0 0 1 4 4v3")]);
 
 // Navigation uses the reference's line-style people and calendar silhouettes.
 export const NavigationUsers = themed("NavigationUsers", ClassicUsers, [circle(9,6,3),circle(18,8,2.5),path("M2 21v-4c0-3 3-5 7-5s7 2 7 5v4Zm16-8c3 0 5 2 5 4v4h-4")]);

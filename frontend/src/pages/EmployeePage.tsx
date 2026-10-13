@@ -10,6 +10,8 @@ import {
   Landmark, Cake, Shield, ChevronDown, Layers, Armchair, KeyRound,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
+import { integrationsApi } from "../api/integrations";
+import { ManagedByBadge } from "../components/integrations/ManagedFields";
 import type { Employment } from "../api/people";
 import { orgApi } from "../api/org";
 import { EmployeeWorkflowSection } from "../components/approvals/EmployeeWorkflowSection";
@@ -579,6 +581,7 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <StatusBadge status={row.state} />
                 {row.type && <span className="badge badge-neutral">{row.type}</span>}
+                <ManagedByBadge employmentId={row.id} />
               </div>
             </div>
           </div>
@@ -835,6 +838,24 @@ function TransferSheet({ row, onClose }: { row: Row | null; onClose: () => void 
   const qc = useQueryClient();
   const toast = useToast();
   const [form, setForm] = useState({ orgUnitId: "", jobId: "", locationId: "", managerEmploymentId: "", effectiveDate: format(new Date(), "yyyy-MM-dd") });
+  const [overrideReason, setOverrideReason] = useState("");
+  // Placement fields a connected app (e.g. the ERP) owns for this employee.
+  const control = useQuery({
+    queryKey: ["field-control", row?.id],
+    queryFn: () => integrationsApi.fieldControl(row!.id),
+    enabled: !!row,
+  });
+  const placementLocks = (control.data ?? []).filter(
+    (f) => f.locked && ["department", "location", "designation", "manager"].includes(f.field),
+  );
+  const managedBy = placementLocks[0]?.owner_name ?? null;
+  const changesLocked = !!row && placementLocks.some((f) =>
+    (f.field === "department" && form.orgUnitId !== (row.orgUnitId ?? ""))
+    || (f.field === "location" && form.locationId !== (row.locationId ?? ""))
+    || (f.field === "designation" && form.jobId !== (row.jobId ?? ""))
+    || (f.field === "manager" && form.managerEmploymentId !== (row.managerEmploymentId ?? "")));
+  const overrideAllowed = placementLocks.every((f) => f.override === "WITH_REASON" || f.override === "WITH_APPROVAL");
+  const overrideNeedsApproval = placementLocks.some((f) => f.override === "WITH_APPROVAL");
 
   // Reset/prefill whenever a different employee is opened.
   const key = row?.id ?? "";
@@ -850,7 +871,7 @@ function TransferSheet({ row, onClose }: { row: Row | null; onClose: () => void 
   const transfer = useMutation({
     mutationFn: async () => {
       if (!row) return;
-      await personnelActionsApi.create({
+      return personnelActionsApi.create({
         employment_id: row.id,
         type: "TRANSFER",
         effective_date: form.effectiveDate,
@@ -860,17 +881,21 @@ function TransferSheet({ row, onClose }: { row: Row | null; onClose: () => void 
           location_id: form.locationId || undefined,
           manager_employment_id: form.managerEmploymentId || undefined,
         },
+        override_reason: changesLocked ? overrideReason.trim() : undefined,
       });
     },
-    onSuccess: () => {
+    onSuccess: (action) => {
       qc.invalidateQueries({ queryKey: ["employees"] });
-      toast.success("Employee moved", row?.name);
+      if (action?.status === "PENDING_APPROVAL") toast.success("Sent for approval", `${row?.name}: the move applies once it is approved.`);
+      else toast.success("Employee moved", row?.name);
+      setOverrideReason("");
       onClose();
     },
     onError: (e) => toast.error("Couldn’t move employee", errorMessage(e)),
   });
 
-  const valid = !!(row && form.orgUnitId && form.jobId && form.locationId && form.effectiveDate);
+  const valid = !!(row && form.orgUnitId && form.jobId && form.locationId && form.effectiveDate)
+    && (!changesLocked || (overrideAllowed && overrideReason.trim().length >= 3));
   const submit = (e: FormEvent) => { e.preventDefault(); if (valid) transfer.mutate(); };
 
   return (
@@ -897,12 +922,30 @@ function TransferSheet({ row, onClose }: { row: Row | null; onClose: () => void 
               onChange={(e) => setForm((f) => ({ ...f, effectiveDate: e.target.value }))}
             />
           </div>
+          {managedBy && (
+            <Notice tone="info" title={`Managed in ${managedBy}`}>
+              {placementLocks.map((f) => f.label.toLowerCase()).join(", ")} for this employee {placementLocks.length === 1 ? "comes" : "come"} from {managedBy}.
+              {!overrideAllowed
+                ? " Change it there."
+                : overrideNeedsApproval
+                  ? " You can request a change here with a reason; it applies once approved, and the next update from the app replaces it."
+                  : " You can change it here with a reason; the next update from the app replaces it."}
+            </Notice>
+          )}
           <PlacementFields
             legalEntityId={row.legalEntityId ?? ""}
             values={form}
             onChange={(v) => setForm((f) => ({ ...f, ...v }))}
             excludeEmploymentId={row.id}
           />
+          {changesLocked && overrideAllowed && (
+            <div>
+              <label className="label" htmlFor="tr-override">Reason for changing it here</label>
+              <input id="tr-override" className="input" value={overrideReason} placeholder="e.g. ERP is down; urgent move"
+                onChange={(e) => setOverrideReason(e.target.value)} />
+              <p className="mt-1 text-xs text-fg-subtle">Recorded in the employee's change history.</p>
+            </div>
+          )}
         </form>
       )}
     </Sheet>

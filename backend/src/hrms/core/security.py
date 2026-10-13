@@ -108,6 +108,7 @@ def create_access_token(
     expires_minutes: int | None = None,
     token_epoch: int = 0,
     mfa_verified: bool = False,
+    extra_claims: dict[str, Any] | None = None,
 ) -> str:
     now = datetime.now(UTC)
     expires_minutes = expires_minutes or settings.access_token_expire_minutes
@@ -122,6 +123,10 @@ def create_access_token(
         "iat": int(now.timestamp()),
         "exp": now + timedelta(minutes=expires_minutes),
     }
+    if extra_claims:
+        # e.g. a session a connected app requested for an employee: via (the app's key), ext
+        # (the app's code). See modules/integrations/router.issue_session.
+        claims.update({k: v for k, v in extra_claims.items() if k not in claims})
     return jwt.encode(claims, settings.secret_key, algorithm=settings.algorithm)
 
 

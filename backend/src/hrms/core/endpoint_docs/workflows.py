@@ -21,7 +21,9 @@ temporary cover on that request, and the caller must be allowed to delegate one 
         "Create an approval flow",
         """
 Defines a reusable, ordered approval chain for one `request_type`: `LEAVE`,
-`LEAVE_CANCELLATION`, `CORRECTION`, `OVERTIME` or `JOB_REQUISITION`. Needs `approvals.manage`.
+`LEAVE_CANCELLATION`, `CORRECTION`, `OVERTIME`, `JOB_REQUISITION` or `FIELD_OVERRIDE` (HR
+changing a field a connected app owns, when the app's settings require approval). Needs
+`approvals.manage`.
 
 - New flows must be `reusable: true` (`422` otherwise). A flow does nothing until it is
   assigned to employees with `PUT /v1/approvals/employees/{employment_id}/flows/{request_type}`.
