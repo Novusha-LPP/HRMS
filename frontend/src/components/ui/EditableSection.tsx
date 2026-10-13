@@ -87,7 +87,13 @@ export function EditableSection({
   return (
     <form
       onSubmit={submit}
-      onKeyDown={(e) => { if (e.key === "Escape" && !saving) onCancel(); }}
+      onKeyDown={(e) => {
+        if (e.key === "Escape" && !saving) {
+          e.preventDefault();
+          e.stopPropagation();
+          onCancel();
+        }
+      }}
       className="card ring-4 ring-brand-500/10 border-brand-500/40"
     >
       {header}
