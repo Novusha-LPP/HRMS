@@ -7,7 +7,7 @@ import { formatDateOnly } from "../lib/dates";
 import {
   Download, Plus, Search, X, ArrowUpDown, ArrowUp, ArrowDown, ChevronLeft, ChevronRight, Users,
   Mail, MapPin, Briefcase, Building2, CalendarDays, Hash, UserRound, SearchX, ArrowLeftRight,
-  Landmark, Cake, Shield, ChevronDown, Layers, Armchair, KeyRound,
+  Landmark, Cake, Shield, ChevronDown, Layers, Armchair, KeyRound, IndianRupee,
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
@@ -33,6 +33,9 @@ import { SignInSlipsSheet } from "../components/people/SignInSlips";
 import type { SlipEmployee } from "../components/people/SignInSlips";
 import { usePopover } from "../components/ui/Popover";
 import { AccessSection } from "../components/users/AccessPanel";
+import { payrollApi } from "../api/payroll";
+import { EmployeeSalarySection } from "../components/payroll/EmployeeSalarySection";
+import { inr } from "../lib/money";
 
 interface Row {
   id: string;
@@ -150,6 +153,8 @@ export function EmployeePage() {
   // (AccessSection checks the write bar itself — this just decides whether the tab shows at all).
   const canViewAccess = !!user && (user.permissions.includes("iam.read") || user.permissions.includes("*"));
   const canManageAccess = !!user && (user.permissions.includes("iam.write") || user.permissions.includes("*"));
+  const canReadPayroll = !!user && (user.permissions.includes("payroll.read") || user.permissions.includes("*"));
+  const canWritePayroll = !!user && (user.permissions.includes("payroll.write") || user.permissions.includes("*"));
   const [adding, setAdding] = useState(() => params.get("new") === "1" && canPlace);
   const closeAdding = () => {
     setAdding(false);
@@ -475,6 +480,8 @@ export function EmployeePage() {
         canPlace={canPlace}
         canViewAccess={canViewAccess}
         canManageAccess={canManageAccess}
+        canReadPayroll={canReadPayroll}
+        canWritePayroll={canWritePayroll}
         onClose={() => setDetail(null)}
         onTransfer={() => { if (detail) { setTransferring(detail); setDetail(null); } }}
         onAction={(kind) => { if (detail) { setActing({ row: detail, kind }); setDetail(null); } }}
@@ -487,16 +494,47 @@ export function EmployeePage() {
   );
 }
 
-type EmployeeSheetTab = "overview" | "attendance" | "kyc" | "access" | "workflow";
+type EmployeeSheetTab = "overview" | "attendance" | "kyc" | "access" | "workflow" | "payroll";
 
-function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose, onTransfer, onAction }: {
-  row: Row | null; canPlace: boolean; canViewAccess: boolean; canManageAccess: boolean;
-  onClose: () => void; onTransfer: () => void; onAction: (kind: ActionKind) => void;
+function EmployeeSheet({
+  row,
+  canPlace,
+  canViewAccess,
+  canManageAccess,
+  canReadPayroll,
+  canWritePayroll,
+  onClose,
+  onTransfer,
+  onAction,
+}: {
+  row: Row | null;
+  canPlace: boolean;
+  canViewAccess: boolean;
+  canManageAccess: boolean;
+  canReadPayroll: boolean;
+  canWritePayroll: boolean;
+  onClose: () => void;
+  onTransfer: () => void;
+  onAction: (kind: ActionKind) => void;
 }) {
   const { user } = useAuth();
+  const [params] = useSearchParams();
   const canConfigureWorkflow = !!user?.permissions.some((p) => p === "*" || p === "approvals.manage");
   const canEditAttendance = !!user?.permissions.some((p) => p === "*" || p === "corrections.write");
-  const [activeTab, setActiveTab] = useState<EmployeeSheetTab>("overview");
+  const [activeTab, setActiveTab] = useState<EmployeeSheetTab>(() => {
+    const requested = params.get("tab") as EmployeeSheetTab | null;
+    return requested && ["overview", "attendance", "kyc", "access", "workflow", "payroll"].includes(requested)
+      ? requested
+      : "overview";
+  });
+  const [startPayrollEdit, setStartPayrollEdit] = useState(false);
+
+  const compQuery = useQuery({
+    queryKey: ["payroll", "compensation", row?.id],
+    queryFn: () => payrollApi.compensation(row!.id),
+    enabled: !!row && canReadPayroll,
+  });
+  const currentSalary = compQuery.data?.current ?? null;
 
   const fields = row
     ? [
@@ -507,6 +545,15 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
         { icon: Briefcase, label: "Designation", value: row.designation },
         ...(row.grade ? [{ icon: Layers, label: "Grade", value: row.grade }] : []),
         ...(row.positionTitle ? [{ icon: Armchair, label: "Position", value: row.positionTitle }] : []),
+        ...(canReadPayroll
+          ? [
+              {
+                icon: IndianRupee,
+                label: "Annual CTC",
+                value: currentSalary ? inr(currentSalary.annual_ctc) : "Not set",
+              },
+            ]
+          : []),
         ...(row.role ? [{ icon: Shield, label: "Role", value: row.role }] : []),
         { icon: UserRound, label: "Reports to", value: row.manager },
         { icon: MapPin, label: "Location", value: row.location },
@@ -532,40 +579,61 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
       footer={row ? (
         <div className="flex items-center justify-between w-full">
           {activeTab !== "overview" ? (
-            <button type="button" className="btn-secondary btn-sm" onClick={() => setActiveTab("overview")}>
+            <button
+              type="button"
+              className="btn-secondary btn-sm"
+              onClick={() => {
+                setActiveTab("overview");
+                setStartPayrollEdit(false);
+              }}
+            >
               Back to Overview
             </button>
           ) : <span />}
-          {canPlace && activeTab === "overview" && !isSelf && (
-            <div className="flex items-center gap-2">
-              {available.length > 0 && (
-                <div ref={menuRef} className="relative">
-                  <button type="button" className="btn-secondary btn-sm" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
-                    Actions <ChevronDown size={14} />
+          <div className="flex items-center gap-2">
+            {canWritePayroll && activeTab === "overview" && !isSelf && row.state !== "SEPARATED" && (
+              <button
+                type="button"
+                className="btn-secondary btn-sm"
+                onClick={() => {
+                  setStartPayrollEdit(!currentSalary);
+                  setActiveTab("payroll");
+                }}
+              >
+                <IndianRupee size={14} /> {currentSalary ? "Revise payroll" : "Assign payroll"}
+              </button>
+            )}
+            {canPlace && activeTab === "overview" && !isSelf && (
+              <>
+                {available.length > 0 && (
+                  <div ref={menuRef} className="relative">
+                    <button type="button" className="btn-secondary btn-sm" aria-haspopup="menu" aria-expanded={menuOpen} onClick={() => setMenuOpen((o) => !o)}>
+                      Actions <ChevronDown size={14} />
+                    </button>
+                    {menuOpen && (
+                      <div role="menu" className="popover absolute bottom-full right-0 mb-1 w-56">
+                        {available.map((kind) => (
+                          <button key={kind} type="button" role="menuitem"
+                            className={`menu-item w-full ${kind === "SEPARATION" ? "hover:text-danger" : ""}`}
+                            onClick={() => { setMenuOpen(false); onAction(kind); }}>
+                            {ACTION_META[kind].menu}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+                  </div>
+                )}
+                {row.state !== "SEPARATED" && (
+                  <button className="btn-primary btn-sm" onClick={onTransfer}>
+                    <ArrowLeftRight size={14} /> {isPlaced ? "Transfer" : "Place in a department"}
                   </button>
-                  {menuOpen && (
-                    <div role="menu" className="popover absolute bottom-full right-0 mb-1 w-56">
-                      {available.map((kind) => (
-                        <button key={kind} type="button" role="menuitem"
-                          className={`menu-item w-full ${kind === "SEPARATION" ? "hover:text-danger" : ""}`}
-                          onClick={() => { setMenuOpen(false); onAction(kind); }}>
-                          {ACTION_META[kind].menu}
-                        </button>
-                      ))}
-                    </div>
-                  )}
-                </div>
-              )}
-              {row.state !== "SEPARATED" && (
-                <button className="btn-primary btn-sm" onClick={onTransfer}>
-                  <ArrowLeftRight size={14} /> {isPlaced ? "Transfer" : "Place in a department"}
-                </button>
-              )}
-            </div>
-          )}
-          {canPlace && activeTab === "overview" && isSelf && (
-            <span className="text-xs text-fg-subtle">Changes to your own employment are made by another HR user.</span>
-          )}
+                )}
+              </>
+            )}
+            {canPlace && activeTab === "overview" && isSelf && (
+              <span className="text-xs text-fg-subtle">Changes to your own employment are made by another HR user.</span>
+            )}
+          </div>
         </div>
       ) : undefined}
     >
@@ -586,11 +654,15 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
           <Tabs<EmployeeSheetTab>
             className="border-b border-line"
             value={activeTab}
-            onChange={setActiveTab}
+            onChange={(t) => {
+              setActiveTab(t);
+              if (t !== "payroll") setStartPayrollEdit(false);
+            }}
             items={[
               { value: "overview", label: "Employment overview" },
               { value: "attendance", label: "Attendance" },
               { value: "kyc", label: "KYC & Documents" },
+              ...(canReadPayroll ? [{ value: "payroll" as const, label: "Payroll" }] : []),
               ...(canConfigureWorkflow ? [{ value: "workflow" as const, label: "Approval workflow" }] : []),
               ...(canViewAccess ? [{ value: "access" as const, label: "Access" }] : []),
             ]}
@@ -615,6 +687,53 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
                   ))}
                 </dl>
               </div>
+
+              {canReadPayroll && (
+                <div className="rounded-xl border border-line p-4">
+                  <div className="flex flex-wrap items-center justify-between gap-3">
+                    <div>
+                      <p className="eyebrow">Payroll & Compensation</p>
+                      {currentSalary ? (
+                        <>
+                          <p className="mt-1 text-lg font-semibold tabular-nums text-fg">{inr(currentSalary.annual_ctc)}</p>
+                          <p className="text-xs text-fg-subtle">
+                            {currentSalary.structure_name} · from {format(new Date(`${currentSalary.effective_from}T00:00:00`), "d MMM yyyy")}
+                          </p>
+                        </>
+                      ) : (
+                        <p className="mt-1 text-sm text-fg-muted">No salary structure or CTC assigned yet.</p>
+                      )}
+                    </div>
+                    <div className="flex items-center gap-2">
+                      {currentSalary && (
+                        <button
+                          type="button"
+                          className="btn-secondary btn-sm"
+                          onClick={() => {
+                            setStartPayrollEdit(false);
+                            setActiveTab("payroll");
+                          }}
+                        >
+                          View breakup & history
+                        </button>
+                      )}
+                      {canWritePayroll && !isSelf && row.state !== "SEPARATED" && (
+                        <button
+                          type="button"
+                          className={currentSalary ? "btn-secondary btn-sm" : "btn-primary btn-sm"}
+                          onClick={() => {
+                            setStartPayrollEdit(true);
+                            setActiveTab("payroll");
+                          }}
+                        >
+                          <IndianRupee size={14} /> {currentSalary ? "Revise salary" : "Assign payroll"}
+                        </button>
+                      )}
+                    </div>
+                  </div>
+                </div>
+              )}
+
               <PersonnelHistory employmentId={row.id} canCancel={canPlace && !isSelf} />
             </>
           )}
@@ -624,6 +743,23 @@ function EmployeeSheet({ row, canPlace, canViewAccess, canManageAccess, onClose,
               employmentId={row.id}
               canEdit={canEditAttendance && row.id !== user?.employmentId}
               showName={false}
+            />
+          )}
+          {activeTab === "payroll" && canReadPayroll && (
+            <EmployeeSalarySection
+              key={`${row.id}-${startPayrollEdit}`}
+              target={{
+                employmentId: row.id,
+                employeeName: row.name,
+                employeeNumber: row.employeeNumber,
+                designation: row.designation,
+                department: row.department,
+                company: row.company,
+                legalEntityId: row.legalEntityId,
+              }}
+              canWrite={canWritePayroll && !isSelf}
+              initialRevising={startPayrollEdit}
+              onCloseForm={() => setStartPayrollEdit(false)}
             />
           )}
           {activeTab === "workflow" && canConfigureWorkflow && <EmployeeWorkflowSection key={row.id} employmentId={row.id} />}

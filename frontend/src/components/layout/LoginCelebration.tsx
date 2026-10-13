@@ -77,25 +77,27 @@ export function LoginCelebration() {
   return <Dialog open={open} onClose={close} labelledBy={headingId} describedBy={descriptionId}
     className="max-w-lg max-h-[calc(88dvh-2rem)]">
     <div className="flex max-h-[calc(88dvh-2rem)] flex-col" onKeyDown={keepFocusInside}>
-      <header className="relative shrink-0 border-b border-line bg-muted/50 px-6 py-6">
-        <button type="button" className="btn-icon absolute right-3 top-3" onClick={close} aria-label="Close celebrations"><X size={18} /></button>
-        <div className="mb-4 grid h-12 w-12 place-items-center rounded-xl bg-brand-500/10 text-accent"><Icon size={26} aria-hidden /></div>
-        <p className="mb-2 text-xs font-medium text-fg-muted">{format(parseISO(data.date), "EEEE, d MMMM")}</p>
-        <h2 id={headingId} className="pr-2 text-xl font-semibold leading-snug tracking-tight text-fg">{title}</h2>
-        <p id={descriptionId} className="mt-2 text-[13px] leading-relaxed text-fg-muted">{description}</p>
-      </header>
-      {(data.birthdays.length > 0 || data.anniversaries.length > 0) && <div role="region" aria-label="Today's colleagues" tabIndex={0}
-        className="min-h-0 space-y-5 overflow-y-auto px-6 py-4 focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2">
-        {data.birthdays.length > 0 && <section aria-labelledby={`${headingId}-birthdays`}>
-          <h3 id={`${headingId}-birthdays`} className="flex items-center gap-2 text-sm font-semibold text-fg"><Cake size={16} className="text-accent" aria-hidden />Birthdays today</h3>
-          <ul className="mt-1 divide-y divide-line">{data.birthdays.map(person => <Celebrant key={person.id} person={person} detail="Happy birthday!" />)}</ul>
-        </section>}
-        {data.anniversaries.length > 0 && <section aria-labelledby={`${headingId}-anniversaries`}>
-          <h3 id={`${headingId}-anniversaries`} className="flex items-center gap-2 text-sm font-semibold text-fg"><Award size={16} className="text-accent" aria-hidden />Work anniversaries today</h3>
-          <ul className="mt-1 divide-y divide-line">{data.anniversaries.map(person => <Celebrant key={person.id} person={person}
-            detail={`${person.years} ${person.years === 1 ? "year" : "years"} with ${person.company}`} />)}</ul>
-        </section>}
-      </div>}
+      <div role="region" aria-label="Today's celebrations" tabIndex={0}
+        className="min-h-0 overflow-y-auto focus-visible:outline focus-visible:outline-2 focus-visible:outline-accent focus-visible:-outline-offset-2">
+        <header className="relative border-b border-line bg-muted/50 px-6 py-6">
+          <button type="button" className="btn-icon absolute right-3 top-3" onClick={close} aria-label="Close celebrations"><X size={18} /></button>
+          <div className="celebration-mark mb-4 grid h-12 w-12 place-items-center rounded-xl bg-brand-500/10 text-accent"><Icon size={26} aria-hidden /></div>
+          <p className="mb-2 text-xs font-medium text-fg-muted">{format(parseISO(data.date), "EEEE, d MMMM")}</p>
+          <h2 id={headingId} className="pr-2 text-xl font-semibold leading-snug tracking-tight text-fg">{title}</h2>
+          <p id={descriptionId} className="mt-2 text-[13px] leading-relaxed text-fg-muted">{description}</p>
+        </header>
+        {(data.birthdays.length > 0 || data.anniversaries.length > 0) && <div className="space-y-5 px-6 py-4">
+          {data.birthdays.length > 0 && <section aria-labelledby={`${headingId}-birthdays`}>
+            <h3 id={`${headingId}-birthdays`} className="flex items-center gap-2 text-sm font-semibold text-fg"><Cake size={16} className="text-accent" aria-hidden />Birthdays today</h3>
+            <ul className="mt-1 divide-y divide-line">{data.birthdays.map(person => <Celebrant key={person.id} person={person} detail="Happy birthday!" />)}</ul>
+          </section>}
+          {data.anniversaries.length > 0 && <section aria-labelledby={`${headingId}-anniversaries`}>
+            <h3 id={`${headingId}-anniversaries`} className="flex items-center gap-2 text-sm font-semibold text-fg"><Award size={16} className="text-accent" aria-hidden />Work anniversaries today</h3>
+            <ul className="mt-1 divide-y divide-line">{data.anniversaries.map(person => <Celebrant key={person.id} person={person}
+              detail={`${person.years} ${person.years === 1 ? "year" : "years"} with ${person.company}`} />)}</ul>
+          </section>}
+        </div>}
+      </div>
       <footer className="flex shrink-0 justify-end border-t border-line px-6 py-4">
         <button type="button" className="btn-secondary w-full sm:w-auto" onClick={close} data-autofocus>Continue to work</button>
       </footer>

@@ -368,12 +368,11 @@ for (const mode of ["light", "dark"] as const) {
       }).map(link => link.textContent);
     });
     if (palette.id === "classic-teal") {
-      await expect(page.locator(".page-header-actions > .flex")).toHaveCSS("flex-wrap", "nowrap");
-      await writeFile(testInfo.outputPath(`${label}-attendance-layout-baseline.json`), JSON.stringify({ viewport: 390, documentWidth, overflow, preservedFlexWrap: "nowrap" }, null, 2));
-    } else {
-      expect(documentWidth).toBeLessThanOrEqual(390);
-      expect(overflow, "Attendance actions should wrap inside the phone page header").toEqual([]);
+      await expect(page.locator(".page-header-actions > .flex")).toHaveCSS("flex-wrap", "wrap");
+      await writeFile(testInfo.outputPath(`${label}-attendance-layout.json`), JSON.stringify({ viewport: 390, documentWidth, overflow }, null, 2));
     }
+    expect(documentWidth).toBeLessThanOrEqual(390);
+    expect(overflow, "Attendance actions should wrap inside the phone page header").toEqual([]);
     await audit(page, testInfo, `${label}-mobile-attendance`);
     await screenshot(page, testInfo, `${label}-mobile-attendance`);
     verifyFixtures(state);

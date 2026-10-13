@@ -46,18 +46,15 @@ for example `leave_management_list_applications` and `recruitment_list_applicati
 
 ## Sharing the API with a third party
 
-On testing and production, `/docs`, `/redoc` and `/openapi.json` return 404, unless
-`HRMS_API_DOCS_ENABLED=true` (see [ENVIRONMENTS.md](ENVIRONMENTS.md)). This is intentional,
-because the schema is a map of every endpoint. To share the API, either:
-
-- **Send the schema file.** Export it, then share it or host it wherever partners read docs:
+- **Employee Integration Guide:** For integrating attendance punch in/out, attendance corrections, and leave applications with third-party portals, kiosks, or mobile apps, see the focused [Employee Self-Service Integration Guide](EMPLOYEE_INTEGRATION_API.md).
+- **Send the schema file:** Export it, then share it or host it wherever partners read docs:
 
   ```bash
   cd backend && uv run python -m hrms.core.openapi openapi.json
   ```
 
   Any OpenAPI viewer can open it (Swagger Editor, Redocly, Postman, Stoplight).
-- **Turn the docs on for an environment.** Set `HRMS_API_DOCS_ENABLED=true` and restart the API.
+- **Turn the docs on for an environment:** Set `HRMS_API_DOCS_ENABLED=true` and restart the API.
   Be aware that this makes the endpoint list public on that host.
 
 Each partner should get their own user account, with a role that grants only what they need
