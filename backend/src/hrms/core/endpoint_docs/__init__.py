@@ -13,6 +13,7 @@ from hrms.core.endpoint_docs import (
     access,
     core_hr,
     insights_platform,
+    integrations,
     leave,
     payroll,
     policy,
@@ -21,7 +22,17 @@ from hrms.core.endpoint_docs import (
 )
 
 ENDPOINT_DOCS: dict[str, tuple[str, str]] = {}
-for _module in (access, core_hr, payroll, time, policy, leave, workflows, insights_platform):
+for _module in (
+    access,
+    core_hr,
+    payroll,
+    time,
+    policy,
+    leave,
+    workflows,
+    insights_platform,
+    integrations,
+):
     _overlap = ENDPOINT_DOCS.keys() & _module.DOCS.keys()
     if _overlap:
         raise RuntimeError(f"Endpoint documented twice: {sorted(_overlap)}")

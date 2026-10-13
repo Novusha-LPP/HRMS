@@ -149,6 +149,8 @@ export const personnelActionsApi = {
     effective_date: string;
     reason_code?: string;
     changes?: PersonnelActionChanges;
+    /** Why HR is changing a field a connected app (e.g. the ERP) owns for this employee. */
+    override_reason?: string;
   }) => api.post<PersonnelAction>("/v1/personnel-actions", body),
   list: (employmentId: string) =>
     api.get<PersonnelActionListItem[]>(`/v1/personnel-actions?employment_id=${employmentId}`),

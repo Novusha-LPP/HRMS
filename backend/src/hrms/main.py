@@ -30,6 +30,9 @@ from hrms.core.version import APP_VERSION
 from hrms.modules.approvals.router import router as approvals_router
 from hrms.modules.corrections.router import router as corrections_router
 from hrms.modules.dashboard.router import router as dashboard_router
+from hrms.modules.integrations.admin import employee_router as integration_employee_router
+from hrms.modules.integrations.admin import router as integration_admin_router
+from hrms.modules.integrations.router import router as integrations_router
 from hrms.modules.kernel.auth.router import router as auth_router
 from hrms.modules.kernel.users.router import router as users_router
 from hrms.modules.kyc.router import router as kyc_router
@@ -118,6 +121,9 @@ app.include_router(policy_router)
 app.include_router(leave_router)
 app.include_router(corrections_router)
 app.include_router(approvals_router)
+app.include_router(integrations_router)
+app.include_router(integration_admin_router)
+app.include_router(integration_employee_router)
 app.include_router(kyc_router)
 app.include_router(preferences_router)
 app.include_router(recruitment_router)

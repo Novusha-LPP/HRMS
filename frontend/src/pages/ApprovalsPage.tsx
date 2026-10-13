@@ -15,8 +15,8 @@ import { Avatar } from "../components/ui/Avatar";
 import { StatCard } from "../components/ui/StatCard";
 import { useToast, errorMessage } from "../components/ui/Toast";
 
-const TYPES: RequestType[] = ["LEAVE", "LEAVE_CANCELLATION", "CORRECTION", "OVERTIME", "JOB_REQUISITION"];
-const TYPE_LABEL: Record<RequestType, string> = { LEAVE: "Leave", LEAVE_CANCELLATION: "Leave cancellation", CORRECTION: "Attendance correction", OVERTIME: "Overtime", JOB_REQUISITION: "Job opening" };
+const TYPES: RequestType[] = ["LEAVE", "LEAVE_CANCELLATION", "CORRECTION", "OVERTIME", "JOB_REQUISITION", "FIELD_OVERRIDE"];
+const TYPE_LABEL: Record<RequestType, string> = { LEAVE: "Leave", LEAVE_CANCELLATION: "Leave cancellation", CORRECTION: "Attendance correction", OVERTIME: "Overtime", JOB_REQUISITION: "Job opening", FIELD_OVERRIDE: "Change to an app-managed field" };
 const label = (s: string) => { const text = s.toLowerCase().replaceAll("_", " "); return text.charAt(0).toUpperCase() + text.slice(1); };
 const localInput = (d: Date) => new Date(d.getTime() - d.getTimezoneOffset() * 60000).toISOString().slice(0, 16);
 const displayValue = (v: unknown) => typeof v === "string" && /^\d{4}-\d{2}-\d{2}T/.test(v) ? new Date(v).toLocaleString(undefined, { timeZoneName: "short" }) : String(v);
@@ -170,6 +170,10 @@ function requestSummary(request: ApprovalRequest) {
   const dateText = (v: unknown) => typeof v === "string" ? new Date(`${v}T00:00:00`).toLocaleDateString(undefined, { day: "numeric", month: "short" }) : "—";
   if (request.request_type === "LEAVE" || request.request_type === "LEAVE_CANCELLATION") return `${dateText(data.from_date)}${data.to_date !== data.from_date ? ` – ${dateText(data.to_date)}` : ""} · ${data.days_requested ?? "—"} ${Number(data.days_requested) === 1 ? "day" : "days"}`;
   if (request.request_type === "JOB_REQUISITION") return `${String(data.code ?? "")} · ${String(data.title ?? "")} · ${data.positions ?? 1} ${Number(data.positions) === 1 ? "position" : "positions"}`;
+  if (request.request_type === "FIELD_OVERRIDE") {
+    const apps = Array.isArray(data.apps) ? (data.apps as string[]).join(", ") : "an app";
+    return `${label(String(data.type ?? data.action_type ?? "Change"))} from ${dateText(data.effective_date)} · managed in ${apps} · “${String(data.reason ?? "")}”`;
+  }
   if (request.request_type === "OVERTIME") {
     const minutes = Number(data.ot_minutes ?? 0);
     return `${dateText(data.work_date)} · ${Math.floor(minutes / 60)}h ${minutes % 60}m overtime`;

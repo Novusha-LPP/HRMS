@@ -1,7 +1,7 @@
 from datetime import date, datetime
 from typing import Any
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from hrms.modules.people.models import (
     EmploymentState,
@@ -132,6 +132,21 @@ class PersonnelActionCreate(BaseModel):
         default=None,
         description="Client-generated key for deduplicating requests.",
     )
+    override_reason: str | None = Field(
+        default=None,
+        max_length=300,
+        description="Why HR is changing a field a connected app owns (e.g. the department of "
+        "an employee managed in the ERP). Required for such a change when the app's settings "
+        "allow overrides.",
+    )
+
+    @field_validator("idempotency_key")
+    @classmethod
+    def _not_reserved(cls, value: str | None) -> str | None:
+        # "int:" keys mark changes made through the sync API (modules/integrations/hooks.py).
+        if value is not None and value.startswith("int:"):
+            raise ValueError("Idempotency keys starting with 'int:' are reserved")
+        return value
 
 
 class PersonnelActionResponse(BaseModel):

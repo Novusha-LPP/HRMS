@@ -139,6 +139,11 @@ async def instance_public(session, tenant_id, scope, principal, instance):
             "SELECT work_date,correction_type,requested_punch_in,requested_punch_out,reason "
             "FROM attendance_correction_requests"
         )
+    elif instance.request_type == "FIELD_OVERRIDE":
+        query = (
+            "SELECT type AS action_type,effective_date,changes,status AS action_status "
+            "FROM personnel_actions"
+        )
     elif instance.request_type == "JOB_REQUISITION":
         query = (
             "SELECT code,title,positions,priority,employment_type,work_mode,target_start_date,"
@@ -159,7 +164,7 @@ async def instance_public(session, tenant_id, scope, principal, instance):
         .mappings()
         .one()
     )
-    if instance.request_type == "OVERTIME":
+    if instance.request_type in ("OVERTIME", "FIELD_OVERRIDE"):
         snapshot = (
             (
                 await session.execute(
@@ -174,7 +179,11 @@ async def instance_public(session, tenant_id, scope, principal, instance):
             .first()
         )
         if snapshot:
-            payload = snapshot.details["request"]
+            payload = (
+                {**dict(payload), **snapshot.details["request"]}
+                if instance.request_type == "FIELD_OVERRIDE"
+                else snapshot.details["request"]
+            )
     return dict(
         approval_mode="FLOW",
         employee_name=person["employee_name"],
@@ -192,6 +201,7 @@ async def instance_public(session, tenant_id, scope, principal, instance):
                 "CORRECTION": "attendance_correction",
                 "OVERTIME": "attendance_day",
                 "JOB_REQUISITION": "job_opening",
+                "FIELD_OVERRIDE": "personnel_action",
             }[instance.request_type],
             instance.request_id,
         ),
@@ -561,6 +571,12 @@ async def decide(
             scope,
             tenant_id,
             session,
+        )
+    elif kind == "FIELD_OVERRIDE":
+        from hrms.modules.people.router import decide_field_override
+
+        await decide_field_override(
+            session, tenant_id, principal, instance.request_id, body.action, body.comments
         )
     elif kind == "JOB_REQUISITION":
         from hrms.modules.recruitment import router as recruitment

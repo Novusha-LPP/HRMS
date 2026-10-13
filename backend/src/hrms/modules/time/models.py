@@ -24,6 +24,7 @@ class PunchSource(enum.StrEnum):
     MOBILE = "MOBILE"
     DEVICE = "DEVICE"
     MANUAL = "MANUAL"  # HR correction
+    INTEGRATION = "INTEGRATION"  # through a connected app's employee session (source_system)
 
 
 class AttendanceStatus(enum.StrEnum):
@@ -152,6 +153,8 @@ class Punch(SQLModel, table=True):
     punched_at: datetime = Field()
     work_date: date | None = Field(default=None, index=True)
     source: str = Field(default=PunchSource.WEB, max_length=20)
+    # The connected app's code when source is INTEGRATION (migration 0051).
+    source_system: str | None = Field(default=None, max_length=40)
     # GPS
     latitude: float | None = Field(default=None)
     longitude: float | None = Field(default=None)

@@ -9,6 +9,8 @@ from httpx import ASGITransport, AsyncClient
 from hrms.core.endpoint_docs import ENDPOINT_DOCS
 from hrms.core.endpoint_docs.examples import REQUEST_EXAMPLES
 from hrms.core.openapi import (
+    INTEGRATION_KEY_SCHEME,
+    INTEGRATION_TOKEN_SCHEME,
     PLATFORM_SCHEME,
     TAGS_METADATA,
     TENANT_SCHEME,
@@ -32,6 +34,8 @@ PUBLIC = {
     ("POST", "/v1/platform/forgot-password"),
     ("POST", "/v1/platform/reset-password"),
     ("GET", "/v1/reports/meta/{module}"),  # static column/filter catalogue, no tenant data
+    # Authenticates with the app's client credentials in the request itself (OAuth 2.0).
+    ("POST", "/v1/integrations/oauth/token"),
 }
 
 
@@ -41,8 +45,15 @@ def test_every_operation_is_labelled_with_the_token_it_needs():
     for method, path, op in OPERATIONS:
         if (method, path) in PUBLIC:
             continue
-        expected = PLATFORM_SCHEME if path.startswith("/v1/platform/") else TENANT_SCHEME
-        assert op["security"] == [{expected: []}], (method, path)
+        if path.startswith("/v1/integrations/"):
+            # A connected app's key, never a user's token.
+            assert op["security"] == [
+                {INTEGRATION_KEY_SCHEME: []},
+                {INTEGRATION_TOKEN_SCHEME: []},
+            ], (method, path)
+        else:
+            expected = PLATFORM_SCHEME if path.startswith("/v1/platform/") else TENANT_SCHEME
+            assert op["security"] == [{expected: []}], (method, path)
         assert {"401", "403"} <= op["responses"].keys(), (method, path)
 
 

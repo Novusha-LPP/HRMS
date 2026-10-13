@@ -20,6 +20,7 @@ don't administer.
 
 import logging
 from datetime import UTC, date, datetime
+from typing import Literal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
@@ -40,6 +41,12 @@ from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.metrics import SCHEDULED_ACTIONS
 from hrms.core.tenancy import TenantDep
+from hrms.modules.integrations import hooks as integration_hooks
+from hrms.modules.integrations.ownership import (
+    ASSIGNMENT_FIELDS,
+    assert_fields_editable,
+    assert_lifecycle_allowed,
+)
 from hrms.modules.kernel.models import UserAccount
 from hrms.modules.people.models import (
     Assignment,
@@ -219,17 +226,37 @@ async def _generate_employee_number(session, tenant_id: UUID, legal_entity_id: U
     if scheme is None:
         return None
 
-    issued = (
-        await session.execute(
-            text("""
-                UPDATE employee_id_schemes SET next_number = next_number + 1
-                WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:sid AS uuid)
-                RETURNING next_number - 1
-            """),
-            {"tid": str(tenant_id), "sid": str(scheme["id"])},
-        )
-    ).scalar()
-    return f"{scheme['prefix']}{scheme['separator']}{str(issued).zfill(scheme['number_digits'])}"
+    # A number can already be taken: typed in by hand, or sent by a connected app (plan D-8).
+    # Skip it rather than issue a duplicate.
+    for _ in range(1000):
+        issued = (
+            await session.execute(
+                text("""
+                    UPDATE employee_id_schemes SET next_number = next_number + 1
+                    WHERE tenant_id = CAST(:tid AS uuid) AND id = CAST(:sid AS uuid)
+                    RETURNING next_number - 1
+                """),
+                {"tid": str(tenant_id), "sid": str(scheme["id"])},
+            )
+        ).scalar()
+        number = str(issued).zfill(scheme["number_digits"])
+        code = f"{scheme['prefix']}{scheme['separator']}{number}"
+        taken = (
+            await session.execute(
+                text("""
+                    SELECT 1 FROM employments
+                    WHERE tenant_id = CAST(:tid AS uuid) AND legal_entity_id = CAST(:leid AS uuid)
+                      AND lower(employee_number) = lower(:code)
+                """),
+                {"tid": str(tenant_id), "leid": str(legal_entity_id), "code": code},
+            )
+        ).first()
+        if not taken:
+            return code
+    raise HTTPException(
+        status.HTTP_409_CONFLICT,
+        "The employee ID scheme's next 1,000 numbers are all in use; move its counter on",
+    )
 
 
 def _employment_row_response(r, *, show_personal: bool = True) -> EmploymentResponse:
@@ -464,6 +491,27 @@ async def update_my_profile(
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
 
     fields = body.model_dump(exclude_unset=True)
+    # Only what actually changes: the profile form sends every field, edited or not.
+    current_mobile = (
+        await session.execute(
+            text("SELECT mobile FROM user_accounts WHERE tenant_id = :tid AND id = :uid"),
+            {"tid": tenant_id, "uid": principal.user_account_id},
+        )
+    ).scalar()
+    changing = {
+        k
+        for k, v in fields.items()
+        if (current_mobile if k == "mobile" else getattr(person, k, None)) != v
+    }
+    await assert_fields_editable(
+        session,
+        tenant_id,
+        emp.id,
+        changing,
+        actor="SELF",
+        changed_by=principal.user_account_id,
+    )
+    before = await integration_hooks.employee_changed.before(session, tenant_id, emp.id)
     if "mobile" in fields:
         account = (
             (
@@ -483,6 +531,7 @@ async def update_my_profile(
         setattr(person, k, v)
     session.add(person)
     await session.flush()
+    await integration_hooks.employee_changed.after(session, tenant_id, emp.id, before)
 
     row = (
         (
@@ -542,6 +591,7 @@ async def create_employment(
         raise HTTPException(
             status.HTTP_403_FORBIDDEN, "Not authorized to hire into this legal entity"
         )
+    await assert_lifecycle_allowed(session, tenant_id, "hire", legal_entity_id=le_uuid)
 
     employee_number = body.employee_number
     if not employee_number:
@@ -691,6 +741,7 @@ async def get_employee(
 )
 async def create_personnel_action(
     body: PersonnelActionCreate,
+    principal: CurrentUser,
     tenant_id: TenantDep,
     session: SessionDep,
     scope: ScopeDep,
@@ -699,6 +750,7 @@ async def create_personnel_action(
     emp_uuid = to_uuid(body.employment_id)
     await lock_resource(session, tenant_id, f"personnel:{emp_uuid}")
     await authorize_employment(session, tenant_id, scope, emp_uuid)
+    approval_apps = await _check_integration_rules(session, tenant_id, principal, body, emp_uuid)
 
     if body.idempotency_key:
         existing = await session.execute(
@@ -734,6 +786,34 @@ async def create_personnel_action(
     session.add(pa)
     await session.flush()
 
+    if approval_apps:
+        # It overrides a field a connected app owns, and the app's settings require approval:
+        # it waits in the employee's FIELD_OVERRIDE approval flow (see decide_field_override).
+        from hrms.modules.approvals import service as approval_flow
+
+        instance = await approval_flow.start(
+            session,
+            tenant_id,
+            FIELD_OVERRIDE,
+            pa.id,
+            emp_uuid,
+            request_snapshot={
+                "apps": approval_apps,
+                "reason": (body.override_reason or "").strip(),
+                "type": str(body.type),
+                "effective_date": body.effective_date.isoformat(),
+                "changes": body.changes or {},
+            },
+        )
+        if instance is None:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"Changing this needs approval ({', '.join(approval_apps)} owns it), but no "
+                "field-override approval flow is assigned to this employee. Assign one in "
+                "Approval flows.",
+            )
+        return _pa_response(pa)
+
     # Submitting this already required people.write scoped to this employee
     # (checked above) — that permission check IS the approval, so every
     # action type applies immediately rather than sitting in a
@@ -746,8 +826,112 @@ async def create_personnel_action(
         pa.applied_at = datetime.now(UTC)
     session.add(pa)
     await session.flush()
+    if pa.status == PersonnelActionStatus.SCHEDULED:
+        await integration_hooks.personnel_action_scheduled(session, tenant_id, pa, emp)
 
     return _pa_response(pa)
+
+
+_LIFECYCLE_OPERATION: dict[PersonnelActionType, Literal["hire", "job_change", "exit", "rehire"]] = {
+    PersonnelActionType.HIRE: "hire",
+    PersonnelActionType.REHIRE: "rehire",
+    PersonnelActionType.SEPARATION: "exit",
+    PersonnelActionType.TRANSFER: "job_change",
+    PersonnelActionType.PROMOTION: "job_change",
+    PersonnelActionType.DEMOTION: "job_change",
+    PersonnelActionType.CHANGE_MANAGER: "job_change",
+    PersonnelActionType.CHANGE_JOB: "job_change",
+}
+
+
+FIELD_OVERRIDE = "FIELD_OVERRIDE"
+
+
+async def decide_field_override(session, tenant_id, principal, action_id, action, comments):
+    """
+    A decision in the employee's FIELD_OVERRIDE approval flow (from the approvals inbox). The
+    final approval applies the held personnel action (or schedules it); a rejection drops it.
+    """
+    from hrms.modules.approvals import service as approval_flow
+
+    await lock_resource(session, tenant_id, f"personnel:{action_id}")
+    pa = (
+        (
+            await session.execute(
+                select(PersonnelAction)
+                .where(PersonnelAction.tenant_id == tenant_id)
+                .where(PersonnelAction.id == action_id)
+                .with_for_update()
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if pa is None or pa.status != PersonnelActionStatus.PENDING_APPROVAL:
+        raise HTTPException(status.HTTP_409_CONFLICT, "This change isn't awaiting approval")
+    final = await approval_flow.record_decision(
+        session, tenant_id, FIELD_OVERRIDE, pa.id, principal, action, comments
+    )
+    if action == "REJECT":
+        pa.status = PersonnelActionStatus.REJECTED
+    elif final:
+        emp = (
+            (
+                await session.execute(
+                    select(Employment)
+                    .where(Employment.tenant_id == tenant_id)
+                    .where(Employment.id == pa.employment_id)
+                )
+            )
+            .scalars()
+            .one()
+        )
+        await _reject_conflicting_schedule(
+            session, tenant_id, pa.employment_id, PersonnelActionType(pa.type), pa.effective_date
+        )
+        if pa.effective_date > business_today():
+            pa.status = PersonnelActionStatus.SCHEDULED
+        else:
+            await _apply_personnel_action(session, tenant_id, pa, emp)
+            pa.status = PersonnelActionStatus.APPLIED
+            pa.applied_at = datetime.now(UTC)
+    session.add(pa)
+    await session.flush()
+
+
+async def _check_integration_rules(session, tenant_id, principal, body, emp_uuid) -> list[str]:
+    """A connected app's settings may reserve this change, or these fields, for the app."""
+    operation = _LIFECYCLE_OPERATION.get(PersonnelActionType(body.type))
+    if operation:
+        await assert_lifecycle_allowed(session, tenant_id, operation, employment_id=emp_uuid)
+    # Only what actually changes: a form that resends the current department isn't changing it.
+    current = await _current_assignment(session, tenant_id, emp_uuid)
+    now = {}
+    if current is not None:
+        now = {
+            "org_unit_id": current.org_unit_id,
+            "location_id": current.location_id,
+            "job_id": current.job_id,
+            "manager_employment_id": await _current_line_manager(session, tenant_id, current.id),
+        }
+    fields = {
+        ASSIGNMENT_FIELDS[k]
+        for k in (body.changes or {})
+        if k in ASSIGNMENT_FIELDS
+        and (body.changes or {}).get(k)
+        and _changed_uuid(body.changes or {}, k) != now.get(k)
+    }
+    if body.type == PersonnelActionType.SEPARATION:
+        fields.add("last_working_day")
+    return await assert_fields_editable(
+        session,
+        tenant_id,
+        emp_uuid,
+        fields,
+        actor="HR",
+        changed_by=principal.user_account_id,
+        override_reason=body.override_reason,
+    )
 
 
 @router.get(
@@ -822,11 +1006,20 @@ async def cancel_personnel_action(
     await authorize_employment(session, tenant_id, scope, pa.employment_id)
     await lock_resource(session, tenant_id, f"personnel:{pa.employment_id}")
     await session.refresh(pa)  # re-read under the lock: it may have just been applied
-    if pa.status not in (PersonnelActionStatus.SCHEDULED, PersonnelActionStatus.FAILED):
+    if pa.status not in (
+        PersonnelActionStatus.SCHEDULED,
+        PersonnelActionStatus.FAILED,
+        PersonnelActionStatus.PENDING_APPROVAL,
+    ):
         raise HTTPException(
             status.HTTP_409_CONFLICT,
-            f"Only scheduled or failed actions can be cancelled (this one is {pa.status})",
+            f"Only scheduled, failed or pending actions can be cancelled (this one is {pa.status})",
         )
+    if pa.status == PersonnelActionStatus.PENDING_APPROVAL:
+        # A field override waiting for approval: withdraw its approval request too.
+        from hrms.modules.approvals import service as approval_flow
+
+        await approval_flow.finish(session, tenant_id, FIELD_OVERRIDE, pa.id, "CANCELLED")
     pa.status = PersonnelActionStatus.CANCELLED
     session.add(pa)
     await session.flush()
@@ -1011,6 +1204,16 @@ async def _place_assignment(
 
 
 async def _apply_personnel_action(
+    session, tenant_id: UUID, pa: PersonnelAction, emp: Employment
+) -> None:
+    before = await integration_hooks.capture(session, tenant_id, pa.employment_id)
+    await _apply_personnel_action_change(session, tenant_id, pa, emp)
+    # Connected apps hear about the change however it was made: an HR screen, the scheduler on
+    # its date, or the sync API (modules/integrations/hooks.py).
+    await integration_hooks.personnel_action_applied(session, tenant_id, pa, emp, before)
+
+
+async def _apply_personnel_action_change(
     session, tenant_id: UUID, pa: PersonnelAction, emp: Employment
 ) -> None:
     changes = pa.changes or {}

@@ -10,6 +10,7 @@ so one tenant's failure is logged and counted without stopping the others; the r
   already apply them lazily; this makes sure they land even on a day nobody signs in.
 - missed-punches: marks days whose session is still open 24 hours after check-in as
   MISSED_PUNCH, so reports show them for correction.
+- integrations: connected-app housekeeping (held events, feed and sync-log retention).
 """
 
 from __future__ import annotations
@@ -113,10 +114,47 @@ async def _missed_punches(session, tenant_id: UUID) -> str:
     return f"{flagged} missed punch{'' if flagged == 1 else 'es'} flagged"
 
 
+async def _integrations(session, tenant_id: UUID) -> str:
+    """
+    Connected-app housekeeping: release held events whose time has come (the feed also does
+    this when an app reads), drop delivered events older than the feed keeps, and trim the sync
+    log to each app's retention setting and the rate-limit counters to the last hour.
+    """
+    from hrms.modules.integrations.events import purge_old_events, release_due
+    from hrms.modules.integrations.profiles import tenant_settings
+
+    released = await release_due(session, tenant_id)
+    purged = await purge_old_events(session, tenant_id)
+    trimmed = 0
+    apps = (
+        await session.execute(
+            text("SELECT id FROM connected_apps WHERE tenant_id = :tid"), {"tid": tenant_id}
+        )
+    ).scalars().all()
+    for app_id in apps:
+        days = (await tenant_settings(session, tenant_id, app_id))["retention_days"]
+        result = await session.execute(
+            text("""
+                DELETE FROM integration_requests
+                WHERE tenant_id = :tid AND app_id = :app
+                  AND created_at < now() - make_interval(days => :days)
+            """),
+            {"tid": tenant_id, "app": app_id, "days": days},
+        )
+        trimmed += result.rowcount or 0
+    await session.execute(
+        text("""DELETE FROM integration_rate_windows
+                WHERE tenant_id = :tid AND window_start < now() - interval '1 hour'"""),
+        {"tid": tenant_id},
+    )
+    return f"{released} released, {purged} events purged, {trimmed} log rows trimmed"
+
+
 JOBS: dict[str, TenantJob] = {
     "scheduled-actions": _scheduled_actions,
     "accrual": _accrual,
     "missed-punches": _missed_punches,
+    "integrations": _integrations,
 }
 
 

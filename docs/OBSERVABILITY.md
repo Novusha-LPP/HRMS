@@ -247,3 +247,46 @@ Verify new `SUCCEEDED` rows in `job_runs` and fresh
 `hrms_job_last_success_timestamp_seconds` values after the next Prometheus scrape.
 If testing switches to the deployed Compose stack, disable this local service and
 use that stack's `jobs` service instead.
+
+## HrmsIntegrationRejectRateHigh
+
+A connected app's sync calls are being refused. Open Settings → Integrations → the app → *Sync
+log*, filter by outcome `REJECTED`, and read the error codes:
+
+- `UNKNOWN_DEPARTMENT` (or location, designation, company): map the values on the *Mappings*
+  tab; the app's retries then succeed.
+- `POSSIBLE_DUPLICATE`: resolve them on the *Possible duplicates* tab.
+- `EMAIL_IN_USE`, `EMPLOYEE_CODE_IN_USE`: a data conflict between the two systems; fix the record
+  in whichever system is wrong.
+- `FAILED` outcomes are server errors: check Sentry with the `request_id`.
+
+## HrmsIntegrationFeedLagging
+
+The app stopped polling `/v1/integrations/events` while events are waiting. Check with the app's
+team that their poller is running and its key is valid (the key's *last used* time is on the
+*Keys* tab). Events are kept 30 days; after that the app must resync (it is told so with
+`410 RESYNC_REQUIRED`).
+
+## HrmsIntegrationExitsHeld
+
+The app sent more exits in 24 hours than the company's safety valve allows. Open the app's
+*Held exits*, check them with HR, and release or reject each. If the app is sending wrong exits,
+pause the app first.
+
+## HrmsIntegrationUnlinkedHires
+
+Employees hired in HRMS were announced to the app more than 24 hours ago, and the app hasn't
+linked them (it should call `PUT /v1/integrations/employees/{its id}` with the `employment_id`).
+The *Not linked* list shows who. Usually the app's poller or its import of new joiners failed.
+
+## HrmsApiKeyExpiring
+
+Create a second key for the app (an app may have two), have the app's team switch to it, then
+revoke the old one. Nothing stops working if the switch happens before the expiry date.
+
+## HrmsApiKeyNewAddress
+
+A connected app's key was used from an address it had never been used from. Open the app's *Sync
+log*, filter by operation `NEW_IP`, and check the address with the app's team. Expected after a
+server move. If not expected, revoke the key at once (Keys tab), create a new one, and set *Allowed
+addresses* on it so the key works only from the app's servers.

@@ -21,6 +21,9 @@ class UserCreate(BaseModel):
     employment_id: str | None = None
     # Ask the person to replace the password you chose at their first sign-in.
     must_change_password: bool = False
+    # Why HR is setting an email a connected app owns for this employee (see
+    # modules/integrations/ownership.py).
+    override_reason: str | None = Field(default=None, max_length=300)
 
     _password_bytes = field_validator("password")(check_password_bytes)
 

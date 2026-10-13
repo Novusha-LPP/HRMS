@@ -15,6 +15,8 @@ import { peopleApi } from "../api/people";
 import { KycSection } from "../components/kyc/KycSection";
 import { kycApi, type KycStatus } from "../api/kyc";
 import { DetailGrid, DetailItem, EditableSection, EmptyValue, FieldGrid } from "../components/ui/EditableSection";
+import { LockedNote } from "../components/integrations/ManagedFields";
+import { useFieldControl } from "../components/integrations/fieldControl";
 
 const GENDER_OPTIONS = [
   { value: "", label: "Prefer not to say" },
@@ -129,6 +131,9 @@ function EmployeeProfile() {
   // Same key as KycSection, so switching tabs reuses the cached record.
   const kyc = useQuery({ queryKey: ["my-kyc"], queryFn: () => kycApi.getMyKyc() });
   const [form, setForm] = useState<FormState | null>(null);
+  // Fields a connected app (e.g. the company's ERP) manages: shown read-only here.
+  const control = useFieldControl(user?.employmentId);
+  const lockOf = (field: string) => control.data?.find((f) => f.field === field && f.locked);
 
   const update = useMutation({
     mutationFn: (body: Parameters<typeof peopleApi.updateMyProfile>[0]) => peopleApi.updateMyProfile(body),
@@ -295,21 +300,26 @@ function EmployeeProfile() {
                   <label className="label" htmlFor="pf-preferred">Preferred name</label>
                   <input
                     id="pf-preferred" className="input" placeholder="What should we call you?" maxLength={100} autoFocus
+                    disabled={!!lockOf("preferred_name")}
                     value={form.preferredName} onChange={(e) => set("preferredName")(e.target.value)}
                   />
+                  <LockedNote field={lockOf("preferred_name")} />
                 </div>
                 <div>
                   <label className="label" htmlFor="pf-dob">Date of birth</label>
                   <input
                     id="pf-dob" type="date" className="input" max={new Date().toISOString().slice(0, 10)}
+                    disabled={!!lockOf("date_of_birth")}
                     value={form.dateOfBirth} onChange={(e) => set("dateOfBirth")(e.target.value)}
                   />
+                  <LockedNote field={lockOf("date_of_birth")} />
                 </div>
                 <div>
                   <label className="label" htmlFor="pf-gender">Gender</label>
-                  <select id="pf-gender" className="input" value={form.gender} onChange={(e) => set("gender")(e.target.value)}>
+                  <select id="pf-gender" className="input" value={form.gender} disabled={!!lockOf("gender")} onChange={(e) => set("gender")(e.target.value)}>
                     {GENDER_OPTIONS.map((o) => <option key={o.value} value={o.value}>{o.label}</option>)}
                   </select>
+                  <LockedNote field={lockOf("gender")} />
                 </div>
                 <div>
                   <label className="label" htmlFor="pf-nationality">Nationality</label>
@@ -325,8 +335,10 @@ function EmployeeProfile() {
                   <label className="label" htmlFor="pf-mobile">Mobile</label>
                   <input
                     id="pf-mobile" type="tel" className="input" placeholder="+91 98765 43210" maxLength={20}
+                    disabled={!!lockOf("mobile")}
                     value={form.mobile} onChange={(e) => set("mobile")(e.target.value)}
                   />
+                  <LockedNote field={lockOf("mobile")} />
                 </div>
               </FieldGrid>
             ) : (

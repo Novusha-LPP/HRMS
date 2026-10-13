@@ -31,6 +31,7 @@ const AttendanceRegisterPage = lazy(() => import("./pages/AttendanceRegisterPage
 const MyTeamPage = lazy(() => import("./pages/MyTeamPage").then(m => ({ default: m.MyTeamPage })));
 const StatutoryPage = lazy(() => import("./pages/StatutoryPage").then(m => ({ default: m.StatutoryPage })));
 const PayrollPage = lazy(() => import("./pages/PayrollPage").then(m => ({ default: m.PayrollPage })));
+const IntegrationsPage = lazy(() => import("./pages/IntegrationsPage").then(m => ({ default: m.IntegrationsPage })));
 const ChangePasswordPage = lazy(() => import("./pages/ChangePasswordPage").then(m => ({ default: m.ChangePasswordPage })));
 
 import { ErrorBoundary } from "./components/common/ErrorBoundary";
@@ -130,6 +131,7 @@ export default function App() {
                               <Route path="/reports" element={<ReportsPage />} />
                               <Route path="/statutory" element={<StatutoryPage />} />
                               <Route path="/payroll" element={<PayrollPage />} />
+                              <Route path="/integrations" element={<IntegrationsPage />} />
                               <Route path="*" element={<Navigate to="/dashboard" replace />} />
                             </Routes>
                           </ErrorBoundary>

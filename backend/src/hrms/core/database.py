@@ -103,7 +103,21 @@ async def get_session(
                        JOIN roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
                        WHERE ra.tenant_id = t.id AND ra.user_account_id = ua.id
                          AND (ra.expires_at IS NULL OR ra.expires_at > now())
-                   ) AS grants
+                   ) AS grants,
+                   (
+                       -- A session a connected app obtained for this employee lives only while
+                       -- the app's key does (NULL for ordinary sign-ins).
+                       SELECT k.is_active AND k.revoked_at IS NULL
+                              AND (k.expires_at IS NULL OR k.expires_at > now())
+                              AND ca.status = 'ACTIVE'
+                       FROM api_keys k
+                       JOIN connected_apps ca ON ca.tenant_id = k.tenant_id AND ca.id = k.app_id
+                       WHERE k.tenant_id = t.id AND k.id = CAST(:via AS uuid)
+                   ) AS via_ok,
+                   (
+                       SELECT k.app_id FROM api_keys k
+                       WHERE k.tenant_id = t.id AND k.id = CAST(:via AS uuid)
+                   ) AS via_app_id
             FROM tenants t
             LEFT JOIN user_accounts ua
                    ON ua.tenant_id = t.id AND ua.id = CAST(:uid AS uuid)
@@ -114,6 +128,7 @@ async def get_session(
                         "tid": str(tenant_id),
                         "uid": str(principal.user_account_id),
                         "today": business_today(),
+                        "via": str(principal.via_key_id) if principal.via_key_id else None,
                     },
                 )
             )
@@ -132,7 +147,20 @@ async def get_session(
             raise HTTPException(401, "This account is no longer active; sign in again")
         if account["token_epoch"] != principal.token_epoch:
             raise HTTPException(401, "Your password was changed; sign in again")
-        if account["must_change_password"] and request.url.path not in PASSWORD_CHANGE_EXEMPT_PATHS:
+        grants = auth["grants"]
+        parsed_grants = json.loads(grants) if isinstance(grants, str) else grants
+        if principal.via_key_id is not None:
+            # A session a connected app obtained for this employee (plan §8.3): the employee
+            # authenticated in the app, so no forced password change here; only self-service
+            # routes; never more than EMPLOYEE/MANAGER rights, so MFA never applies.
+            await _check_app_session(session, tenant_id, request, auth, principal)
+            from hrms.modules.integrations.session_policy import SESSION_ROLES
+
+            parsed_grants = [g for g in parsed_grants if g[0] in SESSION_ROLES]
+        elif (
+            account["must_change_password"]
+            and request.url.path not in PASSWORD_CHANGE_EXEMPT_PATHS
+        ):
             raise CodedHTTPException(
                 status.HTTP_403_FORBIDDEN,
                 "You must change your password before continuing",
@@ -141,11 +169,12 @@ async def get_session(
         from hrms.core.config import settings
         from hrms.core.mfa import EXEMPT_PATHS, PRIVILEGED_ROLES
 
-        grants = auth["grants"]
-        parsed_grants = json.loads(grants) if isinstance(grants, str) else grants
-        required = bool(auth["mfa_secret"]) or (
-            settings.privileged_mfa_required
-            and any(g[0] in PRIVILEGED_ROLES for g in parsed_grants)
+        required = principal.via_key_id is None and (
+            bool(auth["mfa_secret"])
+            or (
+                settings.privileged_mfa_required
+                and any(g[0] in PRIVILEGED_ROLES for g in parsed_grants)
+            )
         )
         if required and not principal.mfa_verified and request.url.path not in EXEMPT_PATHS:
             raise CodedHTTPException(
@@ -155,7 +184,7 @@ async def get_session(
             principal.user_account_id,
             [
                 {"role_name": g[0], "scope_type": g[1], "scope_value": g[2]}
-                for g in (json.loads(grants) if isinstance(grants, str) else grants)
+                for g in parsed_grants
             ],
         )
         try:
@@ -181,6 +210,43 @@ async def get_session(
             await session.rollback()
             await _finish_files(session, committed=False)
             raise
+
+
+async def _check_app_session(session: AsyncSession, tenant_id, request: Request, auth, principal):
+    from hrms.modules.integrations.profiles import effective_settings
+    from hrms.modules.integrations.session_policy import route_features
+
+    if not auth["via_ok"]:
+        raise CodedHTTPException(
+            401,
+            "This session was issued through an app whose access has ended",
+            code="APP_SESSION_REVOKED",
+        )
+    listed, features = route_features(request.method, request.url.path)
+    if not listed:
+        raise CodedHTTPException(
+            403,
+            "This isn't available through a connected app. Sign in to HRMS to use it.",
+            code="NOT_AVAILABLE_VIA_INTEGRATION",
+        )
+    if features:
+        legal_entity_id = (
+            await session.execute(
+                text(
+                    "SELECT legal_entity_id FROM employments WHERE tenant_id = :tid AND id = :eid"
+                ),
+                {"tid": tenant_id, "eid": principal.employment_id},
+            )
+        ).scalar()
+        options = (
+            await effective_settings(session, tenant_id, auth["via_app_id"], legal_entity_id)
+        ).self_service
+        if not any(getattr(options, f) for f in features):
+            raise CodedHTTPException(
+                403,
+                "This feature is switched off for this app",
+                code="NOT_AVAILABLE_VIA_INTEGRATION",
+            )
 
 
 async def _apply_scheduled_actions(session: AsyncSession, tenant_id) -> None:

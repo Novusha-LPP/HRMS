@@ -85,6 +85,13 @@ _PREFIX_MAP: dict[str, str] = {
     "salary_structure": "sstr",
     "salary_structure_line": "ssln",
     "employee_compensation": "ecmp",
+    # Integrations
+    "connected_app": "app",
+    "api_key": "key",
+    "integration_profile": "iprf",
+    "integration_mapping": "imap",
+    "integration_request": "ireq",
+    "possible_duplicate": "dup",
     # Change audit
     "entity_change": "chg",
 }
