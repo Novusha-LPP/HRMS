@@ -123,10 +123,10 @@ async def _rule_response(session, tenant_id: UUID, rules: list[StatutoryRule]):
                 effective_to=r.effective_to,
                 source=r.source,
                 verified=r.verified_by is not None,
-                verified_by_name=names.get(r.verified_by),
+                verified_by_name=names.get(r.verified_by) if r.verified_by else None,
                 verified_at=r.verified_at,
                 recorded_by_id=to_typed_id("user", r.recorded_by) if r.recorded_by else None,
-                recorded_by_name=names.get(r.recorded_by),
+                recorded_by_name=names.get(r.recorded_by) if r.recorded_by else None,
                 status=r.status,
             )
         )
@@ -975,7 +975,7 @@ async def _compensation_responses(session, tenant_id: UUID, rows: list[EmployeeC
             effective_to=r.effective_to,
             reason=r.reason,
             note=r.note,
-            recorded_by_name=names.get(r.recorded_by),
+            recorded_by_name=names.get(r.recorded_by) if r.recorded_by else None,
             recorded_at=r.recorded_at,
         )
         for r in rows

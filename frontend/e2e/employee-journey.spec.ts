@@ -292,7 +292,9 @@ test("6 · changes their password, signs out, and only the new password works", 
     // Changing the password ended every session, including this one.
   } else {
     // The account menu shows the preferred name set in test 5 ("Ash Rao").
-    await page.getByRole("button", { name: new RegExp(`${s.lastName}\\s+Employee$`) }).click();
+    const account = page.getByRole("button", { name: "Account menu", exact: true });
+    await expect(account).toContainText(s.lastName);
+    await account.click();
     await page.getByRole("button", { name: "Sign out" }).click();
   }
   await expect(page).toHaveURL(/login/);

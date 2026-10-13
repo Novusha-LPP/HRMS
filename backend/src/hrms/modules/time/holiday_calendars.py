@@ -290,6 +290,8 @@ async def add_day(
     if body.holiday_id:
         holiday = await _holiday(session, tenant_id, to_uuid(body.holiday_id))
     else:
+        # CalendarDayCreate's validator requires a date and a name when there is no holiday_id.
+        assert body.holiday_date is not None and body.name is not None
         holiday = await _shared_holiday_on(session, tenant_id, body.holiday_date) or Holiday(
             tenant_id=tenant_id,
             id=uuid4(),
@@ -466,17 +468,17 @@ async def _assign(session, tenant_id, cal, body: CalendarAssignmentCreate) -> No
         else:
             a.effective_to = start - timedelta(days=1)
         session.add(a)
-    session.add(
-        HolidayCalendarAssignment(
-            tenant_id=tenant_id,
-            id=uuid4(),
-            calendar_id=cal.id,
-            effective_from=start,
-            effective_to=end,
-            recorded_at=now_utc(),
-            **({column: target} if column else {}),
-        )
+    assignment = HolidayCalendarAssignment(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        calendar_id=cal.id,
+        effective_from=start,
+        effective_to=end,
+        recorded_at=now_utc(),
     )
+    if column:
+        setattr(assignment, column, target)
+    session.add(assignment)
 
 
 async def _render(session, tenant_id, calendars) -> list[HolidayCalendarOut]:
@@ -562,7 +564,7 @@ async def _assignment_out(session, tenant_id, a) -> CalendarAssignmentOut:
     return CalendarAssignmentOut(
         id=to_typed_id("holiday_calendar_assignment", a.id),
         target=target,
-        target_id=to_typed_id(kind, uid) if uid else None,
+        target_id=to_typed_id(kind, uid) if kind and uid else None,
         target_name=name,
         target_detail=detail,
         effective_from=a.effective_from,

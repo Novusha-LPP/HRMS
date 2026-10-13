@@ -629,6 +629,31 @@ async def test_simultaneous_check_in_taps_record_one(api, monkeypatch):
     assert [p["punch_type"] for p in today["punches"]] == ["IN"]
 
 
+async def test_the_clock_offers_check_out_of_a_session_open_since_yesterday(api, monkeypatch):
+    """Checked in yesterday afternoon, never out: until 24 hours have passed the clock shows
+    that session, so the employee can check out of it; after that, today and a fresh check-in."""
+    client, _ = api
+    admin, le, placement, _ = await company(client, {})
+    day = date(2026, 8, 3)
+
+    emp, headers = await staff(client, le, placement, "OPEN-1")
+    assert (await punch(client, monkeypatch, headers, "IN", at(day, "16:30"))).status_code == 201
+    set_clock(monkeypatch, at(day, "09:30", 1))
+    clock = await ok(client, "GET", "/v1/time/today", headers=headers)
+    assert (clock["work_date"], clock["is_punched_in"]) == (str(day), True)
+    # Checking out closes yesterday (a long day, confirmed); today is then fresh.
+    out = await punch(client, monkeypatch, headers, "OUT", at(day, "09:30", 1), confirm=True)
+    assert out.status_code == 201
+    clock = await ok(client, "GET", "/v1/time/today", headers=headers)
+    assert (clock["work_date"], clock["is_punched_in"]) == (str(day + timedelta(days=1)), False)
+
+    _, late = await staff(client, le, placement, "OPEN-2")
+    assert (await punch(client, monkeypatch, late, "IN", at(day, "16:30"))).status_code == 201
+    set_clock(monkeypatch, at(day, "16:31", 1))  # over 24 hours: a missed punch
+    clock = await ok(client, "GET", "/v1/time/today", headers=late)
+    assert (clock["work_date"], clock["is_punched_in"]) == (str(day + timedelta(days=1)), False)
+
+
 async def test_company_without_any_policy_uses_the_fallback(api, monkeypatch):
     """No policy at all: the built-in 09:30–18:30 shift, grace 15, and overtime off —
     extra time is shown only."""
