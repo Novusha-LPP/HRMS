@@ -27,6 +27,7 @@ import { LoginCelebration } from "./LoginCelebration";
 import { navFor, findNav, hasNestedNav } from "./nav";
 import type { NavItem } from "./nav";
 import { API_DOCS_URL } from "../../lib/runtimeConfig";
+import { useModal } from "../../lib/useModal";
 
 const ROLE_LABEL: Record<UserRole, string> = {
   EMPLOYEE: "Employee",
@@ -47,6 +48,14 @@ export function AppShell({ children }: { children: ReactNode }) {
   });
   const [mobileOpen, setMobileOpen] = useState(false);
   const [paletteOpen, setPaletteOpen] = useState(false);
+  const mobilePanelRef = useModal<HTMLElement>(mobileOpen, () => setMobileOpen(false));
+
+  useEffect(() => {
+    const desktop = matchMedia("(min-width: 1024px)");
+    const onChange = () => { if (desktop.matches) setMobileOpen(false); };
+    desktop.addEventListener("change", onChange);
+    return () => desktop.removeEventListener("change", onChange);
+  }, []);
 
   useEffect(() => {
     scrollRef.current?.scrollTo({ top: 0 });
@@ -84,7 +93,7 @@ export function AppShell({ children }: { children: ReactNode }) {
   const isHrmsTheme = colorTheme === "midnight-blue";
 
   return (
-    <div className="app-shell flex h-screen overflow-hidden bg-canvas">
+    <div className="app-shell flex h-dvh overflow-hidden bg-canvas">
       <PreferencesSync />
       <aside
         className={`app-sidebar hidden shrink-0 flex-col transition-[width] duration-200 ease-out lg:flex ${collapsed ? "w-[68px]" : "w-60"}`}
@@ -97,6 +106,11 @@ export function AppShell({ children }: { children: ReactNode }) {
         <div className="fixed inset-0 z-40 lg:hidden">
           <div className="absolute inset-0 bg-zinc-950/30 backdrop-blur-[2px] animate-fade-in" onClick={() => setMobileOpen(false)} />
           <aside
+            ref={mobilePanelRef}
+            role="dialog"
+            aria-label="Main navigation"
+            aria-modal="true"
+            tabIndex={-1}
             className={`app-sidebar absolute inset-y-0 left-0 flex w-64 flex-col border-r border-line bg-canvas shadow-pop animate-slide-in-left ${
               isHrmsTheme ? "border-[#1C3A75]" : ""
             }`}

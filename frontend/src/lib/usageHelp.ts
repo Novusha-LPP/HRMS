@@ -1,4 +1,4 @@
-export type UsageHelpTopic = "organization" | "departments" | "companies" | "company-departments" | "teams" | "approvals";
+export type UsageHelpTopic = "organization" | "departments" | "companies" | "company-departments" | "teams" | "approvals" | "payroll";
 
 export interface UsageHelp {
   title: string;
@@ -9,6 +9,29 @@ export interface UsageHelp {
 
 /** Saved in-app instructions, selected by the screen's Help button. */
 export const usageHelp: Record<UsageHelpTopic, UsageHelp> = {
+  payroll: {
+    title: "Set up payroll and assign salaries",
+    introduction: "Complete these steps before salaries can be assigned with confidence.",
+    steps: [
+      {
+        title: "Load the PF and ESIC values",
+        description: "Open the Statutory values tab and choose Load India defaults to populate statutory rates for Provident Fund, ESIC contribution percentages, wage caps, and minimum wages.",
+      },
+      {
+        title: "Have them verified",
+        description: "The payroll reviewer checks each statutory rule against the official government notification and verifies it. Calculations require active verified rates.",
+      },
+      {
+        title: "Set up a salary structure",
+        description: "Open the Structures tab to start from the standard structure and adjust earnings, deductions, and employer contributions to match your compensation plans.",
+      },
+      {
+        title: "Assign salaries to employees",
+        description: "Open the Salaries tab or open an employee's profile to assign their salary structure, annual CTC, and effective date. The salary breakup and deductions are calculated automatically.",
+      },
+    ],
+    note: "Salaries require at least one active salary structure. Once configured, you can assign or revise salaries either from the Payroll Salaries tab or directly within each employee's profile. Revisions preserve complete compensation history.",
+  },
   approvals: {
     title: "Set up employee approval workflows",
     introduction: "Define a workflow once, then select it for each employee. Routing is independent of teams and departments.",
