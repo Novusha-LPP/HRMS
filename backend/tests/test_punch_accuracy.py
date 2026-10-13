@@ -389,16 +389,16 @@ async def test_check_out_after_midnight_on_a_day_shift(api, monkeypatch):
     day = date(2026, 9, 18)
     assert (await _punch(client, monkeypatch, headers, "IN", at(day, "09:30"))).status_code == 201
 
-    # A missed check-out on Friday must not show as Saturday's check-in, even
-    # within 24 hours. An explicit late check-out can still close Friday below.
+    # Within 24 hours of the check-in, Friday's session is still the live one: the clock and
+    # the dashboard show it, so the employee can check out of it.
     clock = at(day, "00:40", 1).astimezone(UTC)
     monkeypatch.setattr(time_router, "now_utc", lambda: clock)
     today = await ok(client, "GET", "/v1/time/today", headers=headers)
-    assert today["work_date"] == str(day + timedelta(days=1))
-    assert today["is_punched_in"] is False
-    assert today["punches"] == []
+    assert today["work_date"] == str(day)
+    assert today["is_punched_in"] is True
+    assert [p["punch_type"] for p in today["punches"]] == ["IN"]
     dash = await ok(client, "GET", "/v1/dashboard/employee", headers=headers)
-    assert dash["today"]["is_punched_in"] is False
+    assert dash["today"]["is_punched_in"] is True
 
     # Logging in the following day must not make an expired session look active.
     monkeypatch.setattr(time_router, "now_utc", lambda: at(day, "10:00", 1).astimezone(UTC))

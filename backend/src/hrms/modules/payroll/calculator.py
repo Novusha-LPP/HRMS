@@ -177,10 +177,17 @@ def calculate(annual_ctc: Decimal, lines: list[Line], rules: dict[str, RuleValue
     # 1. Fixed and percentage lines, in order.
     amounts: dict[str, Decimal] = {}
     for ln in lines:
+        # validate_structure() guarantees the fields each calc_type needs.
         if ln.calc_type == "FIXED":
+            assert ln.amount is not None
             amounts[ln.code] = _clamp(Decimal(ln.amount), ln).quantize(PAISA, ROUND_HALF_UP)
         elif ln.calc_type == "PERCENT":
-            base = monthly_ctc if ln.base == "CTC" else amounts[ln.base_code]
+            assert ln.percent is not None
+            if ln.base == "CTC":
+                base = monthly_ctc
+            else:
+                assert ln.base_code is not None
+                base = amounts[ln.base_code]
             amounts[ln.code] = _clamp(base * Decimal(ln.percent) / HUNDRED, ln).quantize(
                 PAISA, ROUND_HALF_UP
             )
@@ -277,6 +284,7 @@ def calculate(annual_ctc: Decimal, lines: list[Line], rules: dict[str, RuleValue
     result_lines: list[BreakupLine] = []
     for ln in lines:
         if ln.calc_type == "STATUTORY":
+            assert ln.statutory_code is not None
             value = statutory.get(ln.statutory_code, deductions.get(ln.statutory_code, ZERO))
         else:
             value = amounts.get(ln.code, ZERO)

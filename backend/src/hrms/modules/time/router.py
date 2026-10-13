@@ -216,9 +216,21 @@ async def today_status(
     policy = await resolve_policy(emp_uuid, now.date(), session, tenant_id)
     target_date = work_date if isinstance(work_date, date) else work_date_for(now, policy)
     policy = await resolve_policy(emp_uuid, target_date, session, tenant_id)
-    # Display only this work date. A forgotten check-out on a previous work date
-    # must not make the employee appear checked in today. Overnight shifts are
-    # already assigned their correct work date by work_date_for().
+    if not isinstance(work_date, date):
+        # A session from the previous work date that is still open, and began at most 24 hours
+        # ago, is the live one: show it, so the employee can check out of it (the same rule as
+        # POST /punches). Older than that it is a missed punch, and today is shown.
+        previous_policy = await resolve_policy(
+            emp_uuid, target_date - timedelta(days=1), session, tenant_id
+        )
+        carried = await carried_over_day(
+            session, tenant_id, emp_uuid, target_date, policy, previous_policy, now
+        )
+        if carried is not None:
+            target_date, policy = carried, previous_policy
+    # Display only this work date. A check-out forgotten for over 24 hours must not make the
+    # employee appear checked in today. Overnight shifts are already assigned their correct
+    # work date by work_date_for().
     ad_row = await session.execute(
         select(AttendanceDay)
         .where(AttendanceDay.tenant_id == tenant_id)

@@ -595,6 +595,7 @@ async def issue_sign_in_slips(
                 .mappings()
                 .first()
             )
+            assert account is not None  # the login linked to this employee
             if account["status"] != "ACTIVE":
                 skip("Login is switched off")
                 continue

@@ -73,6 +73,8 @@ async function fixtures(page: Page, mode: "light" | "dark" | "system" = "light",
     if (path === "/v1/dashboard/hr") return reply(hr);
     if (path === "/v1/employees") return reply([employee, { ...employee, id: "theme-employee-2", person_id: "theme-person-2", employee_number: "NS-002", full_name: "Ravi Shah", email: "ravi@example.test", department: "Engineering", designation: "Engineer", employment_state: "PROBATION" }]);
     if (path === "/v1/persons") return reply([person, { ...person, id: "theme-person-2", legal_first_name: "Ravi", legal_last_name: "Shah" }]);
+    // No connected app manages the theme employee, so no field is locked.
+    if (path.startsWith("/v1/employees/") && path.endsWith("/field-control")) return reply([]);
     if (path === "/v1/persons/me") return reply({ ...person, nationality: "IN", email: employee.email, mobile: "+91 90000 11111" });
     if (path === "/v1/org/legal-entities") return reply([entity]);
     if (path === "/v1/org/org-units") return reply([{ id: "theme-unit", name: "People", type: "DEPARTMENT", status: "ACTIVE", legal_entity_id: entity.id }]);

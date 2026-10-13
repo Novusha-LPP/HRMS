@@ -1221,7 +1221,9 @@ async def _apply_personnel_action_change(
 
     allowed = _ALLOWED_FROM.get(action_type)
     if allowed is not None and emp.employment_state not in allowed:
-        state = _STATE_LABEL.get(emp.employment_state, emp.employment_state.lower())
+        state = _STATE_LABEL.get(
+            EmploymentState(emp.employment_state), emp.employment_state.lower()
+        )
         raise HTTPException(
             status.HTTP_409_CONFLICT,
             f"{_ACTION_LABEL[action_type]} isn't possible while the employee is {state}",
