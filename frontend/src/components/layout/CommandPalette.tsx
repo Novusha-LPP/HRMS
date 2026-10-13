@@ -21,7 +21,7 @@ interface Command {
 
 export function CommandPalette({ open, onClose }: { open: boolean; onClose: () => void }) {
   return (
-    <Dialog open={open} onClose={onClose} className="max-w-xl">
+    <Dialog open={open} onClose={onClose} ariaLabel="Search commands" className="max-w-xl">
       {open && <PaletteBody onClose={onClose} />}
     </Dialog>
   );
@@ -114,7 +114,7 @@ function PaletteBody({ onClose }: { onClose: () => void }) {
       <div className="flex items-center gap-3 border-b border-line px-4">
         <Search size={16} className="shrink-0 text-fg-subtle" />
         <input
-          autoFocus
+          data-autofocus
           value={query}
           onChange={(e) => { setQuery(e.target.value); setActive(0); }}
           placeholder="Search pages, actions, employees…"

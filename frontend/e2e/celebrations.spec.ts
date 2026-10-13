@@ -416,7 +416,7 @@ test("a long colleague roster can be scrolled by keyboard while dismissal stays 
   const state = await fixtures(page, { payload, mode: "dark" });
   await page.setViewportSize({ width: 390, height: 844 });
   await page.goto("/dashboard");
-  const dialog = await opened(page), region = dialog.getByRole("region", { name: "Today's colleagues", exact: true });
+  const dialog = await opened(page), region = dialog.getByRole("region", { name: "Today's celebrations", exact: true });
   await expect(region).toHaveAttribute("tabindex", "0");
   await region.focus();
   await page.keyboard.press("End");
@@ -431,7 +431,7 @@ test("long personal names retain reachable dismissal controls in a short landsca
   await page.setViewportSize({ width: 844, height: 390 });
   await page.goto("/dashboard");
   const dialog = await opened(page);
-  const region = dialog.getByRole("region", { name: "Today's colleagues", exact: true });
+  const region = dialog.getByRole("region", { name: "Today's celebrations", exact: true });
   const person = region.locator("li").first().locator(":scope > div").last();
   await person.scrollIntoViewIfNeeded();
   await settled(page);
