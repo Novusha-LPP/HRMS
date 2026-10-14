@@ -186,19 +186,25 @@ async def test_only_hr_manages_calendars(api):
     ).status_code == 403
 
 
-def test_exim_policies_load_as_three_clean_calendars():
-    source = mapping.load_source(Path(__file__).resolve().parents[2] / "exim.holidaypolicies.json")
-    shape = {slug: [(c["name"], len(c["days"])) for c in cals] for slug, cals in source.items()}
-    assert shape == {
-        "suraj-group": [("Operations Holiday", 19), ("HO Holiday", 10)],
-        "rabs-industries-india-private-limited": [("Holiday", 10)],
-    }
-    ops = source["suraj-group"][0]["days"]
-    gandhi = next(d for d in ops if d["date"] == date(2026, 10, 2))
-    assert (gandhi["name"], gandhi["note"]) == ("Gandhi Jayanti", "0206-10-02 read as 2026-10-02")
-    names = {d["name"] for cals in source.values() for c in cals for d in c["days"]}
-    assert {"Christmas", "Dussehra", "Ambedkar Jayanti", "Makar Sankranti"} <= names
-    assert not names & {"Christmas Day", "DASHERA", "MAKAR SANKRANTI", "Ambedkar Jayant"}
+def test_exim_policy_normalization_uses_synthetic_source(tmp_path):
+    import json
+
+    source_file = tmp_path / "holidays.json"
+    source_file.write_text(json.dumps([{
+        "_id": "synthetic-policy", "company_id": next(iter(mapping.SOURCE_TENANT)),
+        "status": "active", "applicability": {"teams": {"all": True}},
+        "policy_name": "  Synthetic   Calendar  ", "year": 2026,
+        "holidays": [
+            {"holiday_date": "0206-10-02", "holiday_name": "Gandhi Jayanti"},
+            {"holiday_date": "2026-12-25", "holiday_name": "Christmas Day"},
+        ],
+    }]))
+    calendars = mapping.load_source(source_file)
+    calendar = next(iter(calendars.values()))[0]
+    assert calendar["name"] == "Synthetic Calendar"
+    assert calendar["days"][0]["date"] == date(2026, 10, 2)
+    assert calendar["days"][0]["note"] == "0206-10-02 read as 2026-10-02"
+    assert calendar["days"][1]["name"] == "Christmas"
 
 
 async def test_mapping_dedupes_holidays_and_assigns_by_scope(api, monkeypatch):

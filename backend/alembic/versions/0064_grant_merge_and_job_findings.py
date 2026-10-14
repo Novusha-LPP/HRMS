@@ -30,13 +30,14 @@ def upgrade() -> None:
     op.execute(f"""
         DELETE FROM role_assignments ra
         USING (
-            SELECT id, row_number() OVER (
+            SELECT tenant_id, id, row_number() OVER (
                 PARTITION BY {GRANT_KEY}
                 ORDER BY expires_at DESC NULLS FIRST, granted_at, id
             ) AS rank
             FROM role_assignments
         ) ranked
-        WHERE ra.id = ranked.id AND ranked.rank > 1
+        WHERE ra.tenant_id = ranked.tenant_id
+          AND ra.id = ranked.id AND ranked.rank > 1
     """)
     op.execute("SET CONSTRAINTS ALL IMMEDIATE")
     op.execute("ALTER TABLE role_assignments FORCE ROW LEVEL SECURITY")

@@ -165,7 +165,7 @@ _REQUEST_TYPE = "hrms.modules.approvals.schemas:RequestType"
 # "table.column" -> "module:Name", where Name is a StrEnum or a Literal type; or a tuple
 # ("module:Name", *extra) for values the code stores but the API must not accept, each extra
 # explained where it is written. The database CHECK must allow exactly these values.
-DOMAINS = {
+DOMAINS: dict[str, str | tuple[str, ...]] = {
     # DIRECT_EDIT: HR's direct day edits (time/register.py), never a request type
     "attendance_correction_requests.correction_type": (
         _CORRECTIONS + "CorrectionType",

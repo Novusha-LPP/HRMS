@@ -211,6 +211,7 @@ export function KycSection({ isSelf = false, employmentId, employeeName, isHR = 
   const canVerify = isHR && (perms.includes("*") || perms.includes("kyc.verify"));
 
   const [editing, setEditing] = useState<SectionId | null>(null);
+  const [editingVersion, setEditingVersion] = useState<number>();
   const [invalidFields, setInvalidFields] = useState<FieldKey[]>([]);
   const [form, setForm] = useState<Record<FieldKey, string>>({} as Record<FieldKey, string>);
 
@@ -229,7 +230,7 @@ export function KycSection({ isSelf = false, employmentId, employeeName, isHR = 
 
   const saveFieldsMutation = useMutation({
     mutationFn: (fields: KycRecordUpdatePayload) => {
-      const payload = { ...fields, version: kyc?.version };
+      const payload = { ...fields, version: editingVersion };
       return isSelf ? kycApi.updateMyKyc(payload) : kycApi.updateEmployeeKyc(employmentId!, payload);
     },
     onSuccess: (data) => {
@@ -327,6 +328,7 @@ export function KycSection({ isSelf = false, employmentId, employeeName, isHR = 
 
   const startEdit = (section: SectionDef) => {
     setInvalidFields([]);
+    setEditingVersion(kyc.version);
     setForm(formFrom(kyc, section.fields));
     setEditing(section.id);
   };
