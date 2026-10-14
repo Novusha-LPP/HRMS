@@ -5,6 +5,8 @@ from datetime import date, datetime
 
 from pydantic import BaseModel, Field, field_validator
 
+from hrms.core.versioning import version_field
+
 # Statutory identifiers: spaces and dashes are dropped and letters upper-cased before the
 # format is checked, so "1234 5678 9012" and "abcde1234f" are stored canonically. A blank
 # value clears the field.
@@ -65,6 +67,7 @@ class KycRecordUpdateRequest(BaseModel):
     @classmethod
     def _identifier(cls, value, info):
         return normalize_identifier(info.field_name, value)
+    version: int | None = version_field()
 
 
 class KycDocumentResponse(BaseModel):
@@ -130,6 +133,7 @@ class KycRecordResponse(BaseModel):
 
     documents: list[KycDocumentResponse] = []
     completion_percentage: int = 0
+    version: int = 0
 
 
 class KycEmployeeListItem(BaseModel):

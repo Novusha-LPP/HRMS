@@ -1,8 +1,11 @@
 import enum
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
+
+ReportOwner = Literal["HR", "EMPLOYEE", "ALL"]  # stored values (conventions)
 
 
 class ReportModule(enum.StrEnum):

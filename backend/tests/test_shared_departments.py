@@ -124,7 +124,9 @@ async def test_catalog_edits_propagate_without_changing_company_assignment_ids(m
     monkeypatch.setattr("hrms.modules.org.router.record_change", audit)
     linked = MagicMock()
     linked.scalars.return_value = departments
-    session = MagicMock(execute=AsyncMock(side_effect=[result(), linked]), flush=AsyncMock())
+    session = MagicMock(
+        execute=AsyncMock(side_effect=[result(), linked]), flush=AsyncMock(), refresh=AsyncMock()
+    )
     await update_org_unit(
         to_typed_id("org_unit", template_id),
         OrgUnitUpdate(name="Business Development", code="BD"),

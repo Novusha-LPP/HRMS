@@ -3,6 +3,9 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, EmailStr, Field
 
+TenantStatus = Literal["ACTIVE", "SUSPENDED"]
+AdminStatus = Literal["ACTIVE", "SUSPENDED"]
+
 
 class PlatformLoginRequest(BaseModel):
     email: EmailStr
@@ -55,7 +58,7 @@ class TenantDetail(TenantSummary):
 
 
 class TenantUpdate(BaseModel):
-    status: Literal["ACTIVE", "SUSPENDED"] | None = None
+    status: TenantStatus | None = None
     plan: Literal["STARTER", "GROWTH", "ENTERPRISE"] | None = None
 
 
@@ -101,7 +104,7 @@ class PlatformAdminCreate(BaseModel):
 
 
 class PlatformAdminUpdate(BaseModel):
-    status: Literal["ACTIVE", "SUSPENDED"] | None = None
+    status: AdminStatus | None = None
     role: Literal["ADMIN", "VIEWER"] | None = None
 
 

@@ -195,7 +195,7 @@ async def test_end_to_end_integrity_and_workflows(api):
     # Revocation applies to already-issued JWTs, even without changing roles.
     async with engine.begin() as conn:
         await conn.execute(
-            text("UPDATE user_accounts SET status='SUSPENDED' WHERE tenant_id=:tid AND id=:uid"),
+            text("UPDATE user_accounts SET status='INACTIVE' WHERE tenant_id=:tid AND id=:uid"),
             {"tid": tid, "uid": to_uuid(login["user"]["id"])},
         )
     response = await client.get("/v1/auth/me", headers=emp_header)

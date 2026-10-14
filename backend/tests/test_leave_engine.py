@@ -21,6 +21,7 @@ from sqlalchemy.engine import make_url
 from sqlalchemy.ext.asyncio import async_sessionmaker, create_async_engine
 from sqlalchemy.pool import NullPool
 
+from hrms.core.authz import SYSTEM_ACTOR
 from hrms.core.datetime_utils import tenure_months
 from hrms.modules.kernel.models import Tenant
 from hrms.modules.leave.engine import (
@@ -157,7 +158,7 @@ async def test_engine_ledger_lifecycle(db_fixture, seed_tenant_and_employment):
     tenant_id = data["tenant_id"]
     employment_id = data["employment_id"]
     bucket_id = data["bucket_id"]
-    actor_id = uuid4()
+    actor_id = SYSTEM_ACTOR  # background work acts as the tenant's System account
 
     session_factory = db_fixture["admin_session"]
     async with session_factory() as session:
@@ -242,7 +243,7 @@ async def test_dormant_employee_gap_linking(db_fixture, seed_tenant_and_employme
     tenant_id = data["tenant_id"]
     employment_id = data["employment_id"]
     bucket_id = data["bucket_id"]
-    actor_id = uuid4()
+    actor_id = SYSTEM_ACTOR  # background work acts as the tenant's System account
 
     session_factory = db_fixture["admin_session"]
     async with session_factory() as session:
@@ -286,7 +287,7 @@ async def test_advance_dated_row_forward_cascade(db_fixture, seed_tenant_and_emp
     tenant_id = data["tenant_id"]
     employment_id = data["employment_id"]
     bucket_id = data["bucket_id"]
-    actor_id = uuid4()
+    actor_id = SYSTEM_ACTOR  # background work acts as the tenant's System account
 
     session_factory = db_fixture["admin_session"]
     async with session_factory() as session:
@@ -362,7 +363,7 @@ async def test_privilege_enforced_transaction_immutability(db_fixture, seed_tena
     tenant_id = data["tenant_id"]
     employment_id = data["employment_id"]
     bucket_id = data["bucket_id"]
-    actor_id = uuid4()
+    actor_id = SYSTEM_ACTOR  # background work acts as the tenant's System account
 
     admin_session_factory = db_fixture["admin_session"]
     app_session_factory = db_fixture["app_session"]
@@ -415,7 +416,7 @@ async def test_concurrency_locking(db_fixture, seed_tenant_and_employment):
     tenant_id = data["tenant_id"]
     employment_id = data["employment_id"]
     bucket_id = data["bucket_id"]
-    actor_id = uuid4()
+    actor_id = SYSTEM_ACTOR  # background work acts as the tenant's System account
 
     admin_session_factory = db_fixture["admin_session"]
 

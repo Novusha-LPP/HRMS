@@ -3,6 +3,7 @@ from typing import Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
+DecisionAction = Literal["APPROVE", "REJECT"]
 RequestType = Literal[
     "LEAVE", "LEAVE_CANCELLATION", "CORRECTION", "OVERTIME", "JOB_REQUISITION", "FIELD_OVERRIDE"
 ]
@@ -81,5 +82,5 @@ class DelegationWrite(BaseModel):
 
 
 class Decision(BaseModel):
-    action: Literal["APPROVE", "REJECT"]
+    action: DecisionAction
     comments: str | None = Field(default=None, max_length=1000)

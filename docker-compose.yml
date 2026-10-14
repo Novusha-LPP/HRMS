@@ -33,6 +33,9 @@ services:
       # Migration 0005 creates the role with HRMS_APP_ROLE_PASSWORD (default: the published dev password).
       HRMS_APP_ROLE_PASSWORD: ${HRMS_APP_ROLE_PASSWORD:-hrms_app_dev_password}
       HRMS_APP_DATABASE_URL: postgresql+asyncpg://hrms_app:${HRMS_APP_ROLE_PASSWORD:-hrms_app_dev_password}@db:5432/hrms
+      # The platform console's role (migration 0061), with its published dev password.
+      HRMS_PLATFORM_ROLE_PASSWORD: ${HRMS_PLATFORM_ROLE_PASSWORD:-hrms_platform_dev_password}
+      HRMS_PLATFORM_DATABASE_URL: postgresql+asyncpg://hrms_platform:${HRMS_PLATFORM_ROLE_PASSWORD:-hrms_platform_dev_password}@db:5432/hrms
     ports:
       - "8015:8015"
     depends_on:

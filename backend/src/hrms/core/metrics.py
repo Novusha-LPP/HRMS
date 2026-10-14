@@ -45,7 +45,7 @@ from prometheus_client import (
     Histogram,
     generate_latest,
 )
-from prometheus_client.core import GaugeMetricFamily
+from prometheus_client.core import CounterMetricFamily, GaugeMetricFamily
 from prometheus_client.registry import Collector
 
 from hrms.core import perf
@@ -200,6 +200,7 @@ async def metrics(request: Request) -> Response:
     jobs = CollectorRegistry()
     jobs.register(_JobFreshness(await _last_job_successes()))
     jobs.register(_IntegrationHealth(await _integration_health()))
+    jobs.register(_DatabaseHealth(await _database_health()))
     jobs.register(active_users)
     return Response(
         generate_latest(registry) + generate_latest(jobs), media_type=CONTENT_TYPE_LATEST
@@ -308,3 +309,105 @@ class _IntegrationHealth(Collector):
             expiry = row["next_key_expiry"]
             families["expiry"].add_metric(key, expiry.timestamp() if expiry else 0.0)
         yield from families.values()
+
+
+async def _database_health() -> dict:
+    """
+    Table sizes and churn, the oldest open transaction and the integrity job's findings
+    (docs/database-hardening-plan.md, W9.4 and W7.3). Statistics only, no tenant data; read
+    as the application's own role. A scrape must not fail with the database.
+    """
+    from sqlalchemy import text
+
+    from hrms.core.database import AsyncSessionLocal
+
+    try:
+        async with asyncio.timeout(2), AsyncSessionLocal() as session:
+            tables = (
+                await session.execute(
+                    text("""
+                        SELECT relname AS table, n_live_tup AS live, n_dead_tup AS dead,
+                               seq_scan, seq_tup_read, COALESCE(idx_scan, 0) AS idx_scan,
+                               pg_total_relation_size(relid) AS bytes
+                        FROM pg_stat_user_tables WHERE schemaname = 'public'
+                    """)
+                )
+            ).mappings().all()
+            database_bytes = await session.scalar(
+                text("SELECT pg_database_size(current_database())")
+            )
+            # Only this role's sessions are visible to it, which are the ones that matter here.
+            oldest = await session.scalar(
+                text("""
+                    SELECT COALESCE(max(EXTRACT(EPOCH FROM now() - xact_start)), 0)
+                    FROM pg_stat_activity
+                    WHERE datname = current_database() AND xact_start IS NOT NULL
+                      AND pid <> pg_backend_pid()
+                """)
+            )
+            findings = await session.scalar(
+                text("""
+                    SELECT findings FROM job_runs
+                    WHERE job = 'integrity' AND status = 'SUCCEEDED'
+                    ORDER BY finished_at DESC LIMIT 1
+                """)
+            )
+            return {
+                "tables": [dict(t) for t in tables],
+                "database_bytes": float(database_bytes or 0),
+                "oldest_transaction_seconds": float(oldest or 0),
+                "findings": findings or {},
+            }
+    except Exception:
+        return {}
+
+
+class _DatabaseHealth(Collector):
+    """Gauges for the database alerts and the HRMS database dashboard."""
+
+    def __init__(self, health: dict):
+        self.health = health
+
+    def collect(self):
+        if not self.health:
+            return
+        per_table = {
+            "bytes": GaugeMetricFamily(
+                "hrms_db_table_size_bytes", "Table size including indexes", labels=["table"]
+            ),
+            "live": GaugeMetricFamily(
+                "hrms_db_table_live_rows", "Estimated live rows", labels=["table"]
+            ),
+            "dead": GaugeMetricFamily(
+                "hrms_db_table_dead_rows", "Dead rows waiting for vacuum", labels=["table"]
+            ),
+            "seq_scan": CounterMetricFamily(
+                "hrms_db_table_seq_scans", "Sequential scans of the table", labels=["table"]
+            ),
+            "seq_tup_read": CounterMetricFamily(
+                "hrms_db_table_seq_rows_read", "Rows read by sequential scans", labels=["table"]
+            ),
+            "idx_scan": CounterMetricFamily(
+                "hrms_db_table_index_scans", "Index scans of the table", labels=["table"]
+            ),
+        }
+        for row in self.health["tables"]:
+            for key, family in per_table.items():
+                family.add_metric([row["table"]], float(row[key] or 0))
+        yield from per_table.values()
+        yield GaugeMetricFamily(
+            "hrms_db_size_bytes", "Size of the database", value=self.health["database_bytes"]
+        )
+        yield GaugeMetricFamily(
+            "hrms_db_oldest_transaction_seconds",
+            "Age of the oldest open transaction of the application's role",
+            value=self.health["oldest_transaction_seconds"],
+        )
+        findings = GaugeMetricFamily(
+            "hrms_integrity_violations",
+            "Broken references the last integrity job found, by check (hrms.db.integrity)",
+            labels=["check"],
+        )
+        for check, count in sorted(self.health["findings"].items()):
+            findings.add_metric([check], float(count))
+        yield findings

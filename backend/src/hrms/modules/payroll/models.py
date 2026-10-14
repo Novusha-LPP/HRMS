@@ -16,10 +16,17 @@ Payroll foundation tables (migration 0050).
 import enum
 from datetime import UTC, date, datetime
 from decimal import Decimal
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import Column, Numeric
 from sqlmodel import Field, SQLModel
+
+# Stored values (hrms.db.conventions.DOMAINS checks the database CHECKs against these).
+ComponentStatus = Literal["ACTIVE", "INACTIVE"]
+StructureStatus = Literal["ACTIVE", "RETIRED", "INACTIVE"]
+RuleStatus = Literal["ACTIVE", "RETIRED"]
+RuleUnit = Literal["PERCENT", "AMOUNT", "FLAG"]
 
 
 class ComponentKind(enum.StrEnum):

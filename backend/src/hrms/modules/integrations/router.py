@@ -19,6 +19,7 @@ from fastapi import APIRouter, Form, Header, HTTPException, Query, Request
 from fastapi.encoders import jsonable_encoder
 from fastapi.responses import JSONResponse
 from sqlalchemy import text
+from sqlalchemy.exc import IntegrityError
 
 from hrms.core import database
 from hrms.core.datetime_utils import business_today
@@ -828,8 +829,24 @@ async def _passwordless_login(ctx: IntegrationContext, employment_id: UUID) -> U
         employment_id=employment_id,
         status="ACTIVE",
     )
-    ctx.session.add(account)
-    await ctx.session.flush()
+    try:
+        # Two first sign-ins for the same employee can race here; the second one waits on
+        # uq_user_accounts_employment, fails, and uses the login the first one created.
+        async with ctx.session.begin_nested():
+            ctx.session.add(account)
+            await ctx.session.flush()
+    except IntegrityError:
+        existing = (
+            await ctx.session.execute(
+                text(
+                    "SELECT id FROM user_accounts WHERE tenant_id = :tid AND employment_id = :eid"
+                ),
+                {"tid": ctx.tenant_id, "eid": employment_id},
+            )
+        ).scalar()
+        if existing is None:
+            raise
+        return existing
     await service._set_role(ctx, account.id, "EMPLOYEE")
     await ctx.session.execute(
         text("""UPDATE external_identities SET user_account_id = :uid

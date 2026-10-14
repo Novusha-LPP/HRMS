@@ -23,7 +23,7 @@ has no employment).
 
 import json
 from dataclasses import dataclass, field
-from typing import Annotated
+from typing import Annotated, Literal
 from uuid import UUID
 
 from fastapi import Depends, HTTPException, status
@@ -34,6 +34,9 @@ from hrms.core.authn import CurrentUser, Principal
 from hrms.core.database import GRANTS_KEY, SessionDep
 from hrms.core.ids import to_uuid
 from hrms.core.tenancy import TenantDep
+
+# Every scope a role grant can carry (stored in role_assignments.scope_type).
+GrantScope = Literal["ALL", "LEGAL_ENTITY", "ORG_UNIT", "SELF", "DIRECT_REPORTS", "ALL_REPORTS"]
 
 # Permission bundles per role name. There's no separate permissions table —
 # roles ARE the permission bundles, keyed by name so seed data / an admin UI

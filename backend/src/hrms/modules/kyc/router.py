@@ -28,6 +28,7 @@ from hrms.core.database import SessionDep
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
+from hrms.core.versioning import require_version
 from hrms.modules.kyc.models import (
     DocumentStatus,
     EmployeeKycDocument,
@@ -198,6 +199,7 @@ async def _build_dossier(
         for name in _SENSITIVE_NUMBER_FIELDS:
             fields[name] = mask_identifier(fields[name])
     return KycRecordResponse(
+        version=rec.version,
         id=to_typed_id("kyc_record", rec.id),
         employment_id=to_typed_id("employment", rec.employment_id),
         employee_name=meta["employee_name"],
@@ -313,14 +315,14 @@ async def update_my_kyc(
     rec = await _get_or_create_record(session, tenant_id, user.employment_id)
 
     # Update fields provided in request
-    for field, val in body.model_dump(exclude_unset=True).items():
+    await require_version(session, rec, body.version)
+    for field, val in body.model_dump(exclude_unset=True, exclude={"version"}).items():
         setattr(rec, field, val)
 
     _invalidate_verification(rec)
 
     rec.updated_at = datetime.now(UTC)
     rec.updated_by = user.user_account_id
-    rec.version += 1
     session.add(rec)
     await session.flush()
 
@@ -624,13 +626,13 @@ async def update_employee_kyc(
         )
 
     rec = await _get_or_create_record(session, tenant_id, emp_uuid)
-    for field, val in body.model_dump(exclude_unset=True).items():
+    await require_version(session, rec, body.version)
+    for field, val in body.model_dump(exclude_unset=True, exclude={"version"}).items():
         setattr(rec, field, val)
 
     _invalidate_verification(rec)
     rec.updated_at = datetime.now(UTC)
     rec.updated_by = user.user_account_id
-    rec.version += 1
     session.add(rec)
     await session.flush()
 

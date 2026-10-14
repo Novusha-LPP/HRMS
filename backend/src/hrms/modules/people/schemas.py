@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
+from hrms.core.versioning import version_field
 from hrms.modules.people.models import (
     EmploymentState,
     PersonnelActionStatus,
@@ -58,6 +59,7 @@ class MyProfileUpdate(BaseModel):
     gender: str | None = Field(default=None, max_length=20)
     nationality: str | None = Field(default=None, max_length=2)
     mobile: str | None = Field(default=None, max_length=20)
+    version: int | None = version_field()
 
 
 # ──────────────────────────────────────────────────────────────────────────────

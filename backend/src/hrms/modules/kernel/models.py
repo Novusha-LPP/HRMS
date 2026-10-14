@@ -7,13 +7,16 @@ User accounts and roles are tenant-scoped.
 """
 
 from datetime import UTC, datetime
-from typing import Any
+from typing import Any, Literal
 from uuid import UUID
 
 from sqlalchemy import BigInteger, Column, ForeignKey, Index, Text, text
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlalchemy.dialects.postgresql import UUID as PG_UUID
 from sqlmodel import Field, SQLModel
+
+# Stored values (hrms.db.conventions.DOMAINS checks the database CHECKs against these).
+AccountStatus = Literal["ACTIVE", "INACTIVE", "SYSTEM"]
 
 
 class Tenant(SQLModel, table=True):

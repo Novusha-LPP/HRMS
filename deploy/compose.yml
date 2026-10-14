@@ -21,6 +21,8 @@ x-api: &api
     # Runtime never receives owner credentials: only migrate/backup get those.
     HRMS_DATABASE_URL: postgresql+asyncpg://hrms_app:${HRMS_APP_ROLE_PASSWORD:?}@db:5432/hrms
     HRMS_APP_DATABASE_URL: postgresql+asyncpg://hrms_app:${HRMS_APP_ROLE_PASSWORD:?}@db:5432/hrms
+    # The platform console's own role: the only one that can reach the platform tables.
+    HRMS_PLATFORM_DATABASE_URL: postgresql+asyncpg://hrms_platform:${HRMS_PLATFORM_ROLE_PASSWORD:?}@db:5432/hrms
     HRMS_STORAGE_DIR: /app/storage
     HRMS_DB_OWNER_PASSWORD: ""
     HRMS_DATABASE_POOL_SIZE: ${HRMS_DATABASE_POOL_SIZE:-5}
@@ -42,6 +44,14 @@ services:
       POSTGRES_DB: hrms
       # Password authentication for every connection, including from inside the network.
       POSTGRES_INITDB_ARGS: --auth-host=scram-sha-256
+    # Statement statistics for finding slow queries (docs/OBSERVABILITY.md,
+    # HrmsSequentialScansOnLargeTable); migration 0064 creates the extension.
+    command:
+      - postgres
+      - -c
+      - shared_preload_libraries=pg_stat_statements
+      - -c
+      - pg_stat_statements.track=top
     volumes:
       - db-data:/var/lib/postgresql/data
     healthcheck:
@@ -59,6 +69,7 @@ services:
     environment:
       <<: *api-env
       HRMS_APP_ROLE_PASSWORD: ${HRMS_APP_ROLE_PASSWORD:?}
+      HRMS_PLATFORM_ROLE_PASSWORD: ${HRMS_PLATFORM_ROLE_PASSWORD:?}
       HRMS_DATABASE_URL: postgresql+asyncpg://hrms:${HRMS_DB_OWNER_PASSWORD:?}@db:5432/hrms
       PROMETHEUS_MULTIPROC_DIR: ""  # one process, not the API's worker pool
     depends_on:

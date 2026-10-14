@@ -123,7 +123,9 @@ export function PolicyPage() {
 
   const saveMut = useMutation({
     mutationFn: (body: Partial<PolicyTemplate>) =>
-      editing && editing !== "new" ? policyApi.updateTemplate(editing.id, body) : policyApi.createTemplate(body),
+      editing && editing !== "new"
+        ? policyApi.updateTemplate(editing.id, { ...body, version: editing.version })
+        : policyApi.createTemplate(body),
     onSuccess: (_, body) => {
       qc.invalidateQueries({ queryKey: ["policy-templates"] });
       toast.success(editing === "new" ? "Policy created" : "Policy updated", body.name);

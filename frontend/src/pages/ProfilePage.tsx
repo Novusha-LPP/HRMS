@@ -136,7 +136,8 @@ function EmployeeProfile() {
   const lockOf = (field: string) => control.data?.find((f) => f.field === field && f.locked);
 
   const update = useMutation({
-    mutationFn: (body: Parameters<typeof peopleApi.updateMyProfile>[0]) => peopleApi.updateMyProfile(body),
+    mutationFn: (body: Parameters<typeof peopleApi.updateMyProfile>[0]) =>
+      peopleApi.updateMyProfile({ ...body, version: profile.data?.version }),
     onSuccess: (p) => {
       qc.setQueryData(["my-profile"], p);
       setForm(null);

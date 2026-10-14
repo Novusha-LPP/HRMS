@@ -396,6 +396,12 @@ async def _role_id(ctx: IntegrationContext, name: str) -> UUID:
 
 async def _set_role(ctx: IntegrationContext, account_id: UUID, role: str) -> bool:
     """Make the login's sync-managed role EMPLOYEE or MANAGER. Other roles are left alone."""
+    # Serialise role changes for this login: two syncs at once would each see "no current
+    # role" and both insert (uq_role_assignments_grant would then refuse the second).
+    await ctx.session.execute(
+        text("SELECT 1 FROM user_accounts WHERE tenant_id = :tid AND id = :uid FOR UPDATE"),
+        {"tid": ctx.tenant_id, "uid": account_id},
+    )
     current = (
         (
             await ctx.session.execute(
