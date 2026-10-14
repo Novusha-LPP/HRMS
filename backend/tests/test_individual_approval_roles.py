@@ -85,6 +85,14 @@ async def test_start_role_self_and_repeated_person_protection(case, monkeypatch)
         ),
         flush=AsyncMock(),
     )
+    # "Self" is decided by person: the approver's login belongs to the requester's person.
+    requester_person, approver_person = uuid4(), uuid4()
+    monkeypatch.setattr(
+        service,
+        "people_of_accounts",
+        AsyncMock(return_value={approver: requester_person if case == "self" else approver_person}),
+    )
+    monkeypatch.setattr(service, "person_of_employment", AsyncMock(return_value=requester_person))
     if case == "valid":
         instance = await service.start(session, tid, "LEAVE", uuid4(), employee)
         assert instance.steps == [step]

@@ -228,8 +228,10 @@ export function KycSection({ isSelf = false, employmentId, employeeName, isHR = 
   };
 
   const saveFieldsMutation = useMutation({
-    mutationFn: (payload: KycRecordUpdatePayload) =>
-      isSelf ? kycApi.updateMyKyc(payload) : kycApi.updateEmployeeKyc(employmentId!, payload),
+    mutationFn: (fields: KycRecordUpdatePayload) => {
+      const payload = { ...fields, version: kyc?.version };
+      return isSelf ? kycApi.updateMyKyc(payload) : kycApi.updateEmployeeKyc(employmentId!, payload);
+    },
     onSuccess: (data) => {
       qc.setQueryData(queryKey, data);
       refreshLists();

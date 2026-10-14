@@ -4,6 +4,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
+from hrms.modules.payroll.models import ComponentStatus
+
 ComponentKindLiteral = Literal[
     "EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION", "REIMBURSEMENT", "INFO"
 ]
@@ -64,7 +66,7 @@ class PayComponentUpdate(BaseModel):
     in_esic_wages: bool | None = None
     prorate: bool | None = None
     payslip_order: int | None = Field(default=None, ge=0, le=10000)
-    status: Literal["ACTIVE", "INACTIVE"] | None = None
+    status: ComponentStatus | None = None
 
 
 class PayComponentResponse(BaseModel):

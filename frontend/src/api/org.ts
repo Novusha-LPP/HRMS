@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, type Versioned } from "./client";
 
 export interface LegalEntity {
   id: string;
@@ -101,6 +101,8 @@ export interface Position {
 }
 
 export interface EmployeeIdScheme {
+  /** Sent back with an edit; a stale one is refused (409 STALE_VERSION). */
+  version: number;
   id: string;
   legal_entity_id: string | null;
   legal_entity_name: string | null;
@@ -118,7 +120,7 @@ export const orgApi = {
   }) => api.post<LegalEntity>("/v1/org/legal-entities", body),
   updateLegalEntity: (
     id: string,
-    body: Partial<Pick<LegalEntity, "name" | "short_name" | "country_code" | "financial_year_start_month" | "establishment_date">>,
+    body: Partial<Pick<LegalEntity, "name" | "short_name" | "country_code" | "financial_year_start_month" | "establishment_date">> & Versioned,
   ) => api.patch<LegalEntity>(`/v1/org/legal-entities/${id}`, body),
   legalEntityHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/legal-entities/${id}/history`),
 
@@ -129,7 +131,7 @@ export const orgApi = {
   }) => api.post<Location>("/v1/org/locations", body),
   updateLocation: (
     id: string,
-    body: Partial<Pick<Location, "name" | "type" | "city" | "state_code" | "country_code" | "timezone">>,
+    body: Partial<Pick<Location, "name" | "type" | "city" | "state_code" | "country_code" | "timezone">> & Versioned,
   ) => api.patch<Location>(`/v1/org/locations/${id}`, body),
   locationHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/locations/${id}/history`),
 
@@ -140,26 +142,26 @@ export const orgApi = {
     name: string; type: string; code?: string; parent_id?: string;
     legal_entity_id?: string; location_id?: string; effective_from: string; head_employment_id?: string | null; lead_employment_id?: string | null; pm_employment_id?: string | null;
   }) => api.post<OrgUnit>("/v1/org/org-units", body),
-  updateOrgUnit: (id: string, body: Partial<Pick<OrgUnit, "name" | "code" | "type" | "head_employment_id" | "lead_employment_id" | "pm_employment_id">>) =>
+  updateOrgUnit: (id: string, body: Partial<Pick<OrgUnit, "name" | "code" | "type" | "head_employment_id" | "lead_employment_id" | "pm_employment_id">> & Versioned) =>
     api.patch<OrgUnit>(`/v1/org/org-units/${id}`, body),
   orgUnitHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/org-units/${id}/history`),
 
   listJobs: () => api.get<Job[]>("/v1/org/jobs"),
   createJob: (body: { title: string; code?: string; function?: string }) =>
     api.post<Job>("/v1/org/jobs", body),
-  updateJob: (id: string, body: Partial<Pick<Job, "title" | "code" | "function">>) =>
+  updateJob: (id: string, body: Partial<Pick<Job, "title" | "code" | "function">> & Versioned) =>
     api.patch<Job>(`/v1/org/jobs/${id}`, body),
   jobHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/jobs/${id}/history`),
 
   listGrades: () => api.get<Grade[]>("/v1/org/grades"),
   createGrade: (body: { code: string; name: string; sequence?: number }) => api.post<Grade>("/v1/org/grades", body),
-  updateGrade: (id: string, body: Partial<{ code: string; name: string; sequence: number; status: MasterStatus }>) =>
+  updateGrade: (id: string, body: Partial<{ code: string; name: string; sequence: number; status: MasterStatus }> & Versioned) =>
     api.patch<Grade>(`/v1/org/grades/${id}`, body),
   gradeHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/grades/${id}/history`),
 
   listCostCentres: () => api.get<CostCentre[]>("/v1/org/cost-centres"),
   createCostCentre: (body: { code: string; name: string }) => api.post<CostCentre>("/v1/org/cost-centres", body),
-  updateCostCentre: (id: string, body: Partial<{ code: string; name: string; status: MasterStatus }>) =>
+  updateCostCentre: (id: string, body: Partial<{ code: string; name: string; status: MasterStatus }> & Versioned) =>
     api.patch<CostCentre>(`/v1/org/cost-centres/${id}`, body),
   costCentreHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/cost-centres/${id}/history`),
 
@@ -171,14 +173,14 @@ export const orgApi = {
   updatePosition: (id: string, body: Partial<{
     title: string; code: string | null; job_id: string | null; grade_id: string | null;
     max_headcount: number | null; status: MasterStatus; effective_to: string | null;
-  }>) => api.patch<Position>(`/v1/org/positions/${id}`, body),
+  }> & Versioned) => api.patch<Position>(`/v1/org/positions/${id}`, body),
   positionHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/positions/${id}/history`),
 
   listEmployeeIdSchemes: () => api.get<EmployeeIdScheme[]>("/v1/org/employee-id-schemes"),
   createEmployeeIdScheme: (body: {
     legal_entity_id?: string; prefix: string; separator?: string; number_digits?: number; next_number?: number;
   }) => api.post<EmployeeIdScheme>("/v1/org/employee-id-schemes", body),
-  updateEmployeeIdScheme: (id: string, body: Partial<Pick<EmployeeIdScheme, "prefix" | "separator" | "number_digits" | "next_number">>) =>
+  updateEmployeeIdScheme: (id: string, body: Partial<Pick<EmployeeIdScheme, "prefix" | "separator" | "number_digits" | "next_number">> & Versioned) =>
     api.patch<EmployeeIdScheme>(`/v1/org/employee-id-schemes/${id}`, body),
   deleteEmployeeIdScheme: (id: string) => api.delete(`/v1/org/employee-id-schemes/${id}`),
 };

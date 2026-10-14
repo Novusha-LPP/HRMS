@@ -83,7 +83,7 @@ async def test_suspended_tenant_and_disabled_account_still_cut_off(api):
     async with engine.begin() as conn:
         await conn.execute(text("UPDATE tenants SET status='ACTIVE' WHERE id=:t"), {"t": tid})
         await conn.execute(
-            text("UPDATE user_accounts SET status='DISABLED' WHERE email=:e"),
+            text("UPDATE user_accounts SET status='INACTIVE' WHERE email=:e"),
             {"e": login["user"]["email"]},
         )
     assert (await client.get("/v1/leave/types", headers=headers)).status_code == 401

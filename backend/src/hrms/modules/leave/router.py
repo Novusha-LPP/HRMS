@@ -63,12 +63,14 @@ from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.metrics import ACCRUAL_RUN, ACCRUALS_CREDITED
 from hrms.core.tenancy import TenantDep
+from hrms.core.versioning import require_version
 from hrms.modules.approvals import service as approval_flow
 from hrms.modules.leave.engine import (
     compute_fy_year,
     get_or_create_ledger_row,
     lock_bulk_ledger,
     lock_leave_bucket,
+    monthly_credit,
     record_accruals,
     record_transaction,
 )
@@ -226,7 +228,8 @@ async def update_leave_type(
     lt = await _get_lt(session, tenant_id, leave_type_id)
     if lt.archived_at:
         raise HTTPException(409, "Restore this leave type before editing it")
-    for k, v in body.model_dump(exclude_unset=True).items():
+    await require_version(session, lt, body.version)
+    for k, v in body.model_dump(exclude_unset=True, exclude={"version"}).items():
         setattr(lt, k, v)
     session.add(lt)
     await session.flush()
@@ -573,6 +576,36 @@ async def adjust_balance(
     )
 
 
+async def _accruals_this_fy(
+    session, tenant_id: UUID, bucket_id: UUID, as_of: date, fy_months: dict, emp_ids: list
+) -> dict[UUID, int]:
+    """How many monthly accruals each employee already has in this bucket this financial year."""
+
+    def fy_start(start_month: int) -> date:
+        year = as_of.year if as_of.month >= start_month else as_of.year - 1
+        return date(year, start_month, 1)
+
+    starts = {emp: fy_start(fy_months[emp]) for emp in emp_ids}
+    if not starts:
+        return {}
+    rows = await session.execute(
+        select(LeaveBalanceTransaction.employment_id, LeaveBalanceTransaction.effective_date)
+        .where(LeaveBalanceTransaction.tenant_id == tenant_id)
+        .where(LeaveBalanceTransaction.bucket_id == bucket_id)
+        .where(
+            LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value
+        )
+        .where(LeaveBalanceTransaction.effective_date >= min(starts.values()))
+        .where(LeaveBalanceTransaction.effective_date < as_of)
+    )
+    counts: dict[UUID, int] = {}
+    for emp, when in rows:
+        emp = UUID(str(emp))
+        if emp in starts and when >= starts[emp]:
+            counts[emp] = counts.get(emp, 0) + 1
+    return counts
+
+
 @router.post(
     "/accrual/run",
     response_model=AccrualRunResponse,
@@ -697,6 +730,9 @@ async def accrue_period(
                 )
             }
         already = accrued_for[bucket_id]
+        months_before = await _accruals_this_fy(
+            session, tenant_id, bucket_id, as_of, fy_months, emp_ids
+        )
         credits: list[tuple[UUID, float, int]] = []
         for emp_id, hire_date, emp_state in employees:
             pset = policy_sets.get(emp_id)
@@ -710,14 +746,15 @@ async def accrue_period(
             entitlement = _entitlement_from(bucket_policies[key], lt)
             if entitlement.accrual_type != "MONTHLY_PRORATE":
                 continue
-            monthly = round(entitlement.days_per_year / 12, 4)
-            if monthly <= 0:
+            if entitlement.days_per_year <= 0:
                 continue
             eligible = (
                 entitlement.probation_eligible or emp_state != "PROBATION"
             ) and tenure_months(hire_date, as_of) >= entitlement.min_service_months
             if not eligible or emp_id in already:
                 continue
+            # A month that rounds to 0 is still recorded, so the count of months stays right.
+            monthly = monthly_credit(entitlement.days_per_year, months_before.get(emp_id, 0))
             credits.append((emp_id, monthly, fy_months[emp_id]))
             already.add(emp_id)
             credited += 1
@@ -1346,6 +1383,7 @@ async def reject_cancellation(
 
 def _lt_resp(lt: LeaveType) -> LeaveTypeResponse:
     return LeaveTypeResponse(
+        version=lt.version,
         id=to_typed_id("leave_type", lt.id),
         name=lt.name,
         code=lt.code,
@@ -1903,6 +1941,7 @@ async def list_buckets(
     )
     return [
         LeaveBalanceBucketResponse(
+            version=b.version,
             id=to_typed_id("leave_bucket", b.id),
             name=b.name,
             code=b.code,
@@ -1938,7 +1977,7 @@ async def create_bucket(
         tenant_id=tenant_id,
         id=uuid4(),
         recorded_at=now_utc(),
-        recorded_by=principal.id if hasattr(principal, "id") else None,
+        recorded_by=principal.user_account_id,
         name=body.name.strip(),
         code=body.code.strip(),
         is_unlimited=body.is_unlimited,
@@ -1947,6 +1986,7 @@ async def create_bucket(
     session.add(bucket)
     await session.flush()
     return LeaveBalanceBucketResponse(
+        version=bucket.version,
         id=to_typed_id("leave_bucket", bucket.id),
         name=bucket.name,
         code=bucket.code,
@@ -1970,6 +2010,7 @@ async def update_bucket(
     bucket = await session.get(LeaveBalanceBucket, (tenant_id, uid))
     if not bucket or bucket.archived_at:
         raise HTTPException(404, "Leave bucket not found")
+    await require_version(session, bucket, body.version)
     if body.name is not None:
         bucket.name = body.name.strip()
     if body.is_active is not None:
@@ -1977,6 +2018,7 @@ async def update_bucket(
     session.add(bucket)
     await session.flush()
     return LeaveBalanceBucketResponse(
+        version=bucket.version,
         id=to_typed_id("leave_bucket", bucket.id),
         name=bucket.name,
         code=bucket.code,
@@ -2081,7 +2123,7 @@ async def create_or_update_bucket_mapping(
             leave_type_id=lt_id,
             bucket_id=bucket_id,
             recorded_at=now_utc(),
-            recorded_by=principal.id if hasattr(principal, "id") else None,
+            recorded_by=principal.user_account_id,
         )
         session.add(m)
     await session.flush()
@@ -2135,6 +2177,7 @@ async def list_policy_sets(
     )
     return [
         LeavePolicySetResponse(
+            version=ps.version,
             id=to_typed_id("leave_policy_set", ps.id),
             name=ps.name,
             description=ps.description,
@@ -2170,7 +2213,7 @@ async def create_policy_set(
         tenant_id=tenant_id,
         id=uuid4(),
         recorded_at=now_utc(),
-        recorded_by=principal.id if hasattr(principal, "id") else None,
+        recorded_by=principal.user_account_id,
         name=body.name.strip(),
         description=body.description.strip() if body.description else None,
         is_default=body.is_default,
@@ -2178,6 +2221,7 @@ async def create_policy_set(
     session.add(pset)
     await session.flush()
     return LeavePolicySetResponse(
+        version=pset.version,
         id=to_typed_id("leave_policy_set", pset.id),
         name=pset.name,
         description=pset.description,
@@ -2200,6 +2244,7 @@ async def update_policy_set(
     pset = await session.get(LeavePolicySet, (tenant_id, uid))
     if not pset or pset.archived_at:
         raise HTTPException(404, "Leave policy set not found")
+    await require_version(session, pset, body.version)
     if body.name is not None:
         pset.name = body.name.strip()
     if body.description is not None:
@@ -2218,6 +2263,7 @@ async def update_policy_set(
     session.add(pset)
     await session.flush()
     return LeavePolicySetResponse(
+        version=pset.version,
         id=to_typed_id("leave_policy_set", pset.id),
         name=pset.name,
         description=pset.description,
@@ -2247,6 +2293,7 @@ async def list_bucket_policies_for_set(
     )
     return [
         LeaveBucketPolicyResponse(
+            version=bp.version,
             id=to_typed_id("leave_bucket_policy", bp.id),
             policy_set_id=to_typed_id("leave_policy_set", bp.policy_set_id),
             bucket_id=to_typed_id("leave_bucket", b.id),
@@ -2321,11 +2368,12 @@ async def create_bucket_policy(
         min_service_months=body.min_service_months,
         pro_rate_first_year=body.pro_rate_first_year,
         recorded_at=now_utc(),
-        recorded_by=principal.id if hasattr(principal, "id") else None,
+        recorded_by=principal.user_account_id,
     )
     session.add(bp)
     await session.flush()
     return LeaveBucketPolicyResponse(
+        version=bp.version,
         id=to_typed_id("leave_bucket_policy", bp.id),
         policy_set_id=to_typed_id("leave_policy_set", bp.policy_set_id),
         bucket_id=to_typed_id("leave_bucket", bucket.id),
@@ -2362,12 +2410,14 @@ async def update_bucket_policy(
     bucket = await session.get(LeaveBalanceBucket, (tenant_id, bp.bucket_id))
     assert bucket is not None
 
-    for k, v in body.model_dump(exclude_unset=True).items():
+    await require_version(session, bp, body.version)
+    for k, v in body.model_dump(exclude_unset=True, exclude={"version"}).items():
         setattr(bp, k, v)
     session.add(bp)
     await session.flush()
 
     return LeaveBucketPolicyResponse(
+        version=bp.version,
         id=to_typed_id("leave_bucket_policy", bp.id),
         policy_set_id=to_typed_id("leave_policy_set", bp.policy_set_id),
         bucket_id=to_typed_id("leave_bucket", bucket.id),
@@ -2465,7 +2515,7 @@ async def create_policy_assignment(
         tenant_id=tenant_id,
         id=uuid4(),
         recorded_at=now_utc(),
-        recorded_by=principal.id if hasattr(principal, "id") else None,
+        recorded_by=principal.user_account_id,
         leave_policy_set_id=pset_id,
         effective_from=body.effective_from,
         effective_to=body.effective_to,

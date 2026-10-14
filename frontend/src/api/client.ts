@@ -5,6 +5,12 @@ import { generateRequestId } from "../lib/uuid";
 
 const BASE = runtimeConfig.apiUrl;
 
+/**
+ * The record version an edit was based on. The API refuses the edit with 409 STALE_VERSION if
+ * someone saved the record since (backend core/versioning.py).
+ */
+export type Versioned = { version?: number };
+
 export class ApiError extends Error {
   status: number;
   code: string;

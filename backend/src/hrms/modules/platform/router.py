@@ -35,7 +35,7 @@ from hrms.core import throttle
 from hrms.core.audit import record_audit
 from hrms.core.browser_sessions import clear_browser_session, issue_browser_session
 from hrms.core.config import settings
-from hrms.core.database import AnonymousSessionDep
+from hrms.core.database import PlatformSessionDep
 from hrms.core.errors import CodedHTTPException
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.mfa import ConfirmRequest, EnrollRequest
@@ -83,7 +83,7 @@ PLATFORM_LOGIN_REALM = "platform-login"
 
 @router.post("/login", response_model=PlatformLoginResponse, summary="Platform admin sign-in")
 async def platform_login(
-    body: PlatformLoginRequest, request: Request, response: Response, session: AnonymousSessionDep
+    body: PlatformLoginRequest, request: Request, response: Response, session: PlatformSessionDep
 ) -> PlatformLoginResponse:
     # The console that can see and change every tenant: same brute-force protection and
     # timing discipline as tenant sign-in (see modules/kernel/auth/router.py).
@@ -168,7 +168,7 @@ async def platform_me(admin: CurrentPlatformAdminCtx) -> PlatformMe:
     summary="Request a password reset link",
 )
 async def forgot_password(
-    body: ForgotPasswordRequest, request: Request, session: AnonymousSessionDep
+    body: ForgotPasswordRequest, request: Request, session: PlatformSessionDep
 ) -> ForgotPasswordResponse:
     """
     Always returns the same generic message regardless of whether the email
@@ -223,7 +223,7 @@ async def forgot_password(
 
 @router.post("/reset-password", summary="Complete a password reset")
 async def reset_password(
-    body: ResetPasswordRequest, session: AnonymousSessionDep
+    body: ResetPasswordRequest, session: PlatformSessionDep
 ) -> dict[str, str]:
     token_hash = hash_reset_token(body.token)
     row = (
@@ -289,7 +289,7 @@ async def reset_password(
 @router.get("/tenants", response_model=TenantListResponse, summary="List tenants on the platform")
 async def list_tenants(
     _admin: CurrentPlatformAdminCtx,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     q: str | None = None,
     include_archived: bool = False,
     limit: int = 25,
@@ -415,7 +415,7 @@ async def _tenant_detail(tenant_id_str: str, session) -> TenantDetail:
     summary="Tenant detail — its companies and current standing",
 )
 async def get_tenant(
-    tenant_id: str, _admin: CurrentPlatformAdminCtx, session: AnonymousSessionDep
+    tenant_id: str, _admin: CurrentPlatformAdminCtx, session: PlatformSessionDep
 ) -> TenantDetail:
     return await _tenant_detail(tenant_id, session)
 
@@ -428,7 +428,7 @@ async def get_tenant(
 async def update_tenant(
     tenant_id: str,
     body: TenantUpdate,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     admin: PlatformAdminContext = require_platform_role("ADMIN"),
 ) -> TenantDetail:
     tid = to_uuid(tenant_id)
@@ -483,7 +483,7 @@ async def update_tenant(
 )
 async def archive_tenant(
     tenant_id: str,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     admin: PlatformAdminContext = require_platform_role("ADMIN"),
 ) -> TenantDetail:
     tid = to_uuid(tenant_id)
@@ -514,7 +514,7 @@ async def archive_tenant(
 )
 async def restore_tenant(
     tenant_id: str,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     admin: PlatformAdminContext = require_platform_role("ADMIN"),
 ) -> TenantDetail:
     tid = to_uuid(tenant_id)
@@ -539,7 +539,7 @@ async def restore_tenant(
 
 @router.get("/admins", response_model=list[PlatformAdminSummary], summary="List platform admins")
 async def list_admins(
-    admin: CurrentPlatformAdminCtx, session: AnonymousSessionDep
+    admin: CurrentPlatformAdminCtx, session: PlatformSessionDep
 ) -> list[PlatformAdminSummary]:
     rows = (
         (
@@ -576,7 +576,7 @@ async def list_admins(
 )
 async def create_admin(
     body: PlatformAdminCreate,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     admin: PlatformAdminContext = require_platform_role("ADMIN"),
 ) -> PlatformAdminSummary:
     existing = (
@@ -639,7 +639,7 @@ async def _active_admin_role_count(session, exclude_id: UUID) -> int:
 async def update_admin(
     admin_id: str,
     body: PlatformAdminUpdate,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     admin: PlatformAdminContext = require_platform_role("ADMIN"),
 ) -> PlatformAdminSummary:
     target_id = to_uuid(admin_id)
@@ -730,7 +730,7 @@ async def update_admin(
     summary="Every mutating platform action, most recent first",
 )
 async def get_audit_log(
-    _admin: CurrentPlatformAdminCtx, session: AnonymousSessionDep, limit: int = 50, offset: int = 0
+    _admin: CurrentPlatformAdminCtx, session: PlatformSessionDep, limit: int = 50, offset: int = 0
 ) -> AuditLogResponse:
     limit = max(1, min(limit, 200))
     offset = max(0, offset)
@@ -775,7 +775,7 @@ async def get_audit_log(
 )
 async def create_company(
     body: PlatformCompanyCreate,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     admin: PlatformAdminContext = require_platform_role("ADMIN"),
 ) -> PlatformCompanyResponse:
     if body.mode == "NEW_TENANT":
@@ -868,7 +868,7 @@ async def create_company(
 
 @router.post("/logout", status_code=204)
 async def platform_logout(
-    admin: CurrentPlatformAdminCtx, session: AnonymousSessionDep, response: Response
+    admin: CurrentPlatformAdminCtx, session: PlatformSessionDep, response: Response
 ) -> None:
     await session.execute(
         text("UPDATE platform_admins SET token_epoch=token_epoch+1 WHERE id=:id"),
@@ -881,7 +881,7 @@ async def platform_logout(
 async def platform_enroll_mfa(
     body: EnrollRequest,
     admin: CurrentPlatformAdminCtx,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     response: Response,
 ):
     from hrms.core.mfa import enroll
@@ -894,7 +894,7 @@ async def platform_enroll_mfa(
 async def platform_confirm_mfa(
     body: ConfirmRequest,
     admin: CurrentPlatformAdminCtx,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
     response: Response,
 ):
     from hrms.core.mfa import confirm

@@ -1,0 +1,5 @@
+# Known violations of docs/database-conventions.md, frozen when the rules were introduced.
+# This list may only shrink. tests/test_schema_conventions.py fails on a violation that is not
+# listed here, and on a line here that no longer occurs (delete it when you fix it).
+# Regenerate after a deliberate change with: python -m hrms.db.schema_rules --write <this file>
+

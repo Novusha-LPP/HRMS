@@ -21,7 +21,7 @@ from sqlalchemy import text
 from hrms.core import database
 from hrms.core.datetime_utils import tenure_months
 from hrms.core.ids import to_uuid
-from hrms.modules.leave.engine import record_transaction
+from hrms.modules.leave.engine import monthly_credit, record_transaction
 from hrms.modules.leave.models import LeaveTransactionType, LeaveType
 from hrms.modules.leave.policy_resolver import (
     resolve_employee_fy_start_month,
@@ -222,7 +222,7 @@ async def _build(client, engine):
                 transaction_type=LeaveTransactionType.GRANT,
                 quantity=2.5,
                 effective_date=when,
-                reference_type="TEST",
+                reference_type="MANUAL",
                 recorded_by=to_uuid(admin["user"]["id"]),
             )
         # Leave on hold this month: available balance = closing - held.
@@ -235,7 +235,7 @@ async def _build(client, engine):
             transaction_type=LeaveTransactionType.HOLD,
             quantity=1.0,
             effective_date=AS_OF,
-            reference_type="TEST",
+            reference_type="MANUAL",
             recorded_by=to_uuid(admin["user"]["id"]),
         )
         await session.commit()
@@ -251,7 +251,7 @@ async def REFERENCE(session, tenant_id, recorded_by):
         {"tid": str(tenant_id)},
     )
     employees = sorted(((r[0], r[1], r[2]) for r in rows), key=lambda e: str(e[0]))
-    from sqlmodel import col, select
+    from sqlmodel import col, func, select
 
     from hrms.modules.leave.models import LeaveBalanceTransaction
 
@@ -277,8 +277,7 @@ async def REFERENCE(session, tenant_id, recorded_by):
             ent = await _resolve_entitlement(session, tenant_id, emp_id, bucket_id, lt, AS_OF)
             if ent.accrual_type != "MONTHLY_PRORATE":
                 continue
-            monthly = round(ent.days_per_year / 12, 4)
-            if monthly <= 0:
+            if ent.days_per_year <= 0:
                 continue
             if not (
                 (ent.probation_eligible or emp_state != "PROBATION")
@@ -295,6 +294,22 @@ async def REFERENCE(session, tenant_id, recorded_by):
             )
             if already.scalar():
                 continue
+            # Half-day rule (DB-D2): this month's credit depends on how many monthly accruals
+            # the employee already has in this financial year — counted here independently.
+            fy_start = date(AS_OF.year if AS_OF.month >= fy else AS_OF.year - 1, fy, 1)
+            months_before = (
+                await session.execute(
+                    select(func.count())
+                    .select_from(LeaveBalanceTransaction)
+                    .where(LeaveBalanceTransaction.tenant_id == tenant_id)
+                    .where(LeaveBalanceTransaction.employment_id == emp_id)
+                    .where(LeaveBalanceTransaction.bucket_id == bucket_id)
+                    .where(LeaveBalanceTransaction.transaction_type == "ACCRUAL")
+                    .where(LeaveBalanceTransaction.effective_date >= fy_start)
+                    .where(LeaveBalanceTransaction.effective_date < AS_OF)
+                )
+            ).scalar()
+            monthly = monthly_credit(ent.days_per_year, months_before)
             await record_transaction(
                 session,
                 tenant_id,

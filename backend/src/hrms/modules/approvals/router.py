@@ -287,6 +287,7 @@ async def write_flow(body, flow, principal, scope, tenant_id, session):
     steps: list[dict] = []
     seen = set()
     employee_levels: dict[UUID, int] = {}
+    requester = await service.person_of_employment(session, tenant_id, flow.employment_id)
     previous_ids = {s["id"] for s in flow.steps}
     sources = set()
     for level, step in enumerate(body.steps):
@@ -300,15 +301,16 @@ async def write_flow(body, flow, principal, scope, tenant_id, session):
                 raise HTTPException(422, "Use account identifiers for approvers")
             uid = to_uuid(typed)
             account = await service.active_account(session, tenant_id, uid)
-            if flow.employment_id and account.employment_id == flow.employment_id:
+            if requester and account.person_id == requester:
                 raise HTTPException(
                     422, "An individual workflow cannot include its requester as approver"
                 )
             if uid in seen:
                 raise HTTPException(422, "An account can appear only once in an approval chain")
             seen.add(uid)
-            if account.employment_id:
-                previous_level = employee_levels.setdefault(account.employment_id, level)
+            if account.person_id:
+                # Keyed by person: one person's logins for different employments count as one.
+                previous_level = employee_levels.setdefault(account.person_id, level)
                 if previous_level != level:
                     raise HTTPException(422, "A person can appear only at one approval level")
             ids.append(str(uid))
@@ -685,22 +687,17 @@ async def delegate(
     if body.valid_until <= service.now():
         raise HTTPException(422, "Delegation must expire in the future")
     account = await service.active_account(session, tenant_id, replacement)
-    if replacement == original or account.employment_id == instance.employment_id:
+    requester = await service.person_of_employment(session, tenant_id, instance.employment_id)
+    if replacement == original or (account.person_id and account.person_id == requester):
         raise HTTPException(422, "Delegate cannot be the original approver or requester")
     # A delegate cannot silently become a participant at two stages in this chain.
     if any(str(replacement) in s["approver_ids"] for s in instance.steps):
         raise HTTPException(422, "Delegate is already assigned to a level of this chain")
-    if account.employment_id:
-        aliases = (
-            await session.execute(
-                select(UserAccount.id).where(
-                    UserAccount.tenant_id == tenant_id,
-                    UserAccount.employment_id == account.employment_id,
-                )
-            )
-        ).scalars()
-        assigned = {uid for s in instance.steps for uid in s["approver_ids"]}
-        if any(str(uid) in assigned for uid in aliases):
+    if account.person_id:
+        # Every login of the same person, across all their employments.
+        assigned = {UUID(uid) for s in instance.steps for uid in s["approver_ids"]}
+        people = await service.people_of_accounts(session, tenant_id, assigned)
+        if account.person_id in people.values():
             raise HTTPException(422, "Delegate already holds a level through another account")
     record = ApprovalDelegation(
         tenant_id=tenant_id,

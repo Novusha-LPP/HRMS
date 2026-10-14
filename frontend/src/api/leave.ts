@@ -1,6 +1,8 @@
-import { api } from "./client";
+import { api, type Versioned } from "./client";
 
 export interface LeaveType {
+  /** Sent back with an edit; a stale one is refused (409 STALE_VERSION). */
+  version: number;
   id: string;
   name: string;
   code: string;
@@ -239,7 +241,7 @@ export const leaveApi = {
   listPolicySets: () => api.get<LeavePolicySet[]>("/v1/leave/policy-sets"),
   createPolicySet: (body: { name: string; description?: string; is_default?: boolean }) =>
     api.post<LeavePolicySet>("/v1/leave/policy-sets", body),
-  updatePolicySet: (id: string, body: { name?: string; description?: string; is_default?: boolean }) =>
+  updatePolicySet: (id: string, body: { name?: string; description?: string; is_default?: boolean } & Versioned) =>
     api.patch<LeavePolicySet>(`/v1/leave/policy-sets/${id}`, body),
 
   listBucketPolicies: (setId: string) =>
@@ -268,7 +270,7 @@ export const leaveApi = {
     probation_eligible: boolean;
     min_service_months: number;
     pro_rate_first_year: boolean;
-  }>) => api.patch<LeaveBucketPolicy>(`/v1/leave/bucket-policies/${id}`, body),
+  }> & Versioned) => api.patch<LeaveBucketPolicy>(`/v1/leave/bucket-policies/${id}`, body),
   deleteBucketPolicy: (id: string) => api.delete(`/v1/leave/bucket-policies/${id}`),
 
   // ─── Policy Assignments ──────────────────────────────────────────────────
@@ -322,6 +324,8 @@ export interface LeaveTypeBucketMapping {
 }
 
 export interface LeavePolicySet {
+  /** Sent back with an edit; a stale one is refused (409 STALE_VERSION). */
+  version: number;
   id: string;
   name: string;
   description: string | null;
@@ -329,6 +333,8 @@ export interface LeavePolicySet {
 }
 
 export interface LeaveBucketPolicy {
+  /** Sent back with an edit; a stale one is refused (409 STALE_VERSION). */
+  version: number;
   id: string;
   policy_set_id: string;
   bucket_id: string;

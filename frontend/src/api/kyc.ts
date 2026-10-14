@@ -1,4 +1,4 @@
-import { api, API_BASE_URL } from "./client";
+import { api, API_BASE_URL, type Versioned } from "./client";
 
 export type KycStatus =
   | "NOT_SUBMITTED"
@@ -54,6 +54,8 @@ export interface KycDocument {
 }
 
 export interface KycRecord {
+  /** Sent back with an edit; a stale one is refused (409 STALE_VERSION). */
+  version: number;
   id: string;
   employment_id: string;
   employee_name: string | null;
@@ -149,7 +151,7 @@ export interface KycRecordUpdatePayload {
 export const kycApi = {
   getMyKyc: () => api.get<KycRecord>("/v1/kyc/me"),
 
-  updateMyKyc: (body: KycRecordUpdatePayload) => api.patch<KycRecord>("/v1/kyc/me", body),
+  updateMyKyc: (body: KycRecordUpdatePayload & Versioned) => api.patch<KycRecord>("/v1/kyc/me", body),
 
   submitMyKyc: () => api.post<KycRecord>("/v1/kyc/me/submit", {}),
 
@@ -180,7 +182,7 @@ export const kycApi = {
   getEmployeeKyc: (employmentId: string) =>
     api.get<KycRecord>(`/v1/kyc/employees/${employmentId}`),
 
-  updateEmployeeKyc: (employmentId: string, body: KycRecordUpdatePayload) =>
+  updateEmployeeKyc: (employmentId: string, body: KycRecordUpdatePayload & Versioned) =>
     api.patch<KycRecord>(`/v1/kyc/employees/${employmentId}`, body),
 
   uploadEmployeeDocument: (

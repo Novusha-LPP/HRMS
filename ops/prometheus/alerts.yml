@@ -116,6 +116,64 @@ groups:
           summary: "{{ $labels.instance }} is unreachable from outside (Cloudflare tunnel, DNS or the service behind it)"
           runbook_url: "docs/OBSERVABILITY.md#hrmspublicsitedown"
 
+  - name: hrms-database
+    # docs/database-hardening-plan.md (W7.3, W9.4). Several API workers export the same
+    # numbers, hence max by.
+    rules:
+      - alert: HrmsIntegrityViolations
+        expr: max by (check) (hrms_integrity_violations) > 0
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "The nightly integrity check found {{ $value }} broken reference(s): {{ $labels.check }}"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsintegrityviolations"
+
+      - alert: HrmsDatabaseMetricsMissing
+        expr: absent(hrms_db_size_bytes)
+        for: 15m
+        labels: {severity: warning}
+        annotations:
+          summary: "The API is not exporting database health (the scrape-time query is failing)"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsdatabasemetricsmissing"
+
+      - alert: HrmsLongTransaction
+        expr: max(hrms_db_oldest_transaction_seconds) > 300
+        for: 5m
+        labels: {severity: warning}
+        annotations:
+          summary: "A transaction of the app has been open for {{ $value | humanizeDuration }} — it holds locks and blocks vacuum"
+          runbook_url: "docs/OBSERVABILITY.md#hrmslongtransaction"
+
+      - alert: HrmsDeadRowsPiling
+        expr: >
+          max by (table) (hrms_db_table_dead_rows) > 10000
+          and max by (table) (hrms_db_table_dead_rows) > 0.2 * max by (table) (hrms_db_table_live_rows)
+        for: 1h
+        labels: {severity: warning}
+        annotations:
+          summary: "Autovacuum is not keeping up with {{ $labels.table }} (dead rows over 20 % of live rows)"
+          runbook_url: "docs/OBSERVABILITY.md#hrmsdeadrowspiling"
+
+      - alert: HrmsSequentialScansOnLargeTable
+        expr: >
+          max by (table) (rate(hrms_db_table_seq_rows_read_total[15m])) > 100000
+          and max by (table) (hrms_db_table_live_rows) > 100000
+        for: 30m
+        labels: {severity: warning}
+        annotations:
+          summary: "{{ $labels.table }} is being read by full scans ({{ $value | humanize }} rows/s) — a query lacks an index"
+          runbook_url: "docs/OBSERVABILITY.md#hrmssequentialscansonlargetable"
+
+      - alert: HrmsPartitionThresholdReached
+        expr: >
+          max by (table) (hrms_db_table_live_rows{table=~"punches|attendance_days"}) > 50e6
+          or max by (table) (hrms_db_table_size_bytes{table=~"punches|attendance_days"}) > 20e9
+        for: 1h
+        labels: {severity: info}
+        annotations:
+          summary: "{{ $labels.table }} reached the size where it should be partitioned (decision DB-D4)"
+          runbook_url: "docs/OBSERVABILITY.md#hrmspartitionthresholdreached"
+
   - name: hrms-backups
     rules:
       - alert: HrmsBackupStale

@@ -1,11 +1,15 @@
 """Configurable routes, immutable request snapshots and audited delegation."""
 
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import Column, UniqueConstraint
 from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
+
+# Stored values (hrms.db.conventions.DOMAINS checks the database CHECKs against these).
+ApprovalStatus = Literal["PENDING", "APPROVED", "REJECTED", "CANCELLED"]
 
 
 class ApprovalFlow(SQLModel, table=True):

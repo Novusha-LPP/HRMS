@@ -1,8 +1,11 @@
 import enum
 from datetime import UTC, date, datetime
+from typing import Literal
 from uuid import UUID
 
 from sqlmodel import Field, SQLModel
+
+TemplateStatus = Literal["ACTIVE", "INACTIVE", "RETIRED"]  # stored values (conventions)
 
 
 class OnboardingItemType(enum.StrEnum):

@@ -68,8 +68,10 @@ async def _user_names(session, tenant_id: UUID, ids: set[UUID | None]) -> dict[U
         return {}
     rows = await session.execute(
         text("""
-            SELECT ua.id, COALESCE(p.legal_first_name || ' ' || p.legal_last_name, ua.email,
-                                   ua.employee_code)
+            SELECT ua.id,
+                   CASE WHEN ua.status = 'SYSTEM' THEN 'System' ELSE
+                   COALESCE(p.legal_first_name || ' ' || p.legal_last_name, ua.email,
+                            ua.employee_code) END
             FROM user_accounts ua
             LEFT JOIN employments e ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
             LEFT JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
