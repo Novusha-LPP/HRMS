@@ -406,3 +406,203 @@ async def test_employee_selection_rejects_self_only_approval_stage(monkeypatch):
         )
     assert error.value.status_code == 422
     session.add.assert_not_called()
+
+
+async def test_employee_selection_allows_global_workflow(monkeypatch):
+    from hrms.modules.approvals import router
+    from hrms.modules.approvals.schemas import EmployeeFlowWrite
+
+    tid, eid, company_a, approver_emp, approver_acc = (uuid4() for _ in range(5))
+    first = MagicMock()
+    first.scalars.return_value.first.return_value = None
+    exists = MagicMock()
+    exists.scalar.return_value = eid
+    entity = MagicMock()
+    entity.scalar.return_value = company_a
+    flow = SimpleNamespace(
+        id=uuid4(),
+        reusable=True,
+        enabled=True,
+        request_type="LEAVE",
+        legal_entity_id=None,  # Global workflow
+        steps=[dict(name="Manager Approval", approver_ids=[str(approver_acc)])],
+    )
+    monkeypatch.setattr(service, "authorize_employee_assignment", AsyncMock())
+    monkeypatch.setattr(service, "visible_template", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        service,
+        "active_account",
+        AsyncMock(return_value=SimpleNamespace(employment_id=approver_emp)),
+    )
+    monkeypatch.setattr(router, "lock_resource", AsyncMock())
+    monkeypatch.setattr(router, "flow_get", AsyncMock(return_value=flow))
+    monkeypatch.setattr(service, "event", AsyncMock())
+    monkeypatch.setattr(router, "employee_flows", AsyncMock(return_value={"assignments": []}))
+    session = MagicMock(
+        execute=AsyncMock(side_effect=[first, exists, entity]), flush=AsyncMock()
+    )
+
+    await router.assign_employee_flow(
+        to_typed_id("employment", eid),
+        "LEAVE",
+        EmployeeFlowWrite(flow_id=to_typed_id("approval_flow", flow.id), version=0),
+        tid,
+        session,
+        owner_scope(uuid4(), admin=True),
+        SimpleNamespace(user_account_id=uuid4()),
+    )
+    session.add.assert_called_once()
+    saved = session.add.call_args[0][0]
+    assert saved.flow_id == flow.id
+    assert saved.employment_id == eid
+
+
+async def test_employee_selection_rejects_different_company_workflow(monkeypatch):
+    from hrms.modules.approvals import router
+    from hrms.modules.approvals.schemas import EmployeeFlowWrite
+
+    tid, eid, company_a, company_b, approver_emp, approver_acc = (uuid4() for _ in range(6))
+    first = MagicMock()
+    first.scalars.return_value.first.return_value = None
+    exists = MagicMock()
+    exists.scalar.return_value = eid
+    entity = MagicMock()
+    entity.scalar.return_value = company_a  # Employee is in Company A
+    flow = SimpleNamespace(
+        id=uuid4(),
+        reusable=True,
+        enabled=True,
+        request_type="LEAVE",
+        legal_entity_id=company_b,  # Workflow is restricted to Company B
+        steps=[dict(name="Manager Approval", approver_ids=[str(approver_acc)])],
+    )
+    monkeypatch.setattr(service, "authorize_employee_assignment", AsyncMock())
+    monkeypatch.setattr(service, "visible_template", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        service,
+        "active_account",
+        AsyncMock(return_value=SimpleNamespace(employment_id=approver_emp)),
+    )
+    monkeypatch.setattr(router, "lock_resource", AsyncMock())
+    monkeypatch.setattr(router, "flow_get", AsyncMock(return_value=flow))
+    session = MagicMock(execute=AsyncMock(side_effect=[first, exists, entity]))
+
+    with pytest.raises(HTTPException) as error:
+        await router.assign_employee_flow(
+            to_typed_id("employment", eid),
+            "LEAVE",
+            EmployeeFlowWrite(flow_id=to_typed_id("approval_flow", flow.id), version=0),
+            tid,
+            session,
+            owner_scope(uuid4(), admin=True),
+            SimpleNamespace(user_account_id=uuid4()),
+        )
+    assert error.value.status_code == 422
+    assert "restricted to a different company" in error.value.detail
+
+
+async def test_employee_selection_accepts_same_company_workflow(monkeypatch):
+    from hrms.modules.approvals import router
+    from hrms.modules.approvals.schemas import EmployeeFlowWrite
+
+    tid, eid, company_a, approver_emp, approver_acc = (uuid4() for _ in range(5))
+    first = MagicMock()
+    first.scalars.return_value.first.return_value = None
+    exists = MagicMock()
+    exists.scalar.return_value = eid
+    entity = MagicMock()
+    entity.scalar.return_value = company_a
+    flow = SimpleNamespace(
+        id=uuid4(),
+        reusable=True,
+        enabled=True,
+        request_type="LEAVE",
+        legal_entity_id=company_a,  # Workflow is restricted to Company A
+        steps=[dict(name="Manager Approval", approver_ids=[str(approver_acc)])],
+    )
+    monkeypatch.setattr(service, "authorize_employee_assignment", AsyncMock())
+    monkeypatch.setattr(service, "visible_template", AsyncMock(return_value=True))
+    monkeypatch.setattr(
+        service,
+        "active_account",
+        AsyncMock(return_value=SimpleNamespace(employment_id=approver_emp)),
+    )
+    monkeypatch.setattr(router, "lock_resource", AsyncMock())
+    monkeypatch.setattr(router, "flow_get", AsyncMock(return_value=flow))
+    monkeypatch.setattr(service, "event", AsyncMock())
+    monkeypatch.setattr(router, "employee_flows", AsyncMock(return_value={"assignments": []}))
+    session = MagicMock(
+        execute=AsyncMock(side_effect=[first, exists, entity]), flush=AsyncMock()
+    )
+
+    await router.assign_employee_flow(
+        to_typed_id("employment", eid),
+        "LEAVE",
+        EmployeeFlowWrite(flow_id=to_typed_id("approval_flow", flow.id), version=0),
+        tid,
+        session,
+        owner_scope(uuid4(), admin=True),
+        SimpleNamespace(user_account_id=uuid4()),
+    )
+    session.add.assert_called_once()
+    saved = session.add.call_args[0][0]
+    assert saved.flow_id == flow.id
+    assert saved.employment_id == eid
+
+
+async def test_create_reusable_flow_is_global_by_group_admin(monkeypatch):
+    from hrms.modules.approvals import router
+    from hrms.modules.approvals.schemas import FlowWrite, StepSpec
+
+    tid, creator_emp = uuid4(), uuid4()
+    body = FlowWrite(
+        name="Global Leave Flow",
+        request_type="LEAVE",
+        reusable=True,
+        legal_entity_id=None,
+        steps=[StepSpec(name="Approval", approver_ids=[to_typed_id("user_account", uuid4())])],
+    )
+    monkeypatch.setattr(router, "write_flow", AsyncMock(return_value={"id": "app_123"}))
+    principal = SimpleNamespace(employment_id=creator_emp, user_account_id=uuid4())
+    scope = owner_scope(creator_emp, admin=True)
+    session = AsyncMock()
+
+    await router.create_flow(body, principal, scope, tid, session)
+    call_args = router.write_flow.call_args[0]
+    created_flow = call_args[1]
+    assert created_flow.reusable is True
+    assert created_flow.legal_entity_id is None
+
+
+async def test_create_reusable_flow_scoped_admin(monkeypatch):
+    from hrms.core.authz import Scope
+    from hrms.modules.approvals import router
+    from hrms.modules.approvals.schemas import FlowWrite, StepSpec
+
+    tid, creator_emp, company_a = uuid4(), uuid4(), uuid4()
+    body = FlowWrite(
+        name="Company A Flow",
+        request_type="LEAVE",
+        reusable=True,
+        legal_entity_id=to_typed_id("legal_entity", company_a),
+        steps=[StepSpec(name="Approval", approver_ids=[to_typed_id("user_account", uuid4())])],
+    )
+    monkeypatch.setattr(router, "write_flow", AsyncMock(return_value={"id": "app_123"}))
+    principal = SimpleNamespace(employment_id=creator_emp, user_account_id=uuid4())
+    scope = Scope(
+        is_all=False,
+        legal_entity_ids=frozenset({company_a}),
+        employment_ids=frozenset(),
+        permissions=frozenset({"approvals.manage", "approvals.admin"}),
+        own_employment_id=creator_emp,
+        role_names=frozenset({"HR_MANAGER"}),
+        org_unit_ids=frozenset(),
+    )
+    session = AsyncMock()
+
+    await router.create_flow(body, principal, scope, tid, session)
+    call_args = router.write_flow.call_args[0]
+    created_flow = call_args[1]
+    assert created_flow.reusable is True
+    assert created_flow.legal_entity_id == company_a
+

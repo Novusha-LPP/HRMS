@@ -765,7 +765,7 @@ function EmployeeSheet({
               onCloseForm={() => setStartPayrollEdit(false)}
             />
           )}
-          {activeTab === "workflow" && canConfigureWorkflow && <EmployeeWorkflowSection key={row.id} employmentId={row.id} />}
+          {activeTab === "workflow" && canConfigureWorkflow && <EmployeeWorkflowSection key={row.id} employmentId={row.id} legalEntityId={row.legalEntityId} />}
           {activeTab === "kyc" && (
             <KycSection
               employmentId={row.id}

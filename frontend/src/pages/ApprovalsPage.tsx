@@ -4,6 +4,7 @@ import { Link, Navigate, useSearchParams } from "react-router-dom";
 import { ArrowDown, ArrowUp, Plus, Trash2, Check, X, Users, Search, ClipboardCheck, Clock, Settings2, ChevronRight, ChevronLeft } from "lucide-react";
 import { approvalsApi } from "../api/approvals";
 import type { ApprovalFlow, ApprovalRequest, ApprovalStep, RequestType } from "../api/approvals";
+import { orgApi } from "../api/org";
 import { UsageHelpButton } from "../components/ui/UsageHelpButton";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
@@ -59,11 +60,13 @@ function FlowEditor({ initial, close }: { initial?: ApprovalFlow; close: () => v
   const qc = useQueryClient();
   const [name, setName] = useState(initial?.name ?? "");
   const [kind, setKind] = useState<RequestType>(initial?.request_type ?? "LEAVE");
+  const [legalEntityId, setLegalEntityId] = useState<string | null>(initial?.legal_entity_id ?? null);
   const [enabled, setEnabled] = useState(initial?.enabled ?? true);
   const [steps, setSteps] = useState<ApprovalStep[]>(initial?.steps ?? [{ name: "Approval", approver_ids: [], approver_source: "PEOPLE" }]);
   const directory = useQuery({ queryKey: ["approval-directory"], queryFn: () => approvalsApi.directory() });
+  const legalEntities = useQuery({ queryKey: ["legal-entities"], queryFn: orgApi.listLegalEntities });
   const save = useMutation({
-    mutationFn: () => approvalsApi.saveFlow({ name: name.trim(), request_type: kind, org_unit_id: null, employment_id: null, reusable: true, enabled,
+    mutationFn: () => approvalsApi.saveFlow({ name: name.trim(), request_type: kind, org_unit_id: null, employment_id: null, legal_entity_id: legalEntityId || null, reusable: true, enabled,
       steps, version: initial?.version }, initial?.id),
     onSuccess: () => { qc.invalidateQueries({ queryKey: ["approval-flows"] }); close(); toast.success("Approval flow saved", "New requests use this chain. Submitted requests keep their original chain."); },
     onError: (e) => toast.error("Couldn’t save flow", errorMessage(e)),
@@ -78,7 +81,10 @@ function FlowEditor({ initial, close }: { initial?: ApprovalFlow; close: () => v
     <div className="grid gap-3 sm:grid-cols-2">
       <label className="label sm:col-span-2">Flow name<input className="input mt-1" required maxLength={150} placeholder="e.g. Engineering leave approval" value={name} onChange={(e) => setName(e.target.value)} /></label>
       <label className="label">Request type<select className="input mt-1" value={kind} disabled={!!initial} onChange={(e) => setKind(e.target.value as RequestType)}>{TYPES.map((t) => <option key={t} value={t}>{TYPE_LABEL[t]}</option>)}</select></label>
-
+      <label className="label">Company scope<select className="input mt-1" value={legalEntityId ?? ""} onChange={(e) => setLegalEntityId(e.target.value || null)}>
+        <option value="">All Companies (Global / Cross-Entity)</option>
+        {(legalEntities.data ?? []).map((le) => <option key={le.id} value={le.id}>{le.name}</option>)}
+      </select></label>
     </div>
     </section>
     <section className="space-y-3"><div><h3 className="eyebrow">Approval stages</h3><p className="mt-1 text-[13px] text-fg-subtle">One selected person approves each stage. Use different people for the next stage.</p></div>
@@ -195,6 +201,7 @@ export function ApprovalsPage({ view = "requests" }: { view?: "requests" | "flow
   const isFlows = view === "flows";
   const inbox = useQuery({ queryKey: ["approval-inbox"], queryFn: approvalsApi.inbox, enabled: !isFlows });
   const flows = useQuery({ queryKey: ["approval-flows"], queryFn: approvalsApi.flows, enabled: isFlows && canManage });
+  const legalEntities = useQuery({ queryKey: ["legal-entities"], queryFn: orgApi.listLegalEntities, enabled: isFlows });
   const query = search.trim().toLowerCase();
   const requests = (inbox.data ?? []).filter((r) => (!kind || r.request_type === kind) && (tab === "all" || r.can_act) && `${r.employee_name} ${r.employee_number} ${r.flow_name} ${r.steps[r.current_level - 1]?.name ?? ""}`.toLowerCase().includes(query));
   const filteredFlows = (flows.data ?? []).filter((f) => (!kind || f.request_type === kind) && (!enabledFilter || String(f.enabled) === enabledFilter) && `${f.name} ${f.steps.map((s) => s.name).join(" ")}`.toLowerCase().includes(query));
@@ -202,7 +209,7 @@ export function ApprovalsPage({ view = "requests" }: { view?: "requests" | "flow
   const totalPages = Math.max(1, Math.ceil(count / 10));
   const currentPage = Math.min(page, totalPages);
   const offset = (currentPage - 1) * 10;
-  const loading = isFlows ? flows.isPending : inbox.isPending;
+  const loading = isFlows ? (flows.isPending || legalEntities.isPending) : inbox.isPending;
   const failed = isFlows ? flows.isError : inbox.isError;
   const mine = (inbox.data ?? []).filter((r) => r.can_act).length;
   if (isFlows && !canManage) return <Navigate to="/approvals" replace />;
@@ -231,10 +238,10 @@ export function ApprovalsPage({ view = "requests" }: { view?: "requests" | "flow
         title={search || kind || enabledFilter ? "No matching results" : isFlows ? "No approval flows yet" : tab === "mine" ? "All caught up" : "No pending requests"}
         description={search || kind || enabledFilter ? "Try another search or clear the filters." : isFlows ? "Create a workflow with its stages and approvers, then assign it to employees." : "Requests routed through configured flows appear here when they need approval."}
         action={isFlows && !search && !kind && !enabledFilter ? <button className="btn-primary" onClick={() => setEditing("new")}><Plus size={15} /> Create first flow</button> : undefined} /> : <>
-        <div className="relative overflow-x-auto"><table className={`tbl ${isFlows ? "min-w-[880px]" : "min-w-[720px]"}`}><thead><tr>{isFlows ? <><th>Flow</th><th>Approval stages</th><th>Status</th><th className="relative"><span className="sr-only">Actions</span></th></> : <><th>Employee</th><th>Request</th><th>Current stage</th><th className="relative"><span className="sr-only">Actions</span></th></>}</tr></thead><tbody>
+        <div className="relative overflow-x-auto"><table className={`tbl ${isFlows ? "min-w-[880px]" : "min-w-[720px]"}`}><thead><tr>{isFlows ? <><th>Flow</th><th>Company scope</th><th>Approval stages</th><th>Status</th><th className="relative"><span className="sr-only">Actions</span></th></> : <><th>Employee</th><th>Request</th><th>Current stage</th><th className="relative"><span className="sr-only">Actions</span></th></>}</tr></thead><tbody>
           {isFlows ? filteredFlows.slice(offset, offset + 10).map((flow) => <tr key={flow.id}>
             <td><p className="whitespace-nowrap font-medium text-fg">{flow.name}</p><p className="mt-1 text-xs text-fg-subtle">{TYPE_LABEL[flow.request_type]}</p></td>
-
+            <td><span className={`badge text-[11px] ${flow.legal_entity_id ? "badge-neutral" : "badge-brand"}`}>{flow.legal_entity_name ?? (legalEntities.data?.find((e) => e.id === flow.legal_entity_id)?.name ?? "All Companies (Global)")}</span></td>
             <td><div className="flex max-w-sm flex-wrap items-center gap-1.5">{flow.steps.map((s, i) => <span key={s.id ?? i} className="inline-flex items-center gap-1.5">{i > 0 && <ChevronRight size={12} className="text-fg-subtle" />}<span className="rounded-md border border-line bg-muted/40 px-2 py-1 text-xs text-fg-muted">{s.name}</span></span>)}</div></td>
             <td><StatusBadge status={flow.enabled ? "ACTIVE" : "INACTIVE"} label={flow.enabled ? "Enabled" : "Disabled"} /></td>
             <td><button className="btn-secondary btn-sm" disabled={flow.can_manage === false} onClick={() => setEditing(flow)} aria-label={`Edit ${flow.name}`}>Edit flow</button></td>

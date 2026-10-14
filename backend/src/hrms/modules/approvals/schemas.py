@@ -31,6 +31,7 @@ class FlowWrite(BaseModel):
     request_type: RequestType
     org_unit_id: str | None = None
     employment_id: str | None = None
+    legal_entity_id: str | None = None
 
     @model_validator(mode="after")
     def target(self):

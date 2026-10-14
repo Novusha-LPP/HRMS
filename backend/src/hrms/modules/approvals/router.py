@@ -28,6 +28,7 @@ from hrms.modules.approvals.schemas import (
     RequestType,
 )
 from hrms.modules.kernel.models import UserAccount
+from hrms.modules.org.models import LegalEntity
 
 router = APIRouter(prefix="/v1/approvals", tags=["Approval workflows"])
 
@@ -43,13 +44,17 @@ def steps_public(steps):
     ]
 
 
-def flow_public(flow):
+def flow_public(flow, legal_entity_name: str | None = None):
     return dict(
         id=to_typed_id("approval_flow", flow.id),
         name=flow.name,
         request_type=flow.request_type,
         org_unit_id=to_typed_id("org_unit", flow.org_unit_id) if flow.org_unit_id else None,
         employment_id=to_typed_id("employment", flow.employment_id) if flow.employment_id else None,
+        legal_entity_id=(
+            to_typed_id("legal_entity", flow.legal_entity_id) if flow.legal_entity_id else None
+        ),
+        legal_entity_name=legal_entity_name,
         reusable=flow.reusable,
         enabled=flow.enabled,
         steps=steps_public(flow.steps),
@@ -221,14 +226,22 @@ async def flows(tenant_id: TenantDep, session: SessionDep, scope: ScopeDep):
     scope.require("approvals.manage")
     rows = (
         await session.execute(
-            select(ApprovalFlow)
+            select(ApprovalFlow, LegalEntity.name)
+            .outerjoin(
+                LegalEntity,
+                (col(LegalEntity.tenant_id) == col(ApprovalFlow.tenant_id))
+                & (col(LegalEntity.id) == col(ApprovalFlow.legal_entity_id)),
+            )
             .where(ApprovalFlow.tenant_id == tenant_id, ApprovalFlow.reusable == True)  # noqa: E712
             .order_by(col(ApprovalFlow.name))
         )
-    ).scalars()
+    ).all()
     return [
-        {**flow_public(f), "can_manage": await service.manages(session, tenant_id, scope, f)}
-        for f in rows
+        {
+            **flow_public(f, legal_entity_name=le_name),
+            "can_manage": await service.manages(session, tenant_id, scope, f),
+        }
+        for f, le_name in rows
         if await service.visible_template(session, tenant_id, scope, f)
     ]
 
@@ -366,7 +379,16 @@ async def write_flow(body, flow, principal, scope, tenant_id, session):
         dict(version=flow.version, name=flow.name, enabled=flow.enabled, steps=steps),
     )
     await session.flush()
-    return flow_public(flow)
+    le_name = None
+    if flow.legal_entity_id:
+        le_name = (
+            await session.execute(
+                select(LegalEntity.name).where(
+                    LegalEntity.tenant_id == tenant_id, LegalEntity.id == flow.legal_entity_id
+                )
+            )
+        ).scalar()
+    return flow_public(flow, legal_entity_name=le_name)
 
 
 @router.post("/flows", status_code=201)
@@ -379,29 +401,45 @@ async def create_flow(
 ):
     if not body.reusable:
         raise HTTPException(422, "Create reusable workflows and assign them from employee profiles")
-    company = None
+    target_le = to_uuid(body.legal_entity_id) if body.legal_entity_id else None
     if body.reusable:
         scope.require("approvals.manage")
-        if principal.employment_id:
-            company = (
-                await session.execute(
-                    text(
-                        "SELECT legal_entity_id FROM employments WHERE tenant_id=:tid AND id=:eid"
-                    ),
-                    dict(tid=tenant_id, eid=principal.employment_id),
-                )
-            ).scalar()
-        elif not scope.is_all:
-            granted = scope.for_permission("approvals.admin")
-            if len(granted.legal_entity_ids) != 1:
-                raise HTTPException(
-                    422, "Create workflows with a single-company or group administration grant"
-                )
-            company = next(iter(granted.legal_entity_ids))
+        if scope.has("approvals.admin"):
+            admin_scope = scope.for_permission("approvals.admin")
+            if not admin_scope.is_all:
+                if target_le is None:
+                    if len(admin_scope.legal_entity_ids) == 1:
+                        target_le = next(iter(admin_scope.legal_entity_ids))
+                    else:
+                        raise HTTPException(
+                            422,
+                            "Scoped administrators must choose one of their authorized companies",
+                        )
+                if not admin_scope.covers_entity(target_le):
+                    raise HTTPException(403, "Company is outside your administration scope")
+        else:
+            if principal.employment_id:
+                emp_company = (
+                    await session.execute(
+                        text(
+                            "SELECT legal_entity_id FROM employments "
+                            "WHERE tenant_id=:tid AND id=:eid"
+                        ),
+                        dict(tid=tenant_id, eid=principal.employment_id),
+                    )
+                ).scalar()
+                if target_le is None:
+                    target_le = emp_company
+                elif target_le != emp_company:
+                    raise HTTPException(
+                        403, "Managers can only create workflows for their own company"
+                    )
+            elif target_le is None:
+                raise HTTPException(403, "Only administrators can create global workflows")
     flow = ApprovalFlow(
         reusable=body.reusable,
         owner_employment_id=principal.employment_id,
-        legal_entity_id=company,
+        legal_entity_id=target_le,
         tenant_id=tenant_id,
         id=uuid4(),
         name=body.name,
@@ -437,6 +475,18 @@ async def update_flow(
         raise HTTPException(422, "Flow request type and department/team cannot be changed")
     if body.reusable != flow.reusable:
         raise HTTPException(422, "Workflow kind cannot be changed")
+    target_le = to_uuid(body.legal_entity_id) if body.legal_entity_id else None
+    if target_le != flow.legal_entity_id:
+        if scope.has("approvals.admin"):
+            admin_scope = scope.for_permission("approvals.admin")
+            if not admin_scope.is_all:
+                if target_le is None:
+                    raise HTTPException(403, "Scoped administrators cannot make workflows global")
+                if not admin_scope.covers_entity(target_le):
+                    raise HTTPException(403, "Company is outside your administration scope")
+        else:
+            raise HTTPException(403, "Only administrators can change a workflow's company scope")
+        flow.legal_entity_id = target_le
     flow.version += 1
     return await write_flow(body, flow, principal, scope, tenant_id, session)
 
@@ -838,8 +888,18 @@ async def employee_flows(
             )
         )
     ).all()
+    company = (
+        await session.execute(
+            text(
+                "SELECT legal_entity_id FROM employments WHERE tenant_id=:tid AND id=:eid "
+                "AND archived_at IS NULL"
+            ),
+            dict(tid=tenant_id, eid=eid),
+        )
+    ).scalar()
     return dict(
         can_manage=can_manage,
+        legal_entity_id=to_typed_id("legal_entity", company) if company else None,
         assignments=[
             dict(
                 request_type=assignment.request_type,
@@ -935,8 +995,8 @@ async def assign_employee_flow(
     ).scalar()
     if not company:
         raise HTTPException(404, "Employee not found")
-    if flow.legal_entity_id and flow.legal_entity_id != company:
-        raise HTTPException(422, "Choose a workflow available to this employee’s company")
+    if flow.legal_entity_id is not None and flow.legal_entity_id != company:
+        raise HTTPException(422, "This workflow is restricted to a different company")
     for step in flow.steps:
         if step.get("approver_source", "PEOPLE") != "PEOPLE":
             raise HTTPException(422, "Choose a workflow with specific approvers")

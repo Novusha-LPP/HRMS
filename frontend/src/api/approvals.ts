@@ -4,10 +4,12 @@ export type RequestType = "LEAVE" | "LEAVE_CANCELLATION" | "CORRECTION" | "OVERT
 export interface ApprovalStep { id?: string; name: string; approver_ids: string[]; approver_source?: "PEOPLE" | "TEAM_LEAD" | "TEAM_PM"; }
 export interface ApprovalFlow {
   id: string; name: string; request_type: RequestType; org_unit_id: string | null;
+  legal_entity_id?: string | null; legal_entity_name?: string | null;
   reusable?: boolean; can_manage?: boolean; employment_id?: string | null; enabled: boolean; version: number; steps: ApprovalStep[];
 }
 export interface EmployeeFlowSelection {
   can_manage: boolean;
+  legal_entity_id?: string | null;
   assignments: { request_type: RequestType; version: number; flow: ApprovalFlow | null }[];
 }
 export interface ApprovalRequest {
