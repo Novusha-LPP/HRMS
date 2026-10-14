@@ -7,6 +7,7 @@ from sqlalchemy.engine import make_url
 # The hrms_app role is created by migration 0005 with this password, which is
 # public (it's in the repository). Fine on a laptop, never in production.
 KNOWN_DEV_APP_ROLE_PASSWORD = "hrms_app_dev_password"
+KNOWN_DEV_PLATFORM_ROLE_PASSWORD = "hrms_platform_dev_password"
 
 
 class Settings(BaseSettings):
@@ -22,6 +23,10 @@ class Settings(BaseSettings):
     # application's own WHERE tenant_id = ... filters. Falls back to
     # database_url when unset so a fresh checkout still runs.
     app_database_url: str | None = None
+    # The platform console's role (hrms_platform, migration 0061): the only login that can reach
+    # platform_admins, their reset tokens and the platform audit log. Falls back to
+    # database_url in local development only.
+    platform_database_url: str | None = None
     database_pool_size: int = 10
     database_max_overflow: int = 20
     database_pool_timeout_seconds: int = 10
@@ -175,6 +180,13 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "HRMS_APP_DATABASE_URL still uses the published development password for "
                     "the hrms_app role — run ALTER ROLE hrms_app PASSWORD '<random>' and update it"
+                )
+            if not self.platform_database_url:
+                raise ValueError(f"{where} requires HRMS_PLATFORM_DATABASE_URL")
+            if make_url(self.platform_database_url).password == KNOWN_DEV_PLATFORM_ROLE_PASSWORD:
+                raise ValueError(
+                    "HRMS_PLATFORM_DATABASE_URL still uses the published development password "
+                    "for the hrms_platform role — set HRMS_PLATFORM_ROLE_PASSWORD and migrate"
                 )
             if self.database_url and make_url(self.database_url).password == "hrms":
                 raise ValueError(

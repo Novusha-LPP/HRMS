@@ -31,25 +31,37 @@ from alembic.config import Config
 from sqlalchemy import text
 from sqlalchemy.ext.asyncio import create_async_engine
 
-from hrms.core.config import KNOWN_DEV_APP_ROLE_PASSWORD, settings
+from hrms.core.config import (
+    KNOWN_DEV_APP_ROLE_PASSWORD,
+    KNOWN_DEV_PLATFORM_ROLE_PASSWORD,
+    settings,
+)
 
 ALEMBIC_INI = Path(__file__).resolve().parents[2] / "alembic.ini"
 # Goes into a connection URL as-is and into ALTER ROLE as a literal, so keep it simple.
 SAFE_PASSWORD = re.compile(r"[A-Za-z0-9_-]{24,}")
 
 
-def _app_role_password() -> str | None:
-    password = os.environ.get("HRMS_APP_ROLE_PASSWORD")
+def _role_password(variable: str, dev_password: str) -> str | None:
+    password = os.environ.get(variable)
     if not password:
         if settings.is_deployed:
-            raise SystemExit("HRMS_APP_ROLE_PASSWORD is required outside local development")
+            raise SystemExit(f"{variable} is required outside local development")
         return None
-    if password == KNOWN_DEV_APP_ROLE_PASSWORD or not SAFE_PASSWORD.fullmatch(password):
+    if password == dev_password or not SAFE_PASSWORD.fullmatch(password):
         raise SystemExit(
-            "HRMS_APP_ROLE_PASSWORD must be 24+ characters of A-Z a-z 0-9 _ - "
+            f"{variable} must be 24+ characters of A-Z a-z 0-9 _ - "
             "(e.g. `openssl rand -hex 32`) and not the published development password"
         )
     return password
+
+
+def _app_role_password() -> str | None:
+    return _role_password("HRMS_APP_ROLE_PASSWORD", KNOWN_DEV_APP_ROLE_PASSWORD)
+
+
+def _platform_role_password() -> str | None:
+    return _role_password("HRMS_PLATFORM_ROLE_PASSWORD", KNOWN_DEV_PLATFORM_ROLE_PASSWORD)
 
 
 # Guard rails on the application's role: a runaway query or a transaction left open can't
@@ -62,27 +74,31 @@ APP_ROLE_SETTINGS = {
 }
 
 
-async def _configure_app_role(password: str | None) -> None:
+async def _configure_app_role(password: str | None, role: str = "hrms_app") -> None:
     engine = create_async_engine(settings.database_url)
     try:
         async with engine.begin() as conn:
             if password:
                 # Validated above to [A-Za-z0-9_-], so it can't break out of the literal.
-                await conn.execute(text(f"ALTER ROLE hrms_app PASSWORD '{password}'"))
+                await conn.execute(text(f"ALTER ROLE {role} PASSWORD '{password}'"))
             for name, value in APP_ROLE_SETTINGS.items():
-                await conn.execute(text(f"ALTER ROLE hrms_app SET {name} = '{value}'"))
+                await conn.execute(text(f"ALTER ROLE {role} SET {name} = '{value}'"))
     finally:
         await engine.dispose()
 
 
 def migrate() -> None:
     password = _app_role_password()  # fail before touching the schema
+    platform_password = _platform_role_password()
     config = Config(str(ALEMBIC_INI))
     config.set_main_option("script_location", str(ALEMBIC_INI.parent / "alembic"))
     command.upgrade(config, "head")
     asyncio.run(_configure_app_role(password))
+    asyncio.run(_configure_app_role(platform_password, role="hrms_platform"))
     if password:
         print("hrms_app password set from HRMS_APP_ROLE_PASSWORD")
+    if platform_password:
+        print("hrms_platform password set from HRMS_PLATFORM_ROLE_PASSWORD")
     print("hrms_app limits: " + ", ".join(f"{k}={v}" for k, v in APP_ROLE_SETTINGS.items()))
     # Every deploy leaves no identifier in plain text or under a retired key (idempotent).
     rewritten = asyncio.run(_rewrite_pii(check=False))

@@ -166,9 +166,17 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
   const toast = useToast();
   const invalidate = () => qc.invalidateQueries({ queryKey: ["leave-types"] });
 
+  // Every edit carries the version on screen, so a change someone else saved first is refused
+  // (409 STALE_VERSION) instead of silently overwritten.
+  const versionOf = (id: string) => types.find((t) => t.id === id)?.version;
   const patch = useMutation({
-    mutationFn: ({ id, body }: { id: string; body: Partial<LeaveType> }) => leaveApi.updateType(id, body),
-    onSuccess: invalidate,
+    mutationFn: ({ id, body }: { id: string; body: Partial<LeaveType> }) =>
+      leaveApi.updateType(id, { ...body, version: versionOf(id) }),
+    onSuccess: (saved) => {
+      // The new version, at once: a second toggle before the list reloads must not look stale.
+      qc.setQueryData<LeaveType[]>(["leave-types"], (old) => old?.map((t) => (t.id === saved.id ? saved : t)));
+      void invalidate();
+    },
     onError: (e) => toast.error("Couldn’t update leave type", errorMessage(e)),
   });
 
@@ -199,6 +207,7 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
   const create = useMutation({
     mutationFn: () =>
       (editingId ? leaveApi.updateType(editingId, {
+        version: versionOf(editingId),
         name: name.trim(),
         code: code.trim(),
         days_per_year: Number(daysPerYear),

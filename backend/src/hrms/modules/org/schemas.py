@@ -3,6 +3,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field
 
+from hrms.core.versioning import version_field
+
 
 class LegalEntityCreate(BaseModel):
     name: str = Field(max_length=255)
@@ -21,6 +23,7 @@ class LegalEntityUpdate(BaseModel):
     country_code: str | None = Field(default=None, max_length=2)
     establishment_date: date | None = None
     financial_year_start_month: int | None = Field(default=None, ge=1, le=12)
+    version: int | None = version_field()
 
 
 class LegalEntityResponse(BaseModel):
@@ -60,6 +63,7 @@ class LocationUpdate(BaseModel):
     pincode: str | None = Field(default=None)
     country_code: str | None = Field(default=None)
     timezone: str | None = Field(default=None)
+    version: int | None = version_field()
 
 
 class LocationResponse(BaseModel):
@@ -103,6 +107,7 @@ class OrgUnitUpdate(BaseModel):
     head_employment_id: str | None = None
     lead_employment_id: str | None = None
     pm_employment_id: str | None = None
+    version: int | None = version_field()
 
 
 class AssignDepartmentsRequest(BaseModel):
@@ -145,6 +150,7 @@ class EmployeeIdSchemeUpdate(BaseModel):
     separator: str | None = Field(default=None, max_length=5)
     number_digits: int | None = Field(default=None, ge=1, le=10)
     next_number: int | None = Field(default=None, ge=1)
+    version: int | None = version_field()
 
 
 class EmployeeIdSchemeResponse(BaseModel):
@@ -158,6 +164,7 @@ class EmployeeIdSchemeResponse(BaseModel):
     # What the *next* generated ID will look like, without consuming it —
     # for the admin UI to show a live preview while configuring.
     preview: str
+    version: int = 0
 
 
 class JobCreate(BaseModel):
@@ -170,6 +177,7 @@ class JobUpdate(BaseModel):
     title: str | None = Field(default=None, max_length=255)
     code: str | None = Field(default=None)
     function: str | None = Field(default=None)
+    version: int | None = version_field()
 
 
 class JobResponse(BaseModel):
@@ -198,6 +206,7 @@ class GradeUpdate(BaseModel):
     name: str | None = Field(default=None, min_length=1, max_length=100)
     sequence: int | None = Field(default=None, ge=0)
     status: MasterStatus | None = None
+    version: int | None = version_field()
 
 
 class GradeResponse(BaseModel):
@@ -218,6 +227,7 @@ class CostCentreUpdate(BaseModel):
     code: str | None = Field(default=None, min_length=1, max_length=50)
     name: str | None = Field(default=None, min_length=1, max_length=255)
     status: MasterStatus | None = None
+    version: int | None = version_field()
 
 
 class CostCentreResponse(BaseModel):
@@ -248,6 +258,7 @@ class PositionUpdate(BaseModel):
     max_headcount: int | None = Field(default=None, ge=1)
     status: MasterStatus | None = None
     effective_to: date | None = None
+    version: int | None = version_field()
 
 
 class PositionResponse(BaseModel):

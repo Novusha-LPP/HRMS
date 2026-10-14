@@ -5,6 +5,8 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from hrms.core.versioning import version_field
+
 
 class PolicyTemplateCreate(BaseModel):
     name: str = Field(max_length=100)
@@ -56,11 +58,13 @@ class PolicyTemplateUpdate(BaseModel):
     punch_rounding_direction: Literal["NONE", "UP", "DOWN", "NEAREST"] | None = None
     correction_requires_approval: bool | None = None
     correction_approval_levels: int | None = Field(default=None, ge=1, le=3)
+    version: int | None = version_field()
 
 
 class PolicyTemplateResponse(PolicyTemplateCreate):
     id: str
     standard_minutes: int
+    version: int = 0
 
 
 class EmployeePolicyAssignCreate(BaseModel):

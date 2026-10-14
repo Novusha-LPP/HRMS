@@ -11,6 +11,8 @@ so one tenant's failure is logged and counted without stopping the others; the r
 - missed-punches: marks days whose session is still open 24 hours after check-in as
   MISSED_PUNCH, so reports show them for correction.
 - integrations: connected-app housekeeping (held events, feed and sync-log retention).
+- integrity: counts references the database can't protect with a foreign key (hrms.db.integrity);
+  /metrics exports the totals and an alert fires above zero.
 """
 
 from __future__ import annotations
@@ -31,7 +33,8 @@ from hrms.jobs.models import JobRun
 
 logger = logging.getLogger("hrms.jobs")
 
-TenantJob = Callable[..., Awaitable[str]]
+# A job returns a summary line, or counts to sum over tenants onto job_runs.findings.
+TenantJob = Callable[..., Awaitable[str | dict[str, int]]]
 
 
 async def _accrual(session, tenant_id: UUID) -> str:
@@ -150,11 +153,22 @@ async def _integrations(session, tenant_id: UUID) -> str:
     return f"{released} released, {purged} events purged, {trimmed} log rows trimmed"
 
 
+async def _integrity(session, tenant_id: UUID) -> dict[str, int]:
+    """
+    References the database can't protect with a foreign key (hrms.db.integrity). The counts
+    are summed over tenants onto the run's job_runs.findings; /metrics exports them.
+    """
+    from hrms.db.integrity import run_checks
+
+    return await run_checks(session)
+
+
 JOBS: dict[str, TenantJob] = {
     "scheduled-actions": _scheduled_actions,
     "accrual": _accrual,
     "missed-punches": _missed_punches,
     "integrations": _integrations,
+    "integrity": _integrity,
 }
 
 
@@ -175,6 +189,7 @@ async def _run_job(name: str) -> bool:
     async with database.AsyncSessionLocal() as session, session.begin():
         session.add(run)
     failures: list[str] = []
+    findings: dict[str, int] = {}
     ok = 0
     for tenant_id in await _active_tenants():
         try:
@@ -184,6 +199,9 @@ async def _run_job(name: str) -> bool:
                 )
                 outcome = await job(session, tenant_id)
             ok += 1
+            if isinstance(outcome, dict):
+                for check, count in outcome.items():
+                    findings[check] = findings.get(check, 0) + count
             logger.info("job %s tenant %s: %s", name, tenant_id, outcome)
         except Exception as exc:  # one tenant must not stop the rest
             failures.append(f"{tenant_id}: {type(exc).__name__}")
@@ -196,6 +214,7 @@ async def _run_job(name: str) -> bool:
         stored.tenants_ok = ok
         stored.tenants_failed = len(failures)
         stored.detail = "; ".join(failures)[:2000] or None
+        stored.findings = findings or None
     logger.info("job %s finished: %d ok, %d failed", name, ok, len(failures))
     return not failures
 

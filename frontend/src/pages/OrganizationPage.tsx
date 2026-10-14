@@ -456,7 +456,7 @@ function CompanySheet({ open, onClose, initial }: { open: boolean; onClose: () =
   const save = useMutation({
     mutationFn: () => {
       const body = { establishment_date: form.establishmentDate || null, name: form.name.trim(), short_name: form.shortName.trim() || undefined, country_code: form.country, financial_year_start_month: form.fyStart || undefined };
-      return isEdit ? orgApi.updateLegalEntity(initial!.id, body) : orgApi.createLegalEntity(body);
+      return isEdit ? orgApi.updateLegalEntity(initial!.id, { ...body, version: initial!.version }) : orgApi.createLegalEntity(body);
     },
     onSuccess: (e) => {
       qc.invalidateQueries({ queryKey: ["legal-entities"] });
@@ -604,7 +604,7 @@ function SharedDepartmentSheet({ initial, onClose }: { initial?: OrgUnit; onClos
   const qc = useQueryClient(); const toast = useToast();
   const [name, setName] = useState(initial?.name ?? ""); const [code, setCode] = useState(initial?.code ?? "");
   const save = useMutation({
-    mutationFn: () => initial ? orgApi.updateOrgUnit(initial.id, { name: name.trim(), code: code.trim() || null })
+    mutationFn: () => initial ? orgApi.updateOrgUnit(initial.id, { name: name.trim(), code: code.trim() || null, version: initial.version })
       : orgApi.createOrgUnit({ name: name.trim(), code: code.trim() || undefined, type: "DEPARTMENT_TEMPLATE", effective_from: format(new Date(), "yyyy-MM-dd") }),
     onSuccess: () => { void qc.invalidateQueries({ queryKey: ["org-units"] }); void qc.invalidateQueries({ queryKey: ["employees"] }); void qc.invalidateQueries({ queryKey: ["dash-hr"] }); toast.success(initial ? "Shared department updated" : "Department created"); onClose(); },
     onError: (e) => toast.error("Couldn’t save department", errorMessage(e)),
@@ -818,7 +818,7 @@ function DepartmentSheet({ open, onClose, entities, departments, initial, teamPa
   const save = useMutation({
     mutationFn: () =>
       isEdit
-        ? orgApi.updateOrgUnit(initial!.id, { ...(initial!.department_template_id ? {} : { name: form.name.trim(), code: form.code.trim() || null }), ...(form.type === "DEPARTMENT" ? { head_employment_id: head || null } : {}), ...(form.type === "TEAM" ? { lead_employment_id: lead || null, pm_employment_id: pm || null } : {}) })
+        ? orgApi.updateOrgUnit(initial!.id, { version: initial!.version, ...(initial!.department_template_id ? {} : { name: form.name.trim(), code: form.code.trim() || null }), ...(form.type === "DEPARTMENT" ? { head_employment_id: head || null } : {}), ...(form.type === "TEAM" ? { lead_employment_id: lead || null, pm_employment_id: pm || null } : {}) })
         : orgApi.createOrgUnit({
             name: form.name.trim(), type: form.type, code: form.code.trim() || undefined,
             legal_entity_id: entityId, parent_id: form.parent || undefined,
@@ -961,7 +961,7 @@ function LocationSheet({ open, onClose, entities, initial }: {
   const save = useMutation({
     mutationFn: () =>
       isEdit
-        ? orgApi.updateLocation(initial!.id, { name: form.name.trim(), type: form.type, city: form.city.trim() || undefined })
+        ? orgApi.updateLocation(initial!.id, { name: form.name.trim(), type: form.type, city: form.city.trim() || undefined, version: initial!.version })
         : orgApi.createLocation({ name: form.name.trim(), type: form.type, city: form.city.trim() || undefined, legal_entity_id: form.entity || undefined }),
     onSuccess: (l) => {
       qc.invalidateQueries({ queryKey: ["locations"] });
@@ -1082,7 +1082,7 @@ function JobSheet({ open, onClose, initial }: { open: boolean; onClose: () => vo
   const save = useMutation({
     mutationFn: () => {
       const body = { title: form.title.trim(), code: form.code.trim() || undefined, function: form.function.trim() || undefined };
-      return isEdit ? orgApi.updateJob(initial!.id, body) : orgApi.createJob(body);
+      return isEdit ? orgApi.updateJob(initial!.id, { ...body, version: initial!.version }) : orgApi.createJob(body);
     },
     onSuccess: (j) => {
       qc.invalidateQueries({ queryKey: ["jobs"] });
@@ -1209,7 +1209,7 @@ function GradeSheet({ open, onClose, initial }: { open: boolean; onClose: () => 
   const save = useMutation({
     mutationFn: () => {
       const body = { code: form.code.trim(), name: form.name.trim(), sequence: Number(form.sequence) || 0 };
-      return isEdit ? orgApi.updateGrade(initial!.id, { ...body, status: form.status }) : orgApi.createGrade(body);
+      return isEdit ? orgApi.updateGrade(initial!.id, { ...body, status: form.status, version: initial!.version }) : orgApi.createGrade(body);
     },
     onSuccess: (g) => {
       qc.invalidateQueries({ queryKey: ["grades"] });
@@ -1322,7 +1322,7 @@ function CostCentreSheet({ open, onClose, initial }: { open: boolean; onClose: (
   const save = useMutation({
     mutationFn: () => {
       const body = { code: form.code.trim(), name: form.name.trim() };
-      return isEdit ? orgApi.updateCostCentre(initial!.id, { ...body, status: form.status }) : orgApi.createCostCentre(body);
+      return isEdit ? orgApi.updateCostCentre(initial!.id, { ...body, status: form.status, version: initial!.version }) : orgApi.createCostCentre(body);
     },
     onSuccess: (c) => {
       qc.invalidateQueries({ queryKey: ["cost-centres"] });
@@ -1488,6 +1488,7 @@ function PositionSheet({ open, onClose, initial }: { open: boolean; onClose: () 
       const headcount = form.headcount.trim() ? Number(form.headcount) : null;
       if (isEdit) {
         return orgApi.updatePosition(initial!.id, {
+          version: initial!.version,
           title: form.title.trim(), code: form.code.trim() || null, job_id: form.job || null, grade_id: form.grade || null,
           max_headcount: headcount, status: form.status, effective_to: form.to || null,
         });
@@ -1707,7 +1708,7 @@ function EmployeeIdSchemeSheet({ open, onClose, initial, availableEntities, canC
   const save = useMutation({
     mutationFn: () =>
       isEdit
-        ? orgApi.updateEmployeeIdScheme(initial!.id, { prefix, separator, number_digits: numberDigits, next_number: nextNumber })
+        ? orgApi.updateEmployeeIdScheme(initial!.id, { prefix, separator, number_digits: numberDigits, next_number: nextNumber, version: initial!.version })
         : orgApi.createEmployeeIdScheme({ legal_entity_id: legalEntityId || undefined, prefix, separator, number_digits: numberDigits, next_number: nextNumber }),
     onSuccess: () => {
       qc.invalidateQueries({ queryKey: ["employee-id-schemes"] });

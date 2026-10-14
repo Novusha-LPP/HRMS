@@ -11,7 +11,9 @@ Hard rules (enforced by architecture & review):
 
 from __future__ import annotations
 
+import math
 from datetime import date
+from fractions import Fraction
 from uuid import UUID, uuid4
 
 from sqlalchemy import text
@@ -330,6 +332,27 @@ async def record_transaction(
     return tx, ledger_row
 
 
+def half_days_earned(days_per_year: float, months: int) -> float:
+    """
+    Leave earned after `months` monthly accruals of a yearly entitlement, rounded down to a
+    half day (DB-D2: leave is only ever taken or held in whole or half days). Computed with
+    exact fractions, so 12 months of any entitlement add up to exactly that entitlement.
+    """
+    earned = Fraction(str(days_per_year)) * months / 12
+    return float(math.floor(earned * 2)) / 2
+
+
+def monthly_credit(days_per_year: float, months_before: int) -> float:
+    """
+    This month's accrual after `months_before` earlier ones in the financial year: whatever
+    makes the running total equal half_days_earned. 25 days a year credits 2, 2, 2, 2, 2, 2.5,
+    2, 2, 2, 2, 2, 2.5; small entitlements credit 0 in some months (that month still counts).
+    """
+    return half_days_earned(days_per_year, months_before + 1) - half_days_earned(
+        days_per_year, months_before
+    )
+
+
 async def record_accruals(
     session: AsyncSession,
     tenant_id: UUID,
@@ -457,8 +480,9 @@ async def record_accruals(
             "ref": reference_type,
             "by": str(recorded_by),
             "emps": [str(r[0]) for r in journal],
-            "qty": [r[1] for r in journal],
-            "prev": [r[2] for r in journal],
-            "new": [r[3] for r in journal],
+            # The balances come back as numeric (Decimal); the array parameters are float8.
+            "qty": [float(r[1]) for r in journal],
+            "prev": [float(r[2]) for r in journal],
+            "new": [float(r[3]) for r in journal],
         },
     )

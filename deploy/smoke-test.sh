@@ -36,6 +36,7 @@ HRMS_ENV_FILE=$work/smoke.env
 HRMS_VERSION=smoke
 HRMS_DB_OWNER_PASSWORD=$(secret)
 HRMS_APP_ROLE_PASSWORD=$(secret)
+HRMS_PLATFORM_ROLE_PASSWORD=$(secret)
 HRMS_SECRET_KEY=$(secret)$(secret)
 HRMS_METRICS_TOKEN=$token
 HRMS_FIELD_ENCRYPTION_KEYS=smoke:$(python3 -c "import os,base64;print(base64.urlsafe_b64encode(os.urandom(32)).decode())")

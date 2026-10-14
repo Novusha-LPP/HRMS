@@ -2,6 +2,7 @@ from __future__ import annotations
 
 import enum
 from datetime import UTC, date, datetime
+from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import Column
@@ -9,6 +10,11 @@ from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 from hrms.core.datetime_utils import now_utc
+
+# Stored values of leave_balance_transactions.reference_type (conventions.DOMAINS).
+LeaveReferenceType = Literal[
+    "ACCRUAL_RUN", "COMP_OFF", "ENCASHMENT", "LEAVE_APPLICATION", "MANUAL", "YEAR_END"
+]
 
 
 class LeaveApplicationStatus(enum.StrEnum):
@@ -270,6 +276,7 @@ class LeaveBucketPolicy(SQLModel, table=True):
     source_policy: dict | None = Field(default=None, sa_column=Column(JSONB))
 
     recorded_at: datetime | None = Field(default=None)
+    version: int = Field(default=0)
     recorded_by: UUID | None = Field(default=None)
 
 

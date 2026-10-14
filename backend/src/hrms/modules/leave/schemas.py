@@ -5,6 +5,10 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, model_validator
 
+from hrms.core.versioning import version_field
+
+AccrualType = Literal["ANNUAL_UPFRONT", "MONTHLY_PRORATE", "NONE"]
+
 
 class LeaveTypeCreate(BaseModel):
     name: str = Field(max_length=100)
@@ -47,11 +51,13 @@ class LeaveTypeUpdate(BaseModel):
     is_comp_off: bool | None = None
     encashable: bool | None = None
     accrual_enabled: bool | None = None
+    version: int | None = version_field()
 
 
 class LeaveTypeResponse(LeaveTypeCreate):
     id: str
     is_active: bool
+    version: int = 0
 
 
 class LeaveBalanceResponse(BaseModel):
@@ -236,6 +242,7 @@ class LeaveBalanceBucketCreate(BaseModel):
 class LeaveBalanceBucketUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=100)
     is_active: bool | None = None
+    version: int | None = version_field()
 
 
 class LeaveBalanceBucketResponse(BaseModel):
@@ -244,6 +251,7 @@ class LeaveBalanceBucketResponse(BaseModel):
     code: str
     is_unlimited: bool
     is_active: bool
+    version: int = 0
 
 
 # ─── Type-to-Bucket Mapping ───────────────────────────────────────────────────
@@ -277,6 +285,7 @@ class LeavePolicySetUpdate(BaseModel):
     name: str | None = Field(default=None, max_length=100)
     description: str | None = Field(default=None, max_length=500)
     is_default: bool | None = None
+    version: int | None = version_field()
 
 
 class LeavePolicySetResponse(BaseModel):
@@ -284,6 +293,7 @@ class LeavePolicySetResponse(BaseModel):
     name: str
     description: str | None
     is_default: bool
+    version: int = 0
 
 
 # ─── Leave Bucket Policies ────────────────────────────────────────────────────
@@ -291,7 +301,7 @@ class LeavePolicySetResponse(BaseModel):
 
 class LeaveBucketPolicyCreate(BaseModel):
     bucket_id: str
-    accrual_type: Literal["ANNUAL_UPFRONT", "MONTHLY_PRORATE", "NONE"]
+    accrual_type: AccrualType
     days_per_year: float = Field(ge=0)
     carry_forward_enabled: bool = False
     max_carry_forward_days: float | None = Field(default=None, ge=0)
@@ -304,7 +314,7 @@ class LeaveBucketPolicyCreate(BaseModel):
 
 
 class LeaveBucketPolicyUpdate(BaseModel):
-    accrual_type: Literal["ANNUAL_UPFRONT", "MONTHLY_PRORATE", "NONE"] | None = None
+    accrual_type: AccrualType | None = None
     days_per_year: float | None = Field(default=None, ge=0)
     carry_forward_enabled: bool | None = None
     max_carry_forward_days: float | None = Field(default=None, ge=0)
@@ -314,6 +324,7 @@ class LeaveBucketPolicyUpdate(BaseModel):
     probation_eligible: bool | None = None
     min_service_months: int | None = Field(default=None, ge=0)
     pro_rate_first_year: bool | None = None
+    version: int | None = version_field()
 
 
 class LeaveBucketPolicyResponse(BaseModel):
@@ -332,6 +343,7 @@ class LeaveBucketPolicyResponse(BaseModel):
     probation_eligible: bool
     min_service_months: int
     pro_rate_first_year: bool
+    version: int = 0
 
 
 # ─── Leave Policy Assignments ─────────────────────────────────────────────────

@@ -41,11 +41,42 @@ async def event(session, tenant_id, flow_id, actor, action, details, instance_id
     )
 
 
+async def people_of_accounts(session, tenant_id, account_ids) -> dict[UUID, UUID]:
+    """
+    Account id -> the person behind it. One person can hold several employments, each with its
+    own login, so "the same person" means the same person_id, not the same employment. An
+    account without an employment stands for itself.
+    """
+    ids = list(account_ids)
+    if not ids:
+        return {}
+    rows = await session.execute(
+        text("""
+        SELECT ua.id, e.person_id FROM user_accounts ua
+        LEFT JOIN employments e ON e.tenant_id=ua.tenant_id AND e.id=ua.employment_id
+        WHERE ua.tenant_id=:tid AND ua.id = ANY(:ids)
+    """),
+        dict(tid=tenant_id, ids=ids),
+    )
+    return {uid: person or uid for uid, person in rows}
+
+
+async def person_of_employment(session, tenant_id, employment_id) -> UUID | None:
+    if employment_id is None:
+        return None
+    return (
+        await session.execute(
+            text("SELECT person_id FROM employments WHERE tenant_id=:tid AND id=:eid"),
+            dict(tid=tenant_id, eid=employment_id),
+        )
+    ).scalar()
+
+
 async def active_account(session, tenant_id, account_id):
     row = (
         await session.execute(
             text("""
-        SELECT ua.id, ua.employment_id FROM user_accounts ua
+        SELECT ua.id, ua.employment_id, e.person_id FROM user_accounts ua
         LEFT JOIN employments e ON e.tenant_id=ua.tenant_id AND e.id=ua.employment_id
         WHERE ua.tenant_id=:tid AND ua.id=:uid AND ua.status='ACTIVE'
           AND (ua.employment_id IS NULL OR (e.archived_at IS NULL
@@ -389,6 +420,8 @@ async def start(session, tenant_id, kind, request_id, employment_id, request_sna
             )
         ).all()
     )
+    people_by_account = await people_of_accounts(session, tenant_id, account_ids)
+    requester = await person_of_employment(session, tenant_id, employment_id)
     seen_employees: set[UUID] = set()
     for step in resolved:
         eligible = []
@@ -397,13 +430,14 @@ async def start(session, tenant_id, kind, request_id, employment_id, request_sna
                 raise HTTPException(409, "An assigned approver account no longer exists")
             # Preserve inactive originals so an upper level can authorize cover.
             # Active-account validation is enforced again when someone acts.
-            if accounts[UUID(uid)] != employment_id:
+            # The requester can't approve, through this employment's login or another one.
+            if people_by_account[UUID(uid)] != requester:
                 eligible.append(uid)
         if not eligible:
             raise HTTPException(
                 409, f'Approval stage "{step["name"]}" has no eligible non-requester'
             )
-        people = {accounts[UUID(uid)] or UUID(uid) for uid in eligible}
+        people = {people_by_account[UUID(uid)] for uid in eligible}
         if seen_employees & people:
             raise HTTPException(
                 409, "The same person resolves to multiple stages; edit the workflow or team roles"

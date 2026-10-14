@@ -1,6 +1,8 @@
 import { api } from "./client";
 
 export interface PolicyTemplate {
+  /** Sent back with an edit; a stale one is refused (409 STALE_VERSION). */
+  version: number;
   id: string;
   name: string;
   description: string | null;

@@ -17,6 +17,9 @@ if _test_database_url:
     os.environ["HRMS_APP_DATABASE_URL"] = _test_url.set(
         username="hrms_app", password="hrms_app_dev_password"
     ).render_as_string(hide_password=False)
+    os.environ["HRMS_PLATFORM_DATABASE_URL"] = _test_url.set(
+        username="hrms_platform", password="hrms_platform_dev_password"
+    ).render_as_string(hide_password=False)
 
 
 def pytest_addoption(parser):
@@ -67,6 +70,16 @@ async def api(monkeypatch, tmp_path):
         "AsyncSessionLocal",
         async_sessionmaker(runtime, expire_on_commit=False, autoflush=False),
     )
+    # The platform console runs as its own restricted role, as in production (migration 0061).
+    platform_runtime = create_async_engine(
+        url.set(username="hrms_platform", password="hrms_platform_dev_password"),
+        poolclass=NullPool,
+    )
+    monkeypatch.setattr(
+        database,
+        "PlatformSessionLocal",
+        async_sessionmaker(platform_runtime, expire_on_commit=False, autoflush=False),
+    )
     monkeypatch.setattr(settings, "storage_dir", str(tmp_path))
     # Encryption at rest on, as in every deployed environment (core/field_crypto.py).
     from hrms.core.field_crypto import DEV_KEYS
@@ -96,4 +109,5 @@ async def api(monkeypatch, tmp_path):
                 await conn.execute(text("DELETE FROM employee_kyc_documents WHERE id=:id"),
                                    {"id": document_id})
         await runtime.dispose()
+        await platform_runtime.dispose()
         await admin_engine.dispose()

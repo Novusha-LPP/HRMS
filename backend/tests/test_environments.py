@@ -13,6 +13,7 @@ DEPLOYED = dict(
     secret_key="x" * 40,
     database_url="postgresql+asyncpg://owner:strong@db/hrms",
     app_database_url="postgresql+asyncpg://hrms_app:strong@db/hrms",
+    platform_database_url="postgresql+asyncpg://hrms_platform:strong@db/hrms",
     metrics_token="scrape",
     cors_origins="https://testinghrms.example.com",
     field_encryption_keys="t1:MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
@@ -41,6 +42,15 @@ def test_deployed_environments_get_every_safeguard(environment):
             "hrms_app",
         ),
         ({"database_url": "postgresql+asyncpg://hrms:hrms@db/h"}, "published development password"),
+        ({"platform_database_url": None}, "HRMS_PLATFORM_DATABASE_URL"),
+        (
+            {
+                "platform_database_url": (
+                    "postgresql+asyncpg://hrms_platform:hrms_platform_dev_password@db/h"
+                )
+            },
+            "hrms_platform",
+        ),
     ]:
         with pytest.raises(ValidationError, match=message):
             Settings(**{**DEPLOYED, **override}, environment=environment)

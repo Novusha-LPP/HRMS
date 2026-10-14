@@ -2,6 +2,7 @@
 
 import asyncio
 from datetime import UTC, date, datetime, timedelta
+from uuid import uuid4
 
 import pytest
 from sqlalchemy import text
@@ -591,8 +592,21 @@ async def test_inactive_original_can_be_covered_and_cancelled_request_cannot_be_
 
 async def test_person_cannot_hold_multiple_levels_using_different_accounts(api):
     client, _ = api
-    _, placement, _, worker_headers, actors = await setup(client)
-    _, _, alias = await make_user(client, actors[0]["employee"]["id"])
+    admin, placement, _, worker_headers, actors = await setup(client)
+    # One login per employment is enforced by the database, but one person can hold two
+    # employments (and so two logins); they still must not approve at two levels.
+    second_job = await ok(
+        client,
+        "POST",
+        "/v1/employees",
+        json={
+            "person_id": actors[0]["employee"]["person_id"],
+            "legal_entity_id": admin["user"]["legal_entities"][0]["id"],
+            "employee_number": "ALIAS-" + uuid4().hex[:6],
+            "hire_date": "2020-01-01",
+        },
+    )
+    _, _, alias = await make_user(client, second_job["id"])
     body = dict(
         name="Alias chain",
         request_type="CORRECTION",

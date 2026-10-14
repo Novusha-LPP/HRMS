@@ -1,5 +1,6 @@
 import { BrowserRouter, Routes, Route, Navigate } from "react-router-dom";
-import { QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { MutationCache, QueryClient, QueryClientProvider } from "@tanstack/react-query";
+import { ApiError } from "./api/client";
 import { lazy, Suspense, useEffect, type ReactNode } from "react";
 import { AuthProvider, useAuth } from "./context/AuthContext";
 import { PlatformAuthProvider, usePlatformAuth } from "./context/PlatformAuthContext";
@@ -38,7 +39,14 @@ import { ErrorBoundary } from "./components/common/ErrorBoundary";
 import { API_DOCS_URL } from "./lib/runtimeConfig";
 import { EnvironmentBadge } from "./components/layout/EnvironmentBadge";
 
-const qc = new QueryClient({ defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
+// Someone else saved a record first (409 STALE_VERSION): reload what is on screen, so the next
+// attempt starts from their version. The form's own error message says what happened.
+const mutationCache = new MutationCache({
+  onError: (error) => {
+    if (error instanceof ApiError && error.code === "STALE_VERSION") void qc.invalidateQueries();
+  },
+});
+const qc = new QueryClient({ mutationCache, defaultOptions: { queries: { retry: 1, staleTime: 30_000 } } });
 
 function RequireAuth({ children, allowPasswordChange = false, allowMfaSetup = false }: { children: ReactNode; allowPasswordChange?: boolean; allowMfaSetup?: boolean }) {
   const { user, loading } = useAuth();

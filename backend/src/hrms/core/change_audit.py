@@ -51,10 +51,25 @@ ENTITY_TYPES = frozenset(
         "integration_profile",
         "integration_mapping",
         "integration_override",
+        # Recorded by database triggers (migration 0062), for every write path
+        "person",
+        "employment",
+        "role_assignment",
+        "leave_type",
+        "leave_bucket",
+        "leave_policy_set",
+        "leave_bucket_policy",
+        "leave_policy_assignment",
+        "policy_template",
+        "employee_policy_assignment",
+        "holiday",
+        "holiday_calendar",
+        "holiday_calendar_assignment",
+        "approval_flow",
     }
 )
 
-ACTIONS = frozenset({"CREATE", "UPDATE", "ARCHIVE"})
+ACTIONS = frozenset({"CREATE", "UPDATE", "ARCHIVE", "DELETE"})
 
 
 def _jsonable(value: Any) -> Any:

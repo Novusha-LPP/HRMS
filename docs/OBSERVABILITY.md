@@ -290,3 +290,47 @@ A connected app's key was used from an address it had never been used from. Open
 log*, filter by operation `NEW_IP`, and check the address with the app's team. Expected after a
 server move. If not expected, revoke the key at once (Keys tab), create a new one, and set *Allowed
 addresses* on it so the key works only from the app's servers.
+
+## HrmsIntegrityViolations
+The nightly `integrity` job (`backend/src/hrms/db/integrity.py`) found references the database
+can't protect with a foreign key that point at nothing: change history, approvals, leave
+movements, connected-app mappings or delegations whose target row is gone. The `check` label
+names which. Every other reference has a real foreign key, so this means a row was deleted
+outside the app (by hand, or by a script). To see which tenants are affected, run the check's
+SQL from that file for each tenant as the app role, or the read-only
+`scripts/db_preflight.py`. Restore the missing rows from a backup where possible; otherwise
+record what was lost, then remove the dangling references.
+
+## HrmsDatabaseMetricsMissing
+`/metrics` exports database health (`hrms_db_*`) from a short query on every scrape, and the
+query is failing or taking over two seconds. Check that the database is reachable from the API
+and not overloaded (*Database time* on the HRMS database dashboard). Everything else on
+`/metrics` keeps working meanwhile.
+
+## HrmsLongTransaction
+A transaction of the application has been open for over five minutes. It holds its locks the
+whole time and stops vacuum from cleaning up after it. Find it with
+`SELECT pid, now() - xact_start, state, left(query, 200) FROM pg_stat_activity
+WHERE xact_start IS NOT NULL ORDER BY xact_start;` and end it with
+`SELECT pg_cancel_backend(pid)` (or `pg_terminate_backend`). The app role's own limits
+(`statement_timeout`, `idle_in_transaction_session_timeout`, set by `hrms.deploy migrate`)
+should make this rare; a one-off script run as another role is the usual cause.
+
+## HrmsDeadRowsPiling
+Autovacuum isn't keeping up with a table: over 20 % of its rows are dead. Queries read the dead
+rows too and the table grows. Check `pg_stat_user_tables` for when the table was last
+autovacuumed. For a table that changes all day (the leave ledger, rate-limit windows), lower
+its threshold: `ALTER TABLE <table> SET (autovacuum_vacuum_scale_factor = 0.02)` in a migration
+(docs/database-hardening-plan.md, W9.3). A one-off `VACUUM (ANALYZE) <table>` helps meanwhile.
+
+## HrmsSequentialScansOnLargeTable
+A table of over 100,000 rows is being read by full scans at a high rate: some query has no
+index to use. With `pg_stat_statements` (on in `deploy/compose.yml`), find it with
+`SELECT calls, mean_exec_time, left(query, 200) FROM pg_stat_statements
+ORDER BY total_exec_time DESC LIMIT 20;`, check its plan with `EXPLAIN (ANALYZE, BUFFERS)`, and
+add the index in a migration (`migration_kit.index(..., concurrently=True)`).
+
+## HrmsPartitionThresholdReached
+`punches` or `attendance_days` passed 50 million rows or 20 GB, the point decision DB-D4 set for
+partitioning them by month. Plan the change from docs/database-hardening-plan.md (W21): it
+changes their primary keys, so it needs its own release and a maintenance window.

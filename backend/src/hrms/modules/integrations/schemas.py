@@ -9,6 +9,13 @@ from pydantic import BaseModel, ConfigDict, EmailStr, Field, field_validator
 
 from hrms.modules.kernel.auth.schemas import check_password_bytes
 
+# Stored values (hrms.db.conventions.DOMAINS checks the database CHECKs against these).
+AppKind = Literal["TWO_WAY", "RECEIVE_ONLY", "READ_ONLY"]
+AppStatus = Literal["ACTIVE", "PAUSED", "DISCONNECTED"]
+MappingKind = Literal["LEGAL_ENTITY", "DEPARTMENT", "LOCATION", "DESIGNATION", "ROLE"]
+ProfileStatus = Literal["DRAFT", "PUBLISHED", "SUPERSEDED", "DISCARDED"]
+DuplicateStatus = Literal["OPEN", "SAME_PERSON", "DIFFERENT_PERSON"]
+
 
 class _Body(BaseModel):
     # Unknown fields are refused rather than silently ignored, so a misspelt field name shows up
@@ -151,12 +158,12 @@ class FeedResponse(BaseModel):
 class AppCreate(_Body):
     code: str = Field(pattern=r"^[A-Za-z][A-Za-z0-9_]{1,39}$")
     name: str = Field(min_length=1, max_length=120)
-    kind: Literal["TWO_WAY", "RECEIVE_ONLY", "READ_ONLY"]
+    kind: AppKind
 
 
 class AppUpdate(_Body):
     name: str | None = Field(default=None, min_length=1, max_length=120)
-    status: Literal["ACTIVE", "PAUSED", "DISCONNECTED"] | None = None
+    status: AppStatus | None = None
 
 
 class AppResponse(BaseModel):
@@ -242,7 +249,7 @@ class ProfileResponse(BaseModel):
 
 
 class MappingCreate(_Body):
-    kind: Literal["LEGAL_ENTITY", "DEPARTMENT", "LOCATION", "DESIGNATION", "ROLE"]
+    kind: MappingKind
     external_value: str = Field(min_length=1, max_length=200)
     target_id: str | None = None
     target_value: Literal["EMPLOYEE", "MANAGER"] | None = None

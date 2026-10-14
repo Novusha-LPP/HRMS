@@ -7,6 +7,7 @@ from datetime import datetime
 from uuid import UUID, uuid4
 
 import sqlalchemy as sa
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 
@@ -32,3 +33,7 @@ class JobRun(SQLModel, table=True):
     tenants_ok: int = 0
     tenants_failed: int = 0
     detail: str | None = Field(default=None, max_length=2000)
+    # Counts a job reports, summed over tenants (the integrity job's checks); /metrics exports them.
+    findings: dict | None = Field(
+        default=None, sa_column=sa.Column(JSONB(none_as_null=True), nullable=True)
+    )
