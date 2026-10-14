@@ -589,7 +589,10 @@ async def _accruals_this_fy(
     if not starts:
         return {}
     rows = await session.execute(
-        select(LeaveBalanceTransaction.employment_id, LeaveBalanceTransaction.effective_date)
+        select(
+            col(LeaveBalanceTransaction.employment_id),
+            col(LeaveBalanceTransaction.effective_date),
+        )
         .where(LeaveBalanceTransaction.tenant_id == tenant_id)
         .where(LeaveBalanceTransaction.bucket_id == bucket_id)
         .where(

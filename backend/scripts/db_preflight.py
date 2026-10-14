@@ -272,7 +272,8 @@ async def _global_email_clashes(conn: AsyncConnection, tenants: list[str]) -> in
     for tid in tenants:
         await conn.execute(text("SELECT set_config('app.tenant_id', :t, true)"), {"t": tid})
         rows = await conn.execute(
-            text("SELECT lower(email) FROM user_accounts WHERE email IS NOT NULL")
+            text("SELECT lower(email) FROM user_accounts WHERE tenant_id = CAST(:tid AS uuid) "
+                 "AND email IS NOT NULL"), {"tid": tid}
         )
         seen.update(r[0] for r in rows)
     return sum(n - 1 for n in seen.values() if n > 1)

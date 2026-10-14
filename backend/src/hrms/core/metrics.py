@@ -371,7 +371,7 @@ class _DatabaseHealth(Collector):
     def collect(self):
         if not self.health:
             return
-        per_table = {
+        per_table: dict[str, GaugeMetricFamily | CounterMetricFamily] = {
             "bytes": GaugeMetricFamily(
                 "hrms_db_table_size_bytes", "Table size including indexes", labels=["table"]
             ),

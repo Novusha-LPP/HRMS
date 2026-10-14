@@ -65,7 +65,7 @@ docker exec "$project-db-1" sh -c \
   "PGPASSWORD=hrms_app_dev_password psql -h db -U hrms_app -d hrms -c 'select 1'" >/dev/null 2>&1 \
   && fail "the published hrms_app password still works"
 
-compose run --rm --no-deps -T jobs python -m hrms.deploy encrypt-pii --check >/dev/null \
+compose run --rm --no-deps -T migrate python -m hrms.deploy encrypt-pii --check >/dev/null \
   || fail "identifiers left unencrypted after migrate"
 compose logs migrate | grep -q "encrypt-pii:" || fail "migrate did not run encrypt-pii"
 [ "$(docker exec "$project-db-1" psql -U hrms -d hrms -tAc \

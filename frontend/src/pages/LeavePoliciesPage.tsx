@@ -188,6 +188,7 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
 
   const [showArchived, setShowArchived] = useState(false);
   const [editingId, setEditingId] = useState<string | null>(null);
+  const [editingVersion, setEditingVersion] = useState<number>();
   const archived = useQuery({
     queryKey: ["leave-types", "archived"],
     queryFn: () => leaveApi.listArchivedTypes(),
@@ -207,7 +208,7 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
   const create = useMutation({
     mutationFn: () =>
       (editingId ? leaveApi.updateType(editingId, {
-        version: versionOf(editingId),
+        version: editingVersion,
         name: name.trim(),
         code: code.trim(),
         days_per_year: Number(daysPerYear),
@@ -319,7 +320,7 @@ function LeaveTypesCard({ types, loading }: { types: LeaveType[]; loading: boole
                 <td className="py-2 text-right">
                   <button type="button" className="btn-secondary btn-sm mr-2"
                     onClick={() => {
-                      setEditingId(t.id); setName(t.name); setCode(t.code);
+                      setEditingVersion(t.version); setEditingId(t.id); setName(t.name); setCode(t.code);
                       setDaysPerYear(String(t.days_per_year)); setIsPaid(t.is_paid);
                       setRequiresApproval(t.requires_approval);
                     }}>

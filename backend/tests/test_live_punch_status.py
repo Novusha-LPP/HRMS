@@ -51,7 +51,7 @@ async def test_today_does_not_carry_a_previous_work_date(monkeypatch, night_shif
     )
     previous_punch = Punch(
         id=uuid4(), tenant_id=tenant_id, employment_id=employment_id,
-        punched_at=NOW - timedelta(hours=12), work_date=previous_date,
+        punched_at=NOW - timedelta(hours=12 if night_shift else 25), work_date=previous_date,
         punch_type="IN", source="WEB",
     )
 
@@ -64,6 +64,7 @@ async def test_today_does_not_carry_a_previous_work_date(monkeypatch, night_shif
     monkeypatch.setattr(router, "authorize_employment", AsyncMock())
     monkeypatch.setattr(router, "resolve_policy", AsyncMock(return_value=policy))
     monkeypatch.setattr(router, "events_for_day", events_for_day)
+    monkeypatch.setattr("hrms.modules.time.service.events_for_day", events_for_day)
     session = SimpleNamespace(execute=AsyncMock(return_value=SimpleNamespace(
         scalars=lambda: SimpleNamespace(first=lambda: None),
     )))
