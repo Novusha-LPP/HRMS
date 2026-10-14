@@ -131,13 +131,14 @@ function EmployeeProfile() {
   // Same key as KycSection, so switching tabs reuses the cached record.
   const kyc = useQuery({ queryKey: ["my-kyc"], queryFn: () => kycApi.getMyKyc() });
   const [form, setForm] = useState<FormState | null>(null);
+  const [editingVersion, setEditingVersion] = useState<number>();
   // Fields a connected app (e.g. the company's ERP) manages: shown read-only here.
   const control = useFieldControl(user?.employmentId);
   const lockOf = (field: string) => control.data?.find((f) => f.field === field && f.locked);
 
   const update = useMutation({
     mutationFn: (body: Parameters<typeof peopleApi.updateMyProfile>[0]) =>
-      peopleApi.updateMyProfile({ ...body, version: profile.data?.version }),
+      peopleApi.updateMyProfile({ ...body, version: editingVersion }),
     onSuccess: (p) => {
       qc.setQueryData(["my-profile"], p);
       setForm(null);
@@ -289,7 +290,7 @@ function EmployeeProfile() {
             description="How you’d like to be addressed and how we can reach you"
             editing={editing}
             canEdit={true}
-            onEdit={() => setForm(toForm(p))}
+            onEdit={() => { setEditingVersion(p.version); setForm(toForm(p)); }}
             onCancel={() => setForm(null)}
             onSubmit={save}
             saving={update.isPending}
