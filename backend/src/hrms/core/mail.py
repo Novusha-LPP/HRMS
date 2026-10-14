@@ -52,14 +52,14 @@ async def deliver_pending() -> bool:
         return True
     failed = False
     # Bounded batch; SKIP LOCKED permits multiple workers without duplicate concurrent sends.
-    async with database.AsyncSessionLocal() as session, session.begin():
+    async with database.PlatformSessionLocal() as session, session.begin():
         await session.execute(
             text("""UPDATE platform_password_reset_tokens
             SET delivery_payload=NULL WHERE delivery_payload IS NOT NULL
             AND (used_at IS NOT NULL OR expires_at <= now())""")
         )
     for _ in range(50):
-        async with database.AsyncSessionLocal() as session, session.begin():
+        async with database.PlatformSessionLocal() as session, session.begin():
             row = (
                 (
                     await session.execute(
@@ -98,7 +98,7 @@ async def deliver_pending() -> bool:
                     delivery_attempts=delivery_attempts+1 WHERE id=:id"""),
                     {"id": row["id"]},
                 )
-    async with database.AsyncSessionLocal() as session, session.begin():
+    async with database.PlatformSessionLocal() as session, session.begin():
         await session.execute(
             text("""INSERT INTO job_runs
             (id, job, status, started_at, finished_at, tenants_ok, tenants_failed)

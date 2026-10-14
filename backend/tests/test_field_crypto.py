@@ -63,6 +63,7 @@ DEPLOYED = dict(
     secret_key="x" * 40,
     database_url="postgresql+asyncpg://owner:strong@db/hrms",
     app_database_url="postgresql+asyncpg://hrms_app:strong@db/hrms",
+    platform_database_url="postgresql+asyncpg://hrms_platform:strong@db/hrms",
     metrics_token="scrape",
     cors_origins="https://hrms.example.com",
 )

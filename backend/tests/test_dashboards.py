@@ -300,10 +300,12 @@ async def test_team_overview_shows_only_the_callers_readable_line_reports(api):
     o_email, o_pw, _ = await make_user(client, outsider["id"])
     await _sql(
         engine,
-        """INSERT INTO assignment_managers
-               (tenant_id, id, assignment_id, manager_employment_id, manager_type, effective_from)
-           SELECT a.tenant_id, gen_random_uuid(), a.id, :mgr, 'LINE', DATE '2020-01-01'
-           FROM assignments a WHERE a.employment_id = :emp""",
+        # One line manager at a time (ex_assignment_managers_period): replace the current one.
+        """UPDATE assignment_managers am SET manager_employment_id = :mgr
+           FROM assignments a
+           WHERE a.tenant_id = am.tenant_id AND a.id = am.assignment_id
+             AND a.employment_id = :emp AND am.manager_type = 'LINE'
+             AND am.effective_to IS NULL""",
         mgr=to_uuid(outsider["id"]),
         emp=to_uuid(report["id"]),
     )

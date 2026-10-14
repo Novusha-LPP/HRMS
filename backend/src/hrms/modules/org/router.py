@@ -24,6 +24,7 @@ from hrms.core.datetime_utils import business_today, now_utc
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
+from hrms.core.versioning import require_version
 from hrms.modules.kernel.models import EntityChangeLog
 from hrms.modules.org.models import (
     CostCentre,
@@ -86,8 +87,9 @@ async def _resolve_changer_names(session, tenant_id: UUID, ids: set[UUID]) -> di
     rows = await session.execute(
         text("""
             SELECT ua.id,
+                   CASE WHEN ua.status = 'SYSTEM' THEN 'System' ELSE
                    COALESCE(p.legal_first_name || ' ' || p.legal_last_name, ua.email,
-                            ua.employee_code)
+                            ua.employee_code) END
             FROM user_accounts ua
             LEFT JOIN employments e ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
             LEFT JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
@@ -230,7 +232,8 @@ async def update_legal_entity(
             "Only a group-level administrator can edit a company",
         )
     entity = await _get_legal_entity(session, tenant_id, entity_id)
-    fields = body.model_dump(exclude_unset=True)
+    fields = body.model_dump(exclude_unset=True, exclude={"version"})
+    await require_version(session, entity, body.version)
     before = {k: getattr(entity, k) for k in fields}
     for k, v in fields.items():
         setattr(entity, k, v)
@@ -405,7 +408,8 @@ async def update_location(
     loc = await _get_location(session, tenant_id, location_id)
     if loc.legal_entity_id and not scope.covers_entity(loc.legal_entity_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this legal entity")
-    fields = body.model_dump(exclude_unset=True)
+    fields = body.model_dump(exclude_unset=True, exclude={"version"})
+    await require_version(session, loc, body.version)
     before = {k: getattr(loc, k) for k in fields}
     for k, v in fields.items():
         setattr(loc, k, v)
@@ -729,7 +733,7 @@ async def update_org_unit(
     unit = await _get_org_unit(session, tenant_id, unit_id)
     if unit.legal_entity_id and not scope.covers_entity(unit.legal_entity_id):
         raise HTTPException(status.HTTP_403_FORBIDDEN, "Not authorized for this legal entity")
-    fields = body.model_dump(exclude_unset=True)
+    fields = body.model_dump(exclude_unset=True, exclude={"version"})
     if unit.type == "DEPARTMENT_TEMPLATE":
         if not scope.is_all:
             raise HTTPException(403, "Only a group administrator can manage shared departments")
@@ -759,6 +763,7 @@ async def update_org_unit(
             session, tenant_id, fields.get("type", unit.type), unit.legal_entity_id, fields
         )
     )
+    await require_version(session, unit, body.version)
     before = {k: getattr(unit, k) for k in fields}
     for k, v in fields.items():
         setattr(unit, k, v)
@@ -950,7 +955,8 @@ async def update_job(
     session: SessionDep,
 ) -> JobResponse:
     job = await _get_job(session, tenant_id, job_id)
-    fields = body.model_dump(exclude_unset=True)
+    fields = body.model_dump(exclude_unset=True, exclude={"version"})
+    await require_version(session, job, body.version)
     before = {k: getattr(job, k) for k in fields}
     for k, v in fields.items():
         setattr(job, k, v)
@@ -1093,9 +1099,10 @@ async def update_grade(
     session: SessionDep,
 ) -> GradeResponse:
     grade = await _get_catalog_row(session, tenant_id, Grade, grade_id, "Grade")
-    fields = _set_fields(body.model_dump(exclude_unset=True))
+    fields = _set_fields(body.model_dump(exclude_unset=True, exclude={"version"}))
     if "code" in fields:
         await _ensure_unique_code(session, tenant_id, Grade, fields["code"], "grade", grade.id)
+    await require_version(session, grade, body.version)
     before = {k: getattr(grade, k) for k in fields}
     for k, v in fields.items():
         setattr(grade, k, v)
@@ -1189,11 +1196,12 @@ async def update_cost_centre(
     session: SessionDep,
 ) -> CostCentreResponse:
     centre = await _get_catalog_row(session, tenant_id, CostCentre, cost_centre_id, "Cost centre")
-    fields = _set_fields(body.model_dump(exclude_unset=True))
+    fields = _set_fields(body.model_dump(exclude_unset=True, exclude={"version"}))
     if "code" in fields:
         await _ensure_unique_code(
             session, tenant_id, CostCentre, fields["code"], "cost centre", centre.id
         )
+    await require_version(session, centre, body.version)
     before = {k: getattr(centre, k) for k in fields}
     for k, v in fields.items():
         setattr(centre, k, v)
@@ -1467,7 +1475,7 @@ async def update_position(
 ) -> PositionResponse:
     position = await _get_position(session, tenant_id, scope, position_id)
     fields = _set_fields(
-        body.model_dump(exclude_unset=True),
+        body.model_dump(exclude_unset=True, exclude={"version"}),
         nullable=frozenset({"code", "job_id", "grade_id", "max_headcount", "effective_to"}),
     )
     if "code" in fields:
@@ -1482,6 +1490,7 @@ async def update_position(
     if end is not None and end <= position.effective_from:
         raise HTTPException(422, "The end date must be after the start date")
     labels = [_POSITION_FIELD_LABEL.get(k, k) for k in fields]
+    await require_version(session, position, body.version)
     before = _position_history_values(await _position_row(session, tenant_id, position.id), labels)
     for k, v in fields.items():
         setattr(position, k, v)
@@ -1638,7 +1647,8 @@ async def update_employee_id_scheme(
             status.HTTP_403_FORBIDDEN,
             "Only a group-level administrator can change the tenant-wide employee ID scheme",
         )
-    for k, v in body.model_dump(exclude_unset=True).items():
+    await require_version(session, scheme, body.version)
+    for k, v in body.model_dump(exclude_unset=True, exclude={"version"}).items():
         setattr(scheme, k, v)
     session.add(scheme)
     await session.flush()
@@ -1673,6 +1683,7 @@ async def delete_employee_id_scheme(
 
 def _eis_response(s: EmployeeIdScheme, legal_entity_name: str | None) -> EmployeeIdSchemeResponse:
     return EmployeeIdSchemeResponse(
+        version=s.version,
         id=to_typed_id("employee_id_scheme", s.id),
         legal_entity_id=to_typed_id("legal_entity", s.legal_entity_id)
         if s.legal_entity_id

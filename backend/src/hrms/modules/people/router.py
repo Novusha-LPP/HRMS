@@ -41,6 +41,7 @@ from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.metrics import SCHEDULED_ACTIONS
 from hrms.core.tenancy import TenantDep
+from hrms.core.versioning import require_version
 from hrms.modules.integrations import hooks as integration_hooks
 from hrms.modules.integrations.ownership import (
     ASSIGNMENT_FIELDS,
@@ -490,7 +491,8 @@ async def update_my_profile(
     if not person:
         raise HTTPException(status.HTTP_404_NOT_FOUND, "Profile not found")
 
-    fields = body.model_dump(exclude_unset=True)
+    await require_version(session, person, body.version)
+    fields = body.model_dump(exclude_unset=True, exclude={"version"})
     # Only what actually changes: the profile form sends every field, edited or not.
     current_mobile = (
         await session.execute(

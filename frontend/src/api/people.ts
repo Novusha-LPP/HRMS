@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, type Versioned } from "./client";
 
 export interface Employment {
   id: string;
@@ -139,7 +139,7 @@ export const peopleApi = {
     gender?: string | null;
     nationality?: string | null;
     mobile?: string | null;
-  }) => api.patch<MyProfile>("/v1/persons/me", body),
+  } & Versioned) => api.patch<MyProfile>("/v1/persons/me", body),
 };
 
 export const personnelActionsApi = {

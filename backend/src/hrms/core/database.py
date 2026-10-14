@@ -54,6 +54,24 @@ AsyncSessionLocal = async_sessionmaker(
     autoflush=False,
 )
 
+# The platform console's own login (hrms_platform): the only role that can reach the platform
+# tables. Small pool: a handful of operators, not tenant traffic.
+platform_engine = create_async_engine(
+    settings.platform_database_url or settings.database_url,
+    pool_size=2,
+    max_overflow=4,
+    pool_pre_ping=True,
+    pool_timeout=settings.database_pool_timeout_seconds,
+    echo=settings.debug,
+    future=True,
+)
+PlatformSessionLocal = async_sessionmaker(
+    platform_engine,
+    class_=AsyncSession,
+    expire_on_commit=False,
+    autoflush=False,
+)
+
 
 async def get_session(
     request: Request, tenant_id: TenantDep, principal: CurrentUser
@@ -68,9 +86,13 @@ async def get_session(
     FastAPI resolves this function's own sub-dependencies for us.
     """
     async with AsyncSessionLocal() as session:
+        # app.actor_id: who the change-history triggers (migration 0062) record as the actor.
         await session.execute(
-            text("SELECT set_config('app.tenant_id', :tid, true)"),
-            {"tid": str(tenant_id)},
+            text(
+                "SELECT set_config('app.tenant_id', :tid, true), "
+                "set_config('app.actor_id', :uid, true)"
+            ),
+            {"tid": str(tenant_id), "uid": str(principal.user_account_id)},
         )
         # Everything "may this token still act?" needs, in one round trip:
         # - Suspension/archival is checked here too, not just at login — a platform admin
@@ -291,6 +313,22 @@ async def get_anonymous_session() -> AsyncGenerator[AsyncSession, None]:
 
 
 AnonymousSessionDep = Annotated[AsyncSession, Depends(get_anonymous_session, scope="function")]
+
+
+async def get_platform_session() -> AsyncGenerator[AsyncSession, None]:
+    """For the platform console's routes: the hrms_platform login (migration 0061)."""
+    async with PlatformSessionLocal() as session:
+        try:
+            yield session
+            await session.commit()
+            await _finish_files(session, committed=True)
+        except Exception:
+            await session.rollback()
+            await _finish_files(session, committed=False)
+            raise
+
+
+PlatformSessionDep = Annotated[AsyncSession, Depends(get_platform_session, scope="function")]
 
 
 async def _finish_files(session, committed):

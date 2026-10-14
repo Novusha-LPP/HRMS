@@ -7,6 +7,7 @@ from pydantic import BaseModel, Field, field_validator, model_validator
 
 EmploymentType = Literal["FULL_TIME", "PART_TIME", "CONTRACT", "INTERN", "CONSULTANT"]
 WorkMode = Literal["ONSITE", "HYBRID", "REMOTE"]
+ApprovalMode = Literal["FLOW", "HR", "AUTO"]
 Priority = Literal["LOW", "MEDIUM", "HIGH", "CRITICAL"]
 Reason = Literal["NEW_ROLE", "REPLACEMENT", "EXPANSION"]
 StageCategory = Literal["ACTIVE", "HIRED", "REJECTED", "WITHDRAWN"]

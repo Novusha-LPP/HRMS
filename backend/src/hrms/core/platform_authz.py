@@ -12,7 +12,7 @@ modules/kernel/auth/router.login().
 
 This lives in its own module (not core/authn.py) to avoid a circular import:
 core/database.py -> core/tenancy.py -> core/authn.py, so authn.py can't
-import database.py's AnonymousSessionDep without a cycle.
+import database.py's PlatformSessionDep without a cycle.
 """
 
 from dataclasses import dataclass
@@ -24,7 +24,7 @@ from sqlalchemy import text
 
 from hrms.core.authn import CurrentPlatformAdmin
 from hrms.core.config import settings
-from hrms.core.database import AnonymousSessionDep
+from hrms.core.database import PlatformSessionDep
 from hrms.core.errors import CodedHTTPException
 from hrms.core.mfa import EXEMPT_PATHS
 
@@ -41,7 +41,7 @@ class PlatformAdminContext:
 async def get_platform_admin_context(
     principal: CurrentPlatformAdmin,
     request: Request,
-    session: AnonymousSessionDep,
+    session: PlatformSessionDep,
 ) -> PlatformAdminContext:
     row = (
         (

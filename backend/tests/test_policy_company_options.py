@@ -32,7 +32,9 @@ async def test_remove_preserves_row_and_protects_system_type(comp_off, archived,
     )
     result = MagicMock()
     result.scalars.return_value.first.return_value = lt
-    session = MagicMock(execute=AsyncMock(return_value=result), flush=AsyncMock())
+    session = MagicMock(
+        execute=AsyncMock(return_value=result), flush=AsyncMock(), refresh=AsyncMock()
+    )
     if expected:
         with pytest.raises(HTTPException) as error:
             await remove_leave_type(to_typed_id("leave_type", lt.id), tid, session)
@@ -98,7 +100,9 @@ async def test_restore_reuses_existing_type_and_rejects_second_restore():
     )
     result = MagicMock()
     result.scalars.return_value.first.return_value = lt
-    session = MagicMock(execute=AsyncMock(return_value=result), flush=AsyncMock())
+    session = MagicMock(
+        execute=AsyncMock(return_value=result), flush=AsyncMock(), refresh=AsyncMock()
+    )
     identifier = to_typed_id("leave_type", lt.id)
     restored = await restore_leave_type(identifier, tid, session)
     assert restored.id == identifier
@@ -117,7 +121,9 @@ async def test_edit_updates_details_but_requires_restore_for_archived_type():
     lt = LeaveType(tenant_id=tid, id=uuid4(), name="Casual", code="CL")
     result = MagicMock()
     result.scalars.return_value.first.return_value = lt
-    session = MagicMock(execute=AsyncMock(return_value=result), flush=AsyncMock())
+    session = MagicMock(
+        execute=AsyncMock(return_value=result), flush=AsyncMock(), refresh=AsyncMock()
+    )
     identifier = to_typed_id("leave_type", lt.id)
     body = LeaveTypeUpdate(name="Annual", code="AL", days_per_year=18, is_paid=False)
     edited = await update_leave_type(identifier, body, tid, session)

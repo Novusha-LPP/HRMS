@@ -105,7 +105,7 @@ def _user_select(*, role_join: str = "JOIN", extra_where: str = "") -> str:
     {role_join} roles r ON r.tenant_id = ra.tenant_id AND r.id = ra.role_id
     LEFT JOIN employments e ON e.tenant_id = ua.tenant_id AND e.id = ua.employment_id
     LEFT JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
-    WHERE ua.tenant_id = CAST(:tid AS uuid) {extra_where}
+    WHERE ua.tenant_id = CAST(:tid AS uuid) AND ua.status <> 'SYSTEM' {extra_where}
     ORDER BY ua.email, r.name, ua.id, ra.id
 """
 
@@ -269,6 +269,20 @@ async def create_user(
     ).first()
     if existing:
         raise HTTPException(status.HTTP_400_BAD_REQUEST, "A user with this email already exists")
+    if employment_uuid is not None:
+        # uq_user_accounts_employment enforces this; checking first gives the usual answer
+        # without a failed insert (the constraint still catches two simultaneous requests).
+        has_login = (
+            await session.execute(
+                text(
+                    "SELECT 1 FROM user_accounts WHERE tenant_id = CAST(:tid AS uuid) "
+                    "AND employment_id = CAST(:eid AS uuid)"
+                ),
+                {"tid": str(tenant_id), "eid": str(employment_uuid)},
+            )
+        ).first()
+        if has_login:
+            raise HTTPException(status.HTTP_409_CONFLICT, "This employee already has a login")
 
     account_id = uuid4()
     account = UserAccount(

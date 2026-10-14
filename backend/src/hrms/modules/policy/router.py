@@ -31,6 +31,7 @@ from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import compute_standard_minutes, now_utc
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.tenancy import TenantDep
+from hrms.core.versioning import require_version
 from hrms.modules.org.models import LegalEntity, OrgUnit
 from hrms.modules.policy.engine import resolve_policy
 from hrms.modules.policy.models import EmployeePolicyAssignment, PolicyTemplate
@@ -117,7 +118,8 @@ async def update_template(
     tpl = await _get_tpl(session, tenant_id, template_id)
     if body.is_default is True:
         await _clear_default(session, tenant_id)
-    for k, v in body.model_dump(exclude_unset=True).items():
+    await require_version(session, tpl, body.version)
+    for k, v in body.model_dump(exclude_unset=True, exclude={"version"}).items():
         setattr(tpl, k, v)
     session.add(tpl)
     await session.flush()
@@ -375,6 +377,7 @@ async def get_effective_policy(
 def _tpl_response(t: PolicyTemplate) -> PolicyTemplateResponse:
     std = compute_standard_minutes(t.expected_start_time, t.expected_end_time, t.break_minutes)
     return PolicyTemplateResponse(
+        version=t.version,
         id=to_typed_id("policy_template", t.id),
         name=t.name,
         description=t.description,
