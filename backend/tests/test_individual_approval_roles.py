@@ -345,6 +345,45 @@ async def test_reusable_workflow_ownership(case):
         await service.authorize_flow(SimpleNamespace(), uuid4(), scope, flow)
 
 
+@pytest.mark.parametrize("tenant_wide_admin", [True, False])
+@pytest.mark.parametrize("flow_company", ["global", "same", "other"])
+async def test_reusable_workflow_administration_respects_company_scope(
+    tenant_wide_admin, flow_company
+):
+    from hrms.core.authz import Scope, merge_scopes
+
+    own, company, other_company = uuid4(), uuid4(), uuid4()
+    admin_scope = Scope(
+        is_all=tenant_wide_admin,
+        legal_entity_ids=frozenset({company}),
+        employment_ids=None,
+        permissions=frozenset({"approvals.manage", "approvals.admin"}),
+        own_employment_id=own,
+        role_names=frozenset({"HR_MANAGER"}),
+    )
+    # A second role's tenant-wide visibility must not broaden approval administration.
+    visibility_scope = Scope(
+        is_all=True,
+        legal_entity_ids=frozenset(),
+        employment_ids=None,
+        permissions=frozenset({"people.read"}),
+        own_employment_id=own,
+        role_names=frozenset({"ACCOUNTANT"}),
+    )
+    scope = merge_scopes([admin_scope, visibility_scope], own)
+    flow = SimpleNamespace(
+        reusable=True,
+        owner_employment_id=uuid4(),
+        legal_entity_id={"global": None, "same": company, "other": other_company}[flow_company],
+    )
+    if tenant_wide_admin or flow_company == "same":
+        await service.authorize_flow(SimpleNamespace(), uuid4(), scope, flow)
+    else:
+        with pytest.raises(HTTPException) as error:
+            await service.authorize_flow(SimpleNamespace(), uuid4(), scope, flow)
+        assert error.value.status_code == 403
+
+
 async def test_employee_selection_rejects_stale_version(monkeypatch):
     from hrms.modules.approvals import router
     from hrms.modules.approvals.schemas import EmployeeFlowWrite

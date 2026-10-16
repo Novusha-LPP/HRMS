@@ -95,11 +95,7 @@ async def authorize_flow(session, tenant_id, scope, flow):
     if getattr(flow, "reusable", False):
         if scope.has("approvals.admin"):
             admin = scope.for_permission("approvals.admin")
-            if (
-                admin.is_all
-                or flow.legal_entity_id is None
-                or (flow.legal_entity_id and admin.covers_entity(flow.legal_entity_id))
-            ):
+            if admin.is_all or (flow.legal_entity_id and admin.covers_entity(flow.legal_entity_id)):
                 return
         if flow.owner_employment_id and flow.owner_employment_id == scope.own_employment_id:
             return
