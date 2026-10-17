@@ -321,6 +321,8 @@ Inside the `testing` environment, click **Add environment variable**:
 | `RDS_OWNER_USERNAME` | `Hrms` | (Optional) Master username |
 | `HRMS_WEB_API_URL` | `https://hrmsapi.alvision.in` | (Optional) Public API origin |
 | `HRMS_CORS_ORIGINS` | `https://testinghrms.alvision.in` | (Optional) Public Frontend origin |
+| `HRMS_DOCUMENT_S3_BUCKET` | *(from CloudFormation output)* | S3 bucket for uploaded employee & recruitment documents |
+| `HRMS_DOCUMENT_S3_REGION` | `ap-south-1` | AWS region where the document bucket resides |
 
 ### 4. Enable Deployment Workflow
 In GitHub repository settings:
@@ -331,7 +333,55 @@ In GitHub repository settings:
 
 ---
 
-## 6. Phase 5: Triggering and Monitoring Deployments
+## 6. Amazon S3 Document Storage & User Data Isolation
+
+The HRMS application stores all uploaded binary documents (KYC identity documents and recruitment candidate resumes) in Amazon S3 when `HRMS_DOCUMENT_STORAGE=s3` is configured.
+
+### 1. How User Data is Isolated and Structured in S3
+
+Files in S3 are organized with strict tenant and user/candidate path partitioning:
+
+```text
+s3://<DocumentBucket>/
+├── kyc/
+│   └── <tenant_id>/
+│       └── <doc_id>_<clean_file_name>       # Employee KYC proof (Aadhaar, PAN, Passport)
+└── recruitment/
+    └── <tenant_id>/
+        └── <candidate_id>/
+            └── <uuid>_<clean_file_name>     # Candidate resume / CV
+```
+
+The database (PostgreSQL RDS) does **not** store binary files. It only stores an opaque reference `doc:<storage_key>` in the `storage_path` column of the `employee_kyc_documents` or `candidates` table.
+
+### 2. Multi-Layered Security & User Isolation Guarantees
+
+| Security Layer | Implementation Mechanism | User Privacy Guarantee |
+|---|---|---|
+| **1. Application AEAD Pre-Encryption** | Client-side AES-256-GCM encryption ([core/document_store.py](file:///home/aiserver/HRMS/backend/src/hrms/core/document_store.py)) using `HRMS_FIELD_ENCRYPTION_KEYS`. | Every file is encrypted **before** transmission to S3. The exact storage path (`kyc/{tenant_id}/{doc_id}_{filename}`) is passed as Associated Authenticated Data (AAD). If a blob is copied or swapped between users/tenants in S3, **AEAD authentication fails and the file will not decrypt**. |
+| **2. AWS S3 Server-Side Encryption (SSE)** | `ServerSideEncryption="AES256"` (SSE-S3) on every `put_object`. | The S3 bucket never holds a plaintext byte at rest. |
+| **3. Private, Non-Public Bucket** | `BlockPublicAcls`, `BlockPublicPolicy`, `IgnorePublicAcls`, `RestrictPublicBuckets` enabled in [deploy/aws/bootstrap.yml](file:///home/aiserver/HRMS/deploy/aws/bootstrap.yml). | No direct public access or presigned URLs are exposed to the internet. |
+| **4. In-Transit Transport Security** | S3 Bucket Policy explicitly denies any non-TLS (`aws:SecureTransport: "false"`) requests. | All uploads and downloads are encrypted via TLS 1.3 / 1.2 in transit. |
+| **5. Database Row-Level Security (RLS)** | PostgreSQL `FORCE ROW LEVEL SECURITY` on document tables. | Tenant isolation is enforced at the database kernel level; one tenant's queries can never query another tenant's document records. |
+| **6. User Ownership & Scope Authorization** | KYC documents: employees can only view their own uploads (`user.employment_id == doc.employment_id`). Admins/HR require `kyc.verify` or `kyc.write` scope. Recruitment resumes: scoped to authorized hiring managers/recruiters. | Standard users cannot download or view documents belonging to another employee. |
+| **7. Access Audit Logging** | Every view or download of KYC documents triggers an immutable audit log (`_log_access`) in PostgreSQL recording who viewed the document, timestamp, and IP. | Complete compliance traceability for sensitive identity documents. |
+
+### 3. Enabling S3 Storage on EC2
+
+To enable S3 document storage:
+1. Ensure the `DocumentBucket` is provisioned using [deploy/aws/bootstrap.yml](file:///home/aiserver/HRMS/deploy/aws/bootstrap.yml) and the EC2 `InstanceProfile` is attached.
+2. Ensure Docker containers on EC2 can reach the instance metadata service by setting the IMDSv2 hop limit to 2:
+   ```bash
+   aws ec2 modify-instance-metadata-options \
+     --instance-id i-0d7abe00772ca6669 \
+     --http-put-response-hop-limit 2 \
+     --http-tokens required
+   ```
+3. Set `HRMS_DOCUMENT_S3_BUCKET` to your bucket name in GitHub Environment Variables (`testing`). The deployment pipeline automatically sets `HRMS_DOCUMENT_STORAGE=s3`, `HRMS_DOCUMENT_S3_BUCKET`, and `HRMS_DOCUMENT_S3_REGION`.
+
+---
+
+## 7. Phase 5: Triggering and Monitoring Deployments
 
 ### 1. Trigger the Deployment
 
@@ -361,7 +411,7 @@ You can also manually trigger a run from GitHub Actions:
 
 ---
 
-## 7. Phase 6: Post-Deployment Verification & Rollback
+## 8. Phase 6: Post-Deployment Verification & Rollback
 
 ### 1. Verify Deployment on the EC2 Host
 
@@ -408,7 +458,7 @@ sudo bash /opt/hrms/testing/releases/<PREVIOUS_RELEASE_DIR>/deploy.sh \
 
 ---
 
-## 8. Troubleshooting Guide
+## 9. Troubleshooting Guide
 
 | Issue | Cause | Resolution |
 |---|---|---|

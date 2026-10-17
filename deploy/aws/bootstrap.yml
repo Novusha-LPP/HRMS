@@ -70,6 +70,32 @@ Resources:
             Action: s3:*
             Resource: [!GetAtt ArtifactBucket.Arn, !Sub '${ArtifactBucket.Arn}/*']
             Condition: {Bool: {'aws:SecureTransport': 'false'}}
+  DocumentBucket:
+    Type: AWS::S3::Bucket
+    DeletionPolicy: Retain
+    UpdateReplacePolicy: Retain
+    Properties:
+      BucketEncryption:
+        ServerSideEncryptionConfiguration:
+          - ServerSideEncryptionByDefault: {SSEAlgorithm: AES256}
+      VersioningConfiguration: {Status: Enabled}
+      PublicAccessBlockConfiguration:
+        BlockPublicAcls: true
+        BlockPublicPolicy: true
+        IgnorePublicAcls: true
+        RestrictPublicBuckets: true
+  DocumentBucketPolicy:
+    Type: AWS::S3::BucketPolicy
+    Properties:
+      Bucket: !Ref DocumentBucket
+      PolicyDocument:
+        Version: '2012-10-17'
+        Statement:
+          - Effect: Deny
+            Principal: '*'
+            Action: s3:*
+            Resource: [!GetAtt DocumentBucket.Arn, !Sub '${DocumentBucket.Arn}/*']
+            Condition: {Bool: {'aws:SecureTransport': 'false'}}
   GitHubDeployRole:
     Type: AWS::IAM::Role
     Properties:
@@ -141,6 +167,12 @@ Resources:
               - Effect: Allow
                 Action: s3:GetObject
                 Resource: !Sub '${ArtifactBucket.Arn}/testing/releases/*'
+              - Effect: Allow
+                Action:
+                  - s3:PutObject
+                  - s3:GetObject
+                  - s3:DeleteObject
+                Resource: !Sub '${DocumentBucket.Arn}/*'
   InstanceProfile:
     Type: AWS::IAM::InstanceProfile
     Properties:
@@ -150,6 +182,8 @@ Outputs:
     Value: !GetAtt GitHubDeployRole.Arn
   ArtifactBucketName:
     Value: !Ref ArtifactBucket
+  DocumentBucketName:
+    Value: !Ref DocumentBucket
   ApiRepositoryName:
     Value: !Ref ApiRepository
   WebRepositoryName:

@@ -47,6 +47,16 @@ class ConfigurationTests(unittest.TestCase):
     def test_valid_configuration(self):
         validate.validate_settings(*config())
 
+    def test_s3_document_storage_configuration(self):
+        runtime, migrate, deploy = config()
+        runtime["HRMS_DOCUMENT_STORAGE"] = "s3"
+        runtime["HRMS_DOCUMENT_S3_BUCKET"] = "hrms-testing-documents"
+        validate.validate_settings(runtime, migrate, deploy)
+
+        del runtime["HRMS_DOCUMENT_S3_BUCKET"]
+        with self.assertRaises(ValueError):
+            validate.validate_settings(runtime, migrate, deploy)
+
     def test_tls_and_admin_database_are_rejected(self):
         for old, new in (("verify-full", "require"), ("/hrms_testing?", "/postgres?")):
             with self.subTest(new=new):
