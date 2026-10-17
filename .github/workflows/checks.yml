@@ -1,5 +1,15 @@
 name: HRMS checks
-on: [push, pull_request, workflow_call]
+on:
+  push:
+    # The testing deployment calls this workflow before building images.
+    branches-ignore: [testing]
+  pull_request:
+  workflow_call:
+    inputs:
+      postgres_image:
+        description: PostgreSQL image for the isolated backend and browser databases
+        type: string
+        default: postgres:16-alpine
 permissions:
   contents: read
 jobs:
@@ -7,7 +17,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ${{ inputs.postgres_image || 'postgres:16-alpine' }}
         env:
           POSTGRES_USER: hrms
           POSTGRES_PASSWORD: test-password
@@ -74,7 +84,7 @@ jobs:
     runs-on: ubuntu-latest
     services:
       postgres:
-        image: postgres:16-alpine
+        image: ${{ inputs.postgres_image || 'postgres:16-alpine' }}
         env:
           POSTGRES_USER: hrms
           POSTGRES_PASSWORD: test-password
