@@ -8,6 +8,7 @@ import type { AppKind, ConnectedApp } from "../api/integrations";
 import { useAuth } from "../context/AuthContext";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
+import { UsageHelpButton } from "../components/ui/UsageHelpButton";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
 import { ConfirmDialog, Sheet } from "../components/ui/Overlay";
 import { useToast, errorMessage } from "../components/ui/Toast";
@@ -153,12 +154,12 @@ function AppDetail({ app, tab, onTab }: { app: ConnectedApp; tab: AppTab; onTab:
         value={tab}
         onChange={onTab}
         items={[
-          { value: "overview", label: "Overview" },
-          { value: "keys", label: "Keys" },
-          { value: "settings", label: "Settings" },
-          ...(two ? [{ value: "mappings" as AppTab, label: "Mappings" }] : []),
-          { value: "log", label: "Sync log" },
-          ...(two ? [{ value: "review" as AppTab, label: "Needs review", count: review.data || undefined }] : []),
+          { value: "overview", label: "Overview", help: <UsageHelpButton topic="integrations-overview" iconOnly /> },
+          { value: "keys", label: "Keys", help: <UsageHelpButton topic="integrations-keys" iconOnly /> },
+          { value: "settings", label: "Settings", help: <UsageHelpButton topic="integrations-settings" iconOnly /> },
+          ...(two ? [{ value: "mappings" as AppTab, label: "Mappings", help: <UsageHelpButton topic="integrations-mappings" iconOnly /> }] : []),
+          { value: "log", label: "Sync log", help: <UsageHelpButton topic="integrations-log" iconOnly /> },
+          ...(two ? [{ value: "review" as AppTab, label: "Needs review", count: review.data || undefined, help: <UsageHelpButton topic="integrations-review" iconOnly /> }] : []),
         ]}
       />
       {tab === "overview" && <OverviewTab app={app} />}

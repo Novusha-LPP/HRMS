@@ -147,7 +147,15 @@ export interface RegisterEmployee {
   employment_id: string;
   employee_number: string;
   name: string;
+  legal_entity_id: string;
+  company: string;
+  department_id?: string | null;
   department?: string | null;
+}
+
+export interface RegisterFilters {
+  companies: { id: string; name: string }[];
+  departments: { id: string; name: string; legal_entity_id: string }[];
 }
 
 export type RegisterPunchType = "IN" | "OUT" | "BREAK_START" | "BREAK_END";
@@ -269,8 +277,21 @@ export const timeApi = {
   },
   reviewOvertime: (attendanceDayId: string, status: "APPROVED" | "REJECTED", notes?: string) =>
     api.patch<AttendanceDay>(`/v1/time/overtime/${attendanceDayId}`, { status, notes }),
-  findEmployees: (search: string) =>
-    api.get<RegisterEmployee[]>(`/v1/time/register/employees?search=${encodeURIComponent(search)}`),
+  registerFilters: () => api.get<RegisterFilters>("/v1/time/register/filters"),
+  findEmployees: async (search: string, company?: string, department?: string) => {
+    const pageSize = 100;
+    const query = new URLSearchParams({ search, limit: String(pageSize) });
+    if (company) query.set("legal_entity_id", company);
+    if (department) query.set("department_id", department);
+    const people: RegisterEmployee[] = [];
+    // Load every page so the picker includes everyone in the selected scope.
+    for (let offset = 0; ; offset += pageSize) {
+      query.set("offset", String(offset));
+      const page = await api.get<RegisterEmployee[]>(`/v1/time/register/employees?${query}`);
+      people.push(...page);
+      if (page.length < pageSize) return people;
+    }
+  },
   register: (employmentId: string, from: string, to: string) =>
     api.get<RegisterResponse>(`/v1/time/register/${employmentId}?from_date=${from}&to_date=${to}`),
   /** HR direct correction: the day's complete punch list (empty = absent), applied at once. */

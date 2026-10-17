@@ -116,7 +116,7 @@ valid, and dashboard layout is still independent of the palette.
   exceptions occurred. No shared database was used.
 
 Forty screenshots, the contrast reports, and `verification.json` are saved in
-`/home/aiserver/.codex/visualizations/2026/10/09/01a11f08-6c67-7201-ac96-706da48eff33/midnight-blue/`.
+`docs/visualizations/midnight-blue/`.
 Start with `midnight-blue-light-widgets.png` and `midnight-blue-dark-widgets.png`.
 
 ## Assumptions and review
@@ -152,5 +152,5 @@ desktop breakpoint cleanup.
 
 Before/after screenshots, contrast reports, logs, and verification summaries are
 saved under
-`/home/aiserver/.codex/visualizations/2026/10/09/01a11f08-6c67-7201-ac96-706da48eff33/midnight-blue-optimized/`.
+`docs/visualizations/midnight-blue-optimized/`.
 All API data is synthetic; business-data writes are rejected by the fixtures.

@@ -1,6 +1,6 @@
 import { useRef, useState } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
-import { Play, Trash2, FileBarChart, Plus, MoreHorizontal } from "lucide-react";
+import { Download, Play, Trash2, FileBarChart, Plus, MoreHorizontal } from "lucide-react";
 import { reportsApi } from "../api/reports";
 import type { ReportDef, RunResult, FilterSpec } from "../api/reports";
 import { ReportBuilder, MODULES, FilterRow } from "../components/reports/ReportBuilder";
@@ -64,7 +64,7 @@ export function ReportsPage() {
   const [deleting, setDeleting] = useState<ReportDef | null>(null);
   const [configuring, setConfiguring] = useState<ReportDef | null>(null);
   const [runFilters, setRunFilters] = useState<FilterSpec[]>([]);
-  const { data: runMeta } = useQuery({
+  const { data: runMeta, isPending: isRunMetaPending } = useQuery({
     queryKey: ["report-meta", configuring?.module],
     queryFn: () => reportsApi.meta(configuring!.module),
     enabled: !!configuring,
@@ -99,6 +99,11 @@ export function ReportsPage() {
       setDeleting(null);
     },
     onError: (e) => toast.error("Couldn’t delete report", errorMessage(e)),
+  });
+
+  const exportMut = useMutation({
+    mutationFn: ({ id, filters }: { id: string; filters: FilterSpec[] }) => reportsApi.exportAttendance(id, filters),
+    onError: (e) => toast.error("Couldn’t export Excel", errorMessage(e)),
   });
 
   return (
@@ -152,12 +157,18 @@ export function ReportsPage() {
               {runFilters.map((filter, index) => <FilterRow key={index} filter={filter} meta={runMeta?.filters ?? []}
                 onChange={(updated) => setRunFilters((fs) => fs.map((f, i) => i === index ? updated : f))}
                 onRemove={() => setRunFilters((fs) => fs.filter((_, i) => i !== index))} />)}
-              <div className="flex gap-2">
+              <div className="flex flex-wrap gap-2">
                 <button className="btn-secondary btn-sm" disabled={!runMeta?.filters.length || runningId !== null}
                   onClick={() => setRunFilters((fs) => [...fs, { field: "", op: "eq", value: "" }])}><Plus size={13} /> Add filter</button>
                 <button className="btn-primary btn-sm" disabled={!runMeta || runningId !== null}
                   onClick={() => run(configuring, runFilters)}><Play size={13} /> {runningId ? "Running…" : "Run report"}</button>
+                {configuring.module === "ATTENDANCE" && <button className="btn-secondary btn-sm"
+                  disabled={!runMeta || isRunMetaPending || exportMut.isPending || runningId !== null}
+                  onClick={() => exportMut.mutate({ id: configuring.id, filters: runFilters.filter((filter) => filter.field) })}>
+                  <Download size={13} /> {exportMut.isPending && exportMut.variables.id === configuring.id ? "Exporting…" : "Export Excel"}
+                </button>}
               </div>
+              {configuring.module === "ATTENDANCE" && <p className="text-xs text-fg-subtle">Set both dates to export company summaries, leave balances and daily logs to Excel.</p>}
             </div>
           )}
           <div ref={resultRef} className="scroll-mt-6">{result && <ResultTable result={result} />}</div>

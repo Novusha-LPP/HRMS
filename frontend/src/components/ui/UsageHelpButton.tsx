@@ -4,13 +4,13 @@ import { Sheet } from "./Overlay";
 import { usageHelp } from "../../lib/usageHelp";
 import type { UsageHelpTopic } from "../../lib/usageHelp";
 
-export function UsageHelpButton({ topic }: { topic: UsageHelpTopic }) {
+export function UsageHelpButton({ topic, iconOnly = false }: { topic: UsageHelpTopic; iconOnly?: boolean }) {
   const [open, setOpen] = useState(false);
   const help = usageHelp[topic];
   return <>
-    <button type="button" className="btn-secondary btn-sm" title={help.title}
-      aria-label={`Help: ${help.title}`} aria-haspopup="dialog" onClick={() => setOpen(true)}>
-      <CircleHelp size={16} /> Help
+    <button type="button" className={iconOnly ? "btn-icon shrink-0" : "btn-secondary btn-sm"} title={help.title}
+      aria-label={`Help: ${help.title}`} aria-haspopup="dialog" aria-expanded={open} onClick={() => setOpen(true)}>
+      <CircleHelp size={16} aria-hidden="true" />{!iconOnly && " Help"}
     </button>
     <Sheet open={open} onClose={() => setOpen(false)} title={help.title} description={help.introduction}
       className="max-w-lg" footer={<button type="button" className="btn-primary" onClick={() => setOpen(false)}>Got it</button>}>

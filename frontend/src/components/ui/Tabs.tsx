@@ -1,11 +1,12 @@
 import { useEffect, useRef, useState } from "react";
-import type { ElementType } from "react";
+import type { ElementType, ReactNode } from "react";
 import { ChevronLeft, ChevronRight } from "lucide-react";
 
 export interface TabItem<T extends string> {
   value: T;
   label: string;
   count?: number;
+  help?: ReactNode;
 }
 
 const FADE = 32;
@@ -56,7 +57,7 @@ export function Tabs<T extends string>({ value, onChange, items, className = "" 
       >
         {items.map((it) => {
           const active = it.value === value;
-          return (
+          const button = (
             <button
               key={it.value}
               role="tab"
@@ -78,6 +79,13 @@ export function Tabs<T extends string>({ value, onChange, items, className = "" 
               )}
             </button>
           );
+          // Keep help separate from the tab button so opening it does not select a tab.
+          return it.help ? (
+            <div key={it.value} role="presentation" className="flex shrink-0 items-center gap-1">
+              {button}
+              {it.help}
+            </div>
+          ) : button;
         })}
       </div>
       {edges.left && (

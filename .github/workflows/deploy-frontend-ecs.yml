@@ -1,0 +1,213 @@
+name: Deploy frontend to ECS
+
+on:
+  workflow_call:
+    inputs:
+      environment:
+        description: testing or production
+        required: true
+        type: string
+      image_digest:
+        description: Digest of the released GHCR web image (sha256:...)
+        required: true
+        type: string
+  workflow_dispatch:
+    inputs:
+      environment:
+        description: Deployment environment
+        required: true
+        type: choice
+        options: [production, testing]
+      image_digest:
+        description: Released web image digest from the successful testing deployment summary
+        required: true
+        type: string
+
+# Serialize manual and release-triggered deployments to the same environment.
+concurrency:
+  group: frontend-ecs-${{ inputs.environment }}
+  cancel-in-progress: false
+
+permissions:
+  contents: read
+
+jobs:
+  deploy:
+    runs-on: ubuntu-latest
+    timeout-minutes: 30
+    environment: frontend-${{ inputs.environment }}
+    permissions:
+      contents: read
+      packages: read
+      id-token: write
+    env:
+      DEPLOY_ENVIRONMENT: ${{ inputs.environment }}
+      IMAGE_DIGEST: ${{ inputs.image_digest }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+      ECR_REPOSITORY: ${{ vars.ECR_REPOSITORY }}
+      ECS_CLUSTER: ${{ vars.ECS_CLUSTER }}
+      ECS_SERVICE: ${{ vars.ECS_SERVICE }}
+      ECS_CONTAINER_NAME: ${{ vars.ECS_CONTAINER_NAME || 'web' }}
+      AWS_PAGER: ""
+    steps:
+      - name: Validate deployment inputs
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ "$GITHUB_REF" != refs/heads/main ]]; then
+            echo "::error::Run frontend deployments from the main branch."
+            exit 1
+          fi
+          if [[ "$DEPLOY_ENVIRONMENT" != testing && "$DEPLOY_ENVIRONMENT" != production ]]; then
+            echo "::error::The environment must be testing or production."
+            exit 1
+          fi
+          if [[ ! "$IMAGE_DIGEST" =~ ^sha256:[a-f0-9]{64}$ ]]; then
+            echo "::error::Supply the immutable sha256 digest from the release/testing summary."
+            exit 1
+          fi
+          for variable in AWS_REGION AWS_ROLE_ARN ECR_REPOSITORY ECS_CLUSTER ECS_SERVICE; do
+            if [[ -z "${!variable}" ]]; then
+              echo "::error::Set $variable in the frontend-$DEPLOY_ENVIRONMENT GitHub environment."
+              exit 1
+            fi
+          done
+
+      - name: Configure AWS credentials using OIDC
+        uses: aws-actions/configure-aws-credentials@v6
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+
+      # Start from the service's exact active revision, preserving environment settings,
+      # roles, logging, sidecars and resource limits. Never choose "latest" by family.
+      - name: Check the frontend service and download its task definition
+        shell: bash
+        run: |
+          set -euo pipefail
+          aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" > service.json
+          if ! jq -e --arg container "$ECS_CONTAINER_NAME" '
+            (.failures | length) == 0 and (.services | length) == 1 and
+            (.services[0] | .status == "ACTIVE" and .desiredCount > 0 and
+              .deploymentController.type == "ECS" and
+              .deploymentConfiguration.deploymentCircuitBreaker.enable == true and
+              .deploymentConfiguration.deploymentCircuitBreaker.rollback == true and
+              (.loadBalancers | any(.containerName == $container and .containerPort == 8080)))
+          ' service.json > /dev/null; then
+            echo "::error::Use an active frontend service on port 8080 with ECS rolling deployments, desired count above zero, and circuit breaker rollback enabled."
+            exit 1
+          fi
+          task_definition=$(jq -r '.services[0].taskDefinition' service.json)
+          aws ecs describe-task-definition --task-definition "$task_definition" \
+            --query taskDefinition > task-definition.json
+          if ! jq -e --arg container "$ECS_CONTAINER_NAME" --arg environment "$DEPLOY_ENVIRONMENT" '
+            .networkMode == "awsvpc" and
+            (.requiresCompatibilities | index("FARGATE")) != null and
+            (.runtimePlatform.cpuArchitecture // "X86_64") == "X86_64" and
+            (.runtimePlatform.operatingSystemFamily // "LINUX") == "LINUX" and
+            ([.containerDefinitions[] | select(.name == $container)] | length) == 1 and
+            (.containerDefinitions[] | select(.name == $container) |
+              .essential != false and (.healthCheck.command | length) > 0 and
+              (.portMappings | any(.containerPort == 8080)) and
+              (.environment | any(.name == "HRMS_ENVIRONMENT" and .value == $environment)) and
+              (.environment | any(.name == "HRMS_WEB_API_URL" and
+                (.value | test("^https://[A-Za-z0-9.-]+(:[0-9]+)?$")))))
+          ' task-definition.json > /dev/null; then
+            echo "::error::The frontend needs a Linux/x86 Fargate task, container health check, port 8080, matching HRMS_ENVIRONMENT, and an HTTPS HRMS_WEB_API_URL origin without a path or trailing slash. See docs/FRONTEND_ECS_CICD.md."
+            exit 1
+          fi
+
+      - uses: docker/setup-buildx-action@v3
+      - name: Log in to the released image registry
+        uses: docker/login-action@v3
+        with:
+          registry: ghcr.io
+          username: ${{ github.actor }}
+          password: ${{ secrets.GITHUB_TOKEN }}
+      - name: Log in to Amazon ECR
+        id: ecr
+        uses: aws-actions/amazon-ecr-login@v2
+
+      # Copy every platform/attestation manifest without rebuilding or rewriting the
+      # digest. Reusing the tag also works with an immutable ECR repository.
+      - name: Copy the released frontend image to ECR
+        id: image
+        shell: bash
+        env:
+          ECR_REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          set -euo pipefail
+          source_image="ghcr.io/${GITHUB_REPOSITORY,,}/web@$IMAGE_DIGEST"
+          image_tag="digest-${IMAGE_DIGEST#sha256:}"
+          destination="$ECR_REGISTRY/$ECR_REPOSITORY"
+          if aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+            --image-ids "imageTag=$image_tag" > ecr-image.json 2> ecr-error.txt; then
+            echo "The released image is already in ECR."
+          else
+            if [[ "$(< ecr-error.txt)" != *ImageNotFoundException* ]]; then
+              cat ecr-error.txt >&2
+              exit 1
+            fi
+            docker buildx imagetools create --prefer-index=false \
+              --tag "$destination:$image_tag" "$source_image"
+            aws ecr describe-images --repository-name "$ECR_REPOSITORY" \
+              --image-ids "imageTag=$image_tag" > ecr-image.json
+          fi
+          copied_digest=$(jq -r '.imageDetails[0].imageDigest' ecr-image.json)
+          if [[ "$copied_digest" != "$IMAGE_DIGEST" ]]; then
+            echo "::error::The ECR image digest does not match the released image."
+            exit 1
+          fi
+          echo "image=$destination@$IMAGE_DIGEST" >> "$GITHUB_OUTPUT"
+
+      - name: Set the frontend image in the task definition
+        id: task
+        uses: aws-actions/amazon-ecs-render-task-definition@v1
+        with:
+          task-definition: task-definition.json
+          container-name: ${{ env.ECS_CONTAINER_NAME }}
+          image: ${{ steps.image.outputs.image }}
+
+      - name: Deploy and wait for healthy tasks
+        id: deploy
+        uses: aws-actions/amazon-ecs-deploy-task-definition@v2
+        with:
+          task-definition: ${{ steps.task.outputs.task-definition }}
+          cluster: ${{ env.ECS_CLUSTER }}
+          service: ${{ env.ECS_SERVICE }}
+          wait-for-service-stability: true
+          wait-max-delay-seconds: 15
+
+      # A rollback can make a service stable again. Report success only when the
+      # intended revision is the one actually running.
+      - name: Verify the deployed revision
+        shell: bash
+        env:
+          EXPECTED_TASK_DEFINITION: ${{ steps.deploy.outputs.task-definition-arn }}
+          DEPLOYED_IMAGE: ${{ steps.image.outputs.image }}
+        run: |
+          set -euo pipefail
+          aws ecs describe-services --cluster "$ECS_CLUSTER" --services "$ECS_SERVICE" > deployed-service.json
+          if ! jq -e --arg task "$EXPECTED_TASK_DEFINITION" '
+            (.failures | length) == 0 and (.services | length) == 1 and
+            (.services[0] | .taskDefinition == $task and .desiredCount > 0 and
+              .runningCount == .desiredCount and .pendingCount == 0 and
+              (.deployments | length) == 1 and
+              .deployments[0].taskDefinition == $task and
+              .deployments[0].rolloutState == "COMPLETED")
+          ' deployed-service.json > /dev/null; then
+            echo "::error::The expected frontend revision is not healthy and serving; inspect ECS deployment events for rollback or failure."
+            exit 1
+          fi
+          {
+            echo "### Frontend deployed to $DEPLOY_ENVIRONMENT"
+            echo ""
+            echo "- Image digest: \`$IMAGE_DIGEST\`"
+            echo "- ECR image: \`$DEPLOYED_IMAGE\`"
+            echo "- Task definition: \`$EXPECTED_TASK_DEFINITION\`"
+            echo ""
+            if [[ "$DEPLOY_ENVIRONMENT" == testing ]]; then
+              echo "After testing, run **Deploy frontend to ECS** on **main**, choose **production**, and enter this same image digest."
+            fi
+          } >> "$GITHUB_STEP_SUMMARY"

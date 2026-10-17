@@ -182,7 +182,26 @@ class RegisterEmployee(BaseModel):
     employment_id: str
     employee_number: str
     name: str
+    legal_entity_id: str
+    company: str
+    department_id: str | None = None
     department: str | None = None
+
+
+class RegisterCompany(BaseModel):
+    id: str
+    name: str
+
+
+class RegisterDepartment(BaseModel):
+    id: str
+    name: str
+    legal_entity_id: str
+
+
+class RegisterFilters(BaseModel):
+    companies: list[RegisterCompany]
+    departments: list[RegisterDepartment]
 
 
 class RegisterPunch(BaseModel):

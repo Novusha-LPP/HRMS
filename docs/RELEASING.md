@@ -26,9 +26,18 @@ Never edit these by hand. release-please bumps all of them in one pull request.
    - tags `vX.Y.Z` and creates the GitHub Release with its notes;
    - builds and pushes the API image `ghcr.io/novusha-lpp/hrms/api:X.Y.Z` (also tagged
      `sha-<commit>`), with the commit and build time baked in;
-   - builds the web app and attaches `hrms-frontend-X.Y.Z.tar.gz` to the release.
-4. Deploy that exact image tag and bundle. `/health` on the running API reports the version
-   and commit, so you can check what is live.
+   - builds and pushes `ghcr.io/novusha-lpp/hrms/web:X.Y.Z` (also tagged `sha-<commit>`),
+     with environment settings supplied at container startup;
+   - attaches `hrms-frontend-X.Y.Z.tar.gz` to the release for static hosting;
+   - automatically deploys the published frontend image to the testing ECS service when
+     repository variable `FRONTEND_ECS_ENABLED=true`.
+4. Verify testing, then promote that same frontend image digest to production by manually
+   running **Deploy frontend to ECS** from `main`. AWS/GitHub setup and promotion steps are
+   in [Frontend CI/CD on ECS Fargate](FRONTEND_ECS_CICD.md). The frontend workflow does not
+   deploy the API or run migrations; confirm backend compatibility before promotion.
+   For Compose deployments, deploy the exact released API and web image versions as
+   described in [Environments](ENVIRONMENTS.md). `/health` on the running API reports its
+   version and commit, so you can check what is live.
 
 ## Which number goes up
 

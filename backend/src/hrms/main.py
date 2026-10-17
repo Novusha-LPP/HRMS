@@ -91,7 +91,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     # Let the web app read these, so it can show "Reference: req_…" when something fails.
-    expose_headers=["X-Request-ID", "X-App-Version"],
+    expose_headers=["X-Request-ID", "X-App-Version", "Content-Disposition"],
 )
 
 if settings.query_metrics:

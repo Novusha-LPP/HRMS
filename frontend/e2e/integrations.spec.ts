@@ -44,6 +44,41 @@ test("the administrator connects the ERP, maps a value it sends and reads the sy
   await sheet.getByRole("button", { name: "Connect", exact: true }).click();
   await expect(page.getByText("App connected")).toBeVisible();
 
+  // Every tab's help opens independently, without selecting that tab or changing app data.
+  const helpTitles = [
+    "Understand the connection overview", "Create and manage integration keys",
+    "Configure integration settings", "Map the app's values to HRMS",
+    "Read and troubleshoot the sync log", "Resolve items that need review",
+  ];
+  await expect(page.getByRole("button", { name: /^Help:/ })).toHaveCount(6);
+  const keysUrl = page.url();
+  for (const title of helpTitles) {
+    const helpButton = page.getByRole("button", { name: `Help: ${title}`, exact: true });
+    await helpButton.click();
+    const help = page.getByRole("dialog", { name: title, exact: true });
+    await expect(help).toBeVisible();
+    expect(await help.getByRole("listitem").count()).toBeGreaterThanOrEqual(3);
+    if (title === "Configure integration settings") {
+      await expect(help.getByText(/App means the ERP or CRM manages the field/)).toBeVisible();
+      await expect(help.getByText(/Choose whether HR can change an app-owned field/)).toBeVisible();
+      if (shots) await page.screenshot({ path: `${shots}/int-help-settings.png`, animations: "disabled" });
+    }
+    await expect(page.getByRole("tab", { name: "Keys", exact: true })).toHaveAttribute("aria-selected", "true");
+    expect(page.url()).toBe(keysUrl);
+    await page.keyboard.press("Escape");
+    await expect(help).toHaveCount(0);
+    await expect(helpButton).toBeFocused();
+  }
+  await page.setViewportSize({ width: 390, height: 844 });
+  await page.getByRole("button", { name: "Help: Resolve items that need review", exact: true }).click();
+  const mobileHelp = page.getByRole("dialog", { name: "Resolve items that need review", exact: true });
+  await expect(mobileHelp).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  if (shots) await page.screenshot({ path: `${shots}/int-help-mobile.png`, animations: "disabled" });
+  await mobileHelp.getByRole("button", { name: "Got it", exact: true }).click();
+  await expect(mobileHelp).toHaveCount(0);
+  await page.setViewportSize({ width: 1280, height: 720 });
+
   // 2. Its key, shown once.
   await page.getByRole("button", { name: "Create a key" }).click();
   sheet = page.getByRole("dialog");
@@ -83,4 +118,14 @@ test("the administrator connects the ERP, maps a value it sends and reads the sy
   await expect(page.getByText("Rejected", { exact: true })).toBeVisible();
   await expect(page.getByText("UNKNOWN_DEPARTMENT")).toBeVisible();
   if (shots) await page.screenshot({ path: `${shots}/int-3-log.png` });
+
+  // Apps with fewer tabs have help only for their available sections.
+  await call(request, "POST", "/v1/admin/integrations/apps", {
+    code: "BI", name: "Insight BI", kind: "READ_ONLY",
+  }, token);
+  await page.reload();
+  await page.getByRole("button", { name: /^Insight BI/ }).click();
+  await expect(page.getByRole("button", { name: /^Help:/ })).toHaveCount(4);
+  await expect(page.getByRole("tab", { name: "Mappings", exact: true })).toHaveCount(0);
+  await expect(page.getByRole("tab", { name: "Needs review", exact: true })).toHaveCount(0);
 });
