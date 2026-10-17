@@ -1,8 +1,7 @@
 name: HRMS checks
+# No push trigger: pull requests cover feature branches, release.yml and deploy-testing-ec2.yml
+# call this workflow for main and testing. A push trigger only ran every job a second time.
 on:
-  push:
-    # The testing deployment calls this workflow before building images.
-    branches-ignore: [testing]
   pull_request:
   workflow_call:
     inputs:
@@ -12,9 +11,15 @@ on:
         default: postgres:16-alpine
 permissions:
   contents: read
+# A newer push to a pull request supersedes the run in flight. Called runs (release, testing
+# deploy) are never cancelled; github.workflow is the caller's name there, so no group clash.
+concurrency:
+  group: checks-${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
 jobs:
   backend:
     runs-on: ubuntu-latest
+    timeout-minutes: 20
     services:
       postgres:
         image: ${{ inputs.postgres_image || 'postgres:16-alpine' }}
@@ -61,6 +66,7 @@ jobs:
       - run: pytest -q --cov --cov-report=term
   frontend:
     runs-on: ubuntu-latest
+    timeout-minutes: 15
     defaults:
       run:
         working-directory: frontend
@@ -82,6 +88,7 @@ jobs:
   # restores. What testing and production run is exactly what this proves.
   browser:
     runs-on: ubuntu-latest
+    timeout-minutes: 25
     services:
       postgres:
         image: ${{ inputs.postgres_image || 'postgres:16-alpine' }}
@@ -130,6 +137,7 @@ jobs:
   deploy-smoke:
     needs: [backend, frontend, browser]
     runs-on: ubuntu-latest
+    timeout-minutes: 10
     steps:
       - uses: actions/checkout@v4
       - run: deploy/smoke-test.sh
