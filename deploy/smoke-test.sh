@@ -60,34 +60,36 @@ done
 [ "$(code "$api/metrics")" = 401 ] || fail "/metrics served without the token"
 curl -s -X OPTIONS "$api/v1/auth/login" -H "Origin: https://evil.example.com" \
   -H "Access-Control-Request-Method: POST" -D - -o /dev/null \
-  | grep -qi "access-control-allow-origin" && fail "CORS allows an unknown origin"
+  | grep -i "access-control-allow-origin" >/dev/null && fail "CORS allows an unknown origin"
 docker exec "$project-db-1" sh -c \
   "PGPASSWORD=hrms_app_dev_password psql -h db -U hrms_app -d hrms -c 'select 1'" >/dev/null 2>&1 \
   && fail "the published hrms_app password still works"
 
 compose run --rm --no-deps -T migrate python -m hrms.deploy encrypt-pii --check >/dev/null \
   || fail "identifiers left unencrypted after migrate"
-compose logs migrate | grep -q "encrypt-pii:" || fail "migrate did not run encrypt-pii"
+# Do not use grep -q in producer pipelines: under pipefail it can close the pipe early,
+# making curl/Compose fail with SIGPIPE even when the expected content was found.
+compose logs migrate | grep "encrypt-pii:" >/dev/null || fail "migrate did not run encrypt-pii"
 [ "$(docker exec "$project-db-1" psql -U hrms -d hrms -tAc \
   "select array_to_string(setconfig, ',') from pg_db_role_setting s join pg_roles r on r.oid = s.setrole where r.rolname = 'hrms_app'" \
   | grep -c statement_timeout)" = 1 ] || fail "the app role has no statement timeout"
 
 for _ in $(seq 1 20); do
   curl -s -H "Authorization: Bearer $token" "$api/metrics" \
-    | grep -Eq 'hrms_job_last_success_timestamp_seconds\{job_name="accrual"\} [1-9]' && break
+    | grep -E 'hrms_job_last_success_timestamp_seconds\{job_name="accrual"\} [1-9]' >/dev/null && break
   sleep 3
 done || true
 curl -s -H "Authorization: Bearer $token" "$api/metrics" \
-  | grep -Eq 'hrms_job_last_success_timestamp_seconds\{job_name="accrual"\} [1-9]' || fail "the jobs container did not record a successful accrual"
+  | grep -E 'hrms_job_last_success_timestamp_seconds\{job_name="accrual"\} [1-9]' >/dev/null || fail "the jobs container did not record a successful accrual"
 
 web=http://127.0.0.1:$web_port
-curl -s "$web/config.js" | grep -q "\"http://127.0.0.1:$api_port\"" || fail "config.js not written"
-curl -s "$web/config.js" | grep -q '"testing"' || fail "config.js has the wrong environment"
-curl -s -D - -o /dev/null "$web/some/deep/link" | grep -qi "x-frame-options: DENY" \
+curl -s "$web/config.js" | grep "\"http://127.0.0.1:$api_port\"" >/dev/null || fail "config.js not written"
+curl -s "$web/config.js" | grep '"testing"' >/dev/null || fail "config.js has the wrong environment"
+curl -s -D - -o /dev/null "$web/some/deep/link" | grep -i "x-frame-options: DENY" >/dev/null \
   || fail "web security headers missing"
-curl -s -D - -o /dev/null "$web/some/deep/link" | grep -qi "content-security-policy:.*script-src 'self'" \
+curl -s -D - -o /dev/null "$web/some/deep/link" | grep -i "content-security-policy:.*script-src 'self'" >/dev/null \
   || fail "CSP missing from SPA"
-curl -s -D - -o /dev/null "$web/config.js" | grep -qi "content-security-policy:" \
+curl -s -D - -o /dev/null "$web/config.js" | grep -i "content-security-policy:" >/dev/null \
   || fail "CSP missing from config.js"
 [ "$(code "$web/some/deep/link")" = 200 ] || fail "SPA fallback broken"
 
