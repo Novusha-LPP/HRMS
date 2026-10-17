@@ -3,7 +3,7 @@ Description: HRMS testing ECR, deployment artifacts, GitHub OIDC role and EC2 in
 Parameters:
   InstanceId:
     Type: AWS::EC2::Instance::Id
-    Default: i-0d7abe00772ca6669
+    Description: EC2 Instance ID to attach the instance profile to
   CreateGitHubOidcProvider:
     Type: String
     Default: 'false'

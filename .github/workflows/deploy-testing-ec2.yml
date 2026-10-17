@@ -43,9 +43,9 @@ jobs:
       contents: read
       id-token: write
     env:
-      AWS_REGION: ${{ vars.AWS_REGION || 'ap-south-1' }}
-      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID || 'i-0d7abe00772ca6669' }}
-      DEPLOY_ARTIFACT_BUCKET: ${{ vars.DEPLOY_ARTIFACT_BUCKET || vars.HRMS_DOCUMENT_S3_BUCKET || 'hrms-testing-docs' }}
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      DEPLOY_ARTIFACT_BUCKET: ${{ vars.DEPLOY_ARTIFACT_BUCKET }}
       API_REPOSITORY: ${{ vars.ECR_API_REPOSITORY || 'hrms-testing-api' }}
       WEB_REPOSITORY: ${{ vars.ECR_WEB_REPOSITORY || 'hrms-testing-web' }}
       IMAGE_PLATFORM: ${{ vars.EC2_IMAGE_PLATFORM || 'linux/amd64' }}
@@ -74,8 +74,9 @@ jobs:
           role-to-assume: ${{ env.AWS_ROLE_ARN }}
           aws-region: ${{ env.AWS_REGION }}
       - name: Verify target AWS account
+        if: vars.AWS_ACCOUNT_ID != ''
         run: |
-          test "$(aws sts get-caller-identity --query Account --output text)" = '891377284307'
+          test "$(aws sts get-caller-identity --query Account --output text)" = "${{ vars.AWS_ACCOUNT_ID }}"
       - uses: aws-actions/amazon-ecr-login@v2
         id: ecr
       - uses: docker/setup-qemu-action@v3
@@ -119,21 +120,21 @@ jobs:
         env:
           API_IMAGE: ${{ steps.meta.outputs.api }}@${{ steps.api.outputs.digest }}
           WEB_IMAGE: ${{ steps.meta.outputs.web }}@${{ steps.web.outputs.digest }}
-          RDS_HOSTNAME: ${{ vars.RDS_HOSTNAME || 'hrmstest.crgowckyse2b.ap-south-1.rds.amazonaws.com' }}
-          RDS_DATABASE: ${{ vars.RDS_DATABASE || 'hrms_testing' }}
-          RDS_OWNER_USERNAME: ${{ vars.RDS_OWNER_USERNAME || 'Hrms' }}
+          RDS_HOSTNAME: ${{ vars.RDS_HOSTNAME }}
+          RDS_DATABASE: ${{ vars.RDS_DATABASE }}
+          RDS_OWNER_USERNAME: ${{ vars.RDS_OWNER_USERNAME }}
           RDS_OWNER_PASSWORD: ${{ secrets.RDS_OWNER_PASSWORD }}
           HRMS_APP_ROLE_PASSWORD: ${{ secrets.HRMS_APP_ROLE_PASSWORD }}
           HRMS_PLATFORM_ROLE_PASSWORD: ${{ secrets.HRMS_PLATFORM_ROLE_PASSWORD }}
           HRMS_SECRET_KEY: ${{ secrets.HRMS_SECRET_KEY }}
           HRMS_METRICS_TOKEN: ${{ secrets.HRMS_METRICS_TOKEN }}
           HRMS_FIELD_ENCRYPTION_KEYS: ${{ secrets.HRMS_FIELD_ENCRYPTION_KEYS }}
-          HRMS_WEB_API_URL: ${{ vars.HRMS_WEB_API_URL || 'https://testhrmsapi.alvision.in' }}
-          HRMS_CORS_ORIGINS: ${{ vars.HRMS_CORS_ORIGINS || 'https://testhrms.alvision.in' }}
+          HRMS_WEB_API_URL: ${{ vars.HRMS_WEB_API_URL }}
+          HRMS_CORS_ORIGINS: ${{ vars.HRMS_CORS_ORIGINS }}
           HRMS_DEFAULT_TIMEZONE: ${{ vars.HRMS_DEFAULT_TIMEZONE || 'Asia/Kolkata' }}
-          HRMS_DOCUMENT_STORAGE: ${{ vars.HRMS_DOCUMENT_STORAGE || '' }}
-          HRMS_DOCUMENT_S3_BUCKET: ${{ vars.HRMS_DOCUMENT_S3_BUCKET || 'hrms-testing-docs' }}
-          HRMS_DOCUMENT_S3_REGION: ${{ vars.HRMS_DOCUMENT_S3_REGION || vars.AWS_REGION || 'ap-south-1' }}
+          HRMS_DOCUMENT_STORAGE: ${{ vars.HRMS_DOCUMENT_STORAGE }}
+          HRMS_DOCUMENT_S3_BUCKET: ${{ vars.HRMS_DOCUMENT_S3_BUCKET }}
+          HRMS_DOCUMENT_S3_REGION: ${{ vars.HRMS_DOCUMENT_S3_REGION || vars.AWS_REGION }}
         run: |
           python3 - <<'PY'
           import json, os, sys
