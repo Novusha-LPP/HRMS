@@ -113,6 +113,12 @@ Returns `429` when another report is still being generated, so retry shortly.
         "Searches employees in the caller's scope by name or employee number, for opening "
         "their attendance register.",
     ),
+    "register_filters": (
+        "Register companies and departments",
+        "The companies and departments of the people the caller can see in the attendance "
+        "register, to populate its filters. Needs `people.read`; results follow the caller's "
+        "scope.",
+    ),
     "employee_register": (
         "Get an employee's attendance register",
         "Day-by-day attendance for one employee, with every punch, its source, and any "
