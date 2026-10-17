@@ -218,7 +218,7 @@ jobs:
               print("GitHub Secrets successfully packaged and validated into deployment bundle.")
           else:
               print(f"::warning::Missing GitHub Secrets: {missing}. Using existing /etc/hrms configuration on EC2.")
-        PY
+          PY
           files="compose.yml deploy.sh validate.py database-preflight.py images.json"
           if [ -f deploy/aws/testing.runtime.env ]; then
             files="$files testing.runtime.env testing.migrate.env testing.deploy.env"
