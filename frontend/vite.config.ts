@@ -32,11 +32,11 @@ export default defineConfig({
     ],
   },
   server: {
-    allowedHosts: ['testinghrms.alvision.in'],
+    allowedHosts: ['testhrms.alvision.in', 'testinghrms.alvision.in'],
     cors: true,
   },
   preview: {
-    allowedHosts: ['testinghrms.alvision.in'],
+    allowedHosts: ['testhrms.alvision.in', 'testinghrms.alvision.in'],
     cors: true,
   },
 })

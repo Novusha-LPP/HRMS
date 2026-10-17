@@ -47,8 +47,8 @@ GitHub Actions (.github/workflows/deploy-testing-ec2.yml)
 | **Restricted Runtime Roles** | `hrms_app`, `hrms_platform` (created/managed by migrations) |
 | **API Loopback Port** | `127.0.0.1:8115` (mapped to container port `8015`) |
 | **Frontend Loopback Port** | `127.0.0.1:8180` (mapped to container port `8080`) |
-| **Public Frontend Domain** | `https://testinghrms.alvision.in` |
-| **Public API Domain** | `https://hrmsapi.alvision.in` |
+| **Public Frontend Domain** | `https://testhrms.alvision.in` |
+| **Public API Domain** | `https://testhrmsapi.alvision.in` |
 
 ---
 
@@ -218,7 +218,7 @@ HRMS_SECRET_KEY=YOUR_64_HEX_CHARACTERS_SECRET_KEY
 HRMS_METRICS_TOKEN=YOUR_64_HEX_CHARACTERS_METRICS_TOKEN
 HRMS_FIELD_ENCRYPTION_KEYS=k1:YOUR_GENERATED_BASE64_KEY
 
-HRMS_CORS_ORIGINS=https://testinghrms.alvision.in
+HRMS_CORS_ORIGINS=https://testhrms.alvision.in
 HRMS_ALLOW_PUBLIC_REGISTRATION=false
 HRMS_API_DOCS_ENABLED=false
 HRMS_DATABASE_POOL_SIZE=5
@@ -246,7 +246,7 @@ Create with `sudoedit /etc/hrms/testing.deploy.env`:
 
 ```ini
 # /etc/hrms/testing.deploy.env (Mode 600, root:root)
-HRMS_WEB_API_URL=https://hrmsapi.alvision.in
+HRMS_WEB_API_URL=https://testhrmsapi.alvision.in
 HRMS_API_PORT=8115
 HRMS_WEB_PORT=8180
 HRMS_BIND_ADDRESS=127.0.0.1
@@ -269,8 +269,8 @@ The application binds to loopback ports:
 
 Configure your host Nginx, Caddy, or Cloudflare Tunnel:
 ```text
-https://testinghrms.alvision.in  ──▶  http://127.0.0.1:8180
-https://hrmsapi.alvision.in      ──▶  http://127.0.0.1:8115
+https://testhrms.alvision.in     ──▶  http://127.0.0.1:8180
+https://testhrmsapi.alvision.in  ──▶  http://127.0.0.1:8115
 ```
 
 If using an AWS Application Load Balancer (ALB):
@@ -319,8 +319,8 @@ Inside the `testing` environment, click **Add environment variable**:
 | `RDS_HOSTNAME` | `hrmstest.crgowckyse2b.ap-south-1.rds.amazonaws.com` | (Optional) RDS endpoint |
 | `RDS_DATABASE` | `hrms_testing` | (Optional) Application database |
 | `RDS_OWNER_USERNAME` | `Hrms` | (Optional) Master username |
-| `HRMS_WEB_API_URL` | `https://hrmsapi.alvision.in` | (Optional) Public API origin |
-| `HRMS_CORS_ORIGINS` | `https://testinghrms.alvision.in` | (Optional) Public Frontend origin |
+| `HRMS_WEB_API_URL` | `https://testhrmsapi.alvision.in` | (Optional) Public API origin |
+| `HRMS_CORS_ORIGINS` | `https://testhrms.alvision.in` | (Optional) Public Frontend origin |
 | `HRMS_DOCUMENT_S3_BUCKET` | *(from CloudFormation output)* | S3 bucket for uploaded employee & recruitment documents |
 | `HRMS_DOCUMENT_S3_REGION` | `ap-south-1` | AWS region where the document bucket resides |
 
@@ -433,7 +433,7 @@ curl -s http://127.0.0.1:8180/config.js
 
 ### 2. Verify Application Functionality in Browser
 
-1. Open `https://testinghrms.alvision.in` in your browser.
+1. Open `https://testhrms.alvision.in` in your browser.
 2. Verify that the testing badge appears and the UI renders without console errors.
 3. Test authentication (Sign in as tenant admin or employee).
 4. Verify document upload / KYC file attachment.
@@ -466,4 +466,4 @@ sudo bash /opt/hrms/testing/releases/<PREVIOUS_RELEASE_DIR>/deploy.sh \
 | **SSM command fails with `InvocationDoesNotExist` or timeout** | EC2 instance is offline in Systems Manager or lacks SSM IAM permissions. | Verify that the `EC2InstanceProfile` is attached to EC2 and that `amazon-ssm-agent` is running (`sudo systemctl status amazon-ssm-agent`). |
 | **`Deployment configuration failed: ValueError` during deploy** | One of the `/etc/hrms/testing.*.env` files contains syntax errors, unescaped quotes, or mismatched role passwords. | Run `sudo python3 /opt/hrms/testing/releases/<RELEASE>/validate.py /opt/hrms/testing/releases/<RELEASE>` locally on EC2 to see exact validation errors. |
 | **API healthcheck fails (`503 Service Unavailable` on `/health/ready`)** | The database connection failed, or Alembic migrations have not run to head. | Check container logs: `sudo docker compose -f /opt/hrms/testing/current/compose.yml logs api`. |
-| **Frontend displays white screen or `Network Error`** | `HRMS_WEB_API_URL` or `HRMS_CORS_ORIGINS` mismatch. | Confirm `HRMS_WEB_API_URL=https://hrmsapi.alvision.in` and `HRMS_CORS_ORIGINS=https://testinghrms.alvision.in` in `/etc/hrms/testing.runtime.env` and `/etc/hrms/testing.deploy.env`. |
+| **Frontend displays white screen or `Network Error`** | `HRMS_WEB_API_URL` or `HRMS_CORS_ORIGINS` mismatch. | Confirm `HRMS_WEB_API_URL=https://testhrmsapi.alvision.in` and `HRMS_CORS_ORIGINS=https://testhrms.alvision.in` in `/etc/hrms/testing.runtime.env` and `/etc/hrms/testing.deploy.env`. |

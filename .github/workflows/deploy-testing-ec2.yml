@@ -128,8 +128,8 @@ jobs:
           HRMS_SECRET_KEY: ${{ secrets.HRMS_SECRET_KEY }}
           HRMS_METRICS_TOKEN: ${{ secrets.HRMS_METRICS_TOKEN }}
           HRMS_FIELD_ENCRYPTION_KEYS: ${{ secrets.HRMS_FIELD_ENCRYPTION_KEYS }}
-          HRMS_WEB_API_URL: ${{ vars.HRMS_WEB_API_URL || 'https://hrmsapi.alvision.in' }}
-          HRMS_CORS_ORIGINS: ${{ vars.HRMS_CORS_ORIGINS || 'https://testinghrms.alvision.in' }}
+          HRMS_WEB_API_URL: ${{ vars.HRMS_WEB_API_URL || 'https://testhrmsapi.alvision.in' }}
+          HRMS_CORS_ORIGINS: ${{ vars.HRMS_CORS_ORIGINS || 'https://testhrms.alvision.in' }}
           HRMS_DEFAULT_TIMEZONE: ${{ vars.HRMS_DEFAULT_TIMEZONE || 'Asia/Kolkata' }}
           HRMS_DOCUMENT_STORAGE: ${{ vars.HRMS_DOCUMENT_STORAGE || '' }}
           HRMS_DOCUMENT_S3_BUCKET: ${{ vars.HRMS_DOCUMENT_S3_BUCKET || '' }}
