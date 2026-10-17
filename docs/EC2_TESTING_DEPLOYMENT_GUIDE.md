@@ -292,10 +292,22 @@ In GitHub: [Novusha-LPP/HRMS](https://github.com/Novusha-LPP/HRMS):
 3. Under **Deployment branches and tags**, select **Selected branches** and add the rule **`testing`**.
 4. (Do not add required reviewers if you want pushes to deploy immediately).
 
-### 2. Add Environment Variables under `testing`
+### 2. Add Environment Secrets under `testing`
+Inside the `testing` environment, click **Add environment secret** to supply the application and database credentials. The deployment workflow validates these and installs them to `/etc/hrms/` on EC2 automatically:
+
+| Secret Name | Description | Example / Recommended Format |
+|---|---|---|
+| `RDS_OWNER_PASSWORD` | Master password for PostgreSQL user `Hrms` | Existing RDS master password |
+| `HRMS_APP_ROLE_PASSWORD` | Password for restricted `hrms_app` DB role | `openssl rand -hex 32` |
+| `HRMS_PLATFORM_ROLE_PASSWORD` | Password for restricted `hrms_platform` DB role | `openssl rand -hex 32` |
+| `HRMS_SECRET_KEY` | 64-hex char JWT / session signing key | `openssl rand -hex 32` |
+| `HRMS_METRICS_TOKEN` | Bearer token protecting `GET /metrics` | `openssl rand -hex 32` |
+| `HRMS_FIELD_ENCRYPTION_KEYS` | AES-256 key for field-level PII encryption | `k1:<base64url 32 bytes>` (e.g. `python3 -c "import os,base64; print('k1:'+base64.urlsafe_b64encode(os.urandom(32)).decode())"`) |
+
+### 3. Add Environment Variables under `testing`
 Inside the `testing` environment, click **Add environment variable**:
 
-| Variable Name | Value | Description |
+| Variable Name | Default / Value | Description |
 |---|---|---|
 | `AWS_REGION` | `ap-south-1` | AWS deployment region |
 | `AWS_ROLE_ARN` | `arn:aws:iam::891377284307:role/...` | `AWSRoleArn` from CloudFormation output |
@@ -304,8 +316,13 @@ Inside the `testing` environment, click **Add environment variable**:
 | `ECR_API_REPOSITORY` | `hrms-testing-api` | ECR repository for API |
 | `ECR_WEB_REPOSITORY` | `hrms-testing-web` | ECR repository for Frontend |
 | `EC2_IMAGE_PLATFORM` | `linux/amd64` (or `linux/arm64`) | Matching EC2 `uname -m` |
+| `RDS_HOSTNAME` | `hrmstest.crgowckyse2b.ap-south-1.rds.amazonaws.com` | (Optional) RDS endpoint |
+| `RDS_DATABASE` | `hrms_testing` | (Optional) Application database |
+| `RDS_OWNER_USERNAME` | `Hrms` | (Optional) Master username |
+| `HRMS_WEB_API_URL` | `https://hrmsapi.alvision.in` | (Optional) Public API origin |
+| `HRMS_CORS_ORIGINS` | `https://testinghrms.alvision.in` | (Optional) Public Frontend origin |
 
-### 3. Enable Deployment Workflow
+### 4. Enable Deployment Workflow
 In GitHub repository settings:
 1. Go to **Settings → Secrets and variables → Actions → Variables** tab (Repository variables).
 2. Click **New repository variable**.

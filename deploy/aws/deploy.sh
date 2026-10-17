@@ -12,12 +12,23 @@ mkdir -p /opt/hrms/testing
 exec 9>/opt/hrms/testing/deploy.lock
 flock -n 9 || { echo 'Another deployment is already running' >&2; exit 1; }
 
+mkdir -p /etc/hrms
 for file in testing.runtime.env testing.migrate.env testing.deploy.env; do
+  if [[ -f "$release_dir/$file" ]]; then
+    install -m 600 -o root -g root "$release_dir/$file" "/etc/hrms/$file"
+  fi
   path="/etc/hrms/$file"
   [[ -f "$path" && "$(stat -c '%a:%u' "$path")" == '600:0' ]] || {
     echo "Install $path as root with permissions 600" >&2; exit 1;
   }
 done
+if [[ ! -s /etc/hrms/rds-global-bundle.pem ]]; then
+  curl --fail --silent --show-error \
+    https://truststore.pki.rds.amazonaws.com/global/global-bundle.pem \
+    -o /tmp/hrms-rds-global-bundle.pem 2>/dev/null && \
+    install -m 644 -o root -g root /tmp/hrms-rds-global-bundle.pem /etc/hrms/rds-global-bundle.pem 2>/dev/null && \
+    rm -f /tmp/hrms-rds-global-bundle.pem || true
+fi
 [[ -s /etc/hrms/rds-global-bundle.pem ]] || { echo 'RDS CA bundle is missing' >&2; exit 1; }
 python3 "$release_dir/validate.py" "$release_dir"
 compose() {

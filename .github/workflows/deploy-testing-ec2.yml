@@ -119,16 +119,97 @@ jobs:
         env:
           API_IMAGE: ${{ steps.meta.outputs.api }}@${{ steps.api.outputs.digest }}
           WEB_IMAGE: ${{ steps.meta.outputs.web }}@${{ steps.web.outputs.digest }}
+          RDS_HOSTNAME: ${{ vars.RDS_HOSTNAME || 'hrmstest.crgowckyse2b.ap-south-1.rds.amazonaws.com' }}
+          RDS_DATABASE: ${{ vars.RDS_DATABASE || 'hrms_testing' }}
+          RDS_OWNER_USERNAME: ${{ vars.RDS_OWNER_USERNAME || 'Hrms' }}
+          RDS_OWNER_PASSWORD: ${{ secrets.RDS_OWNER_PASSWORD }}
+          HRMS_APP_ROLE_PASSWORD: ${{ secrets.HRMS_APP_ROLE_PASSWORD }}
+          HRMS_PLATFORM_ROLE_PASSWORD: ${{ secrets.HRMS_PLATFORM_ROLE_PASSWORD }}
+          HRMS_SECRET_KEY: ${{ secrets.HRMS_SECRET_KEY }}
+          HRMS_METRICS_TOKEN: ${{ secrets.HRMS_METRICS_TOKEN }}
+          HRMS_FIELD_ENCRYPTION_KEYS: ${{ secrets.HRMS_FIELD_ENCRYPTION_KEYS }}
+          HRMS_WEB_API_URL: ${{ vars.HRMS_WEB_API_URL || 'https://hrmsapi.alvision.in' }}
+          HRMS_CORS_ORIGINS: ${{ vars.HRMS_CORS_ORIGINS || 'https://testinghrms.alvision.in' }}
+          HRMS_DEFAULT_TIMEZONE: ${{ vars.HRMS_DEFAULT_TIMEZONE || 'Asia/Kolkata' }}
+          HRMS_DOCUMENT_STORAGE: ${{ vars.HRMS_DOCUMENT_STORAGE || 'local' }}
         run: |
           python3 - <<'PY'
-          import json, os
+          import json, os, sys
           from pathlib import Path
+          from urllib.parse import quote_plus
+          sys.path.insert(0, 'deploy/aws')
+          import validate
+
           Path('deploy/aws/images.json').write_text(json.dumps({
               'commit': os.environ['GITHUB_SHA'],
               'api': os.environ['API_IMAGE'], 'web': os.environ['WEB_IMAGE'],
           }))
+
+          has_secrets = all([
+              os.environ.get('RDS_OWNER_PASSWORD'),
+              os.environ.get('HRMS_APP_ROLE_PASSWORD'),
+              os.environ.get('HRMS_PLATFORM_ROLE_PASSWORD'),
+              os.environ.get('HRMS_SECRET_KEY'),
+              os.environ.get('HRMS_METRICS_TOKEN'),
+              os.environ.get('HRMS_FIELD_ENCRYPTION_KEYS'),
+          ])
+
+          if has_secrets:
+              rds_host = os.environ['RDS_HOSTNAME']
+              rds_db = os.environ['RDS_DATABASE']
+              owner_user = os.environ['RDS_OWNER_USERNAME']
+              owner_pw = quote_plus(os.environ['RDS_OWNER_PASSWORD'])
+              app_pw = quote_plus(os.environ['HRMS_APP_ROLE_PASSWORD'])
+              platform_pw = quote_plus(os.environ['HRMS_PLATFORM_ROLE_PASSWORD'])
+
+              runtime_env = (
+                  f"HRMS_DATABASE_URL=postgresql+asyncpg://hrms_app:{app_pw}@{rds_host}:5432/{rds_db}?ssl=verify-full\n"
+                  f"HRMS_APP_DATABASE_URL=postgresql+asyncpg://hrms_app:{app_pw}@{rds_host}:5432/{rds_db}?ssl=verify-full\n"
+                  f"HRMS_PLATFORM_DATABASE_URL=postgresql+asyncpg://hrms_platform:{platform_pw}@{rds_host}:5432/{rds_db}?ssl=verify-full\n"
+                  f"HRMS_SECRET_KEY={os.environ['HRMS_SECRET_KEY']}\n"
+                  f"HRMS_METRICS_TOKEN={os.environ['HRMS_METRICS_TOKEN']}\n"
+                  f"HRMS_FIELD_ENCRYPTION_KEYS={os.environ['HRMS_FIELD_ENCRYPTION_KEYS']}\n"
+                  f"HRMS_CORS_ORIGINS={os.environ['HRMS_CORS_ORIGINS']}\n"
+                  "HRMS_ALLOW_PUBLIC_REGISTRATION=false\n"
+                  "HRMS_API_DOCS_ENABLED=false\n"
+                  "HRMS_DATABASE_POOL_SIZE=5\n"
+                  "HRMS_DATABASE_MAX_OVERFLOW=5\n"
+                  f"HRMS_DEFAULT_TIMEZONE={os.environ['HRMS_DEFAULT_TIMEZONE']}\n"
+                  "HRMS_JOBS_DAILY_AT=00:30\n"
+                  "WEB_CONCURRENCY=2\n"
+                  f"HRMS_DOCUMENT_STORAGE={os.environ['HRMS_DOCUMENT_STORAGE']}\n"
+                  "HRMS_MAIL_BACKEND=disabled\n"
+              )
+              migrate_env = (
+                  f"HRMS_DATABASE_URL=postgresql+asyncpg://{owner_user}:{owner_pw}@{rds_host}:5432/{rds_db}?ssl=verify-full\n"
+                  f"HRMS_APP_ROLE_PASSWORD={os.environ['HRMS_APP_ROLE_PASSWORD']}\n"
+                  f"HRMS_PLATFORM_ROLE_PASSWORD={os.environ['HRMS_PLATFORM_ROLE_PASSWORD']}\n"
+              )
+              deploy_env = (
+                  f"HRMS_WEB_API_URL={os.environ['HRMS_WEB_API_URL']}\n"
+                  "HRMS_API_PORT=8115\n"
+                  "HRMS_WEB_PORT=8180\n"
+                  "HRMS_BIND_ADDRESS=127.0.0.1\n"
+                  "HRMS_FORWARDED_ALLOW_IPS=172.30.25.1\n"
+                  "HRMS_API_MEMORY=1g\n"
+              )
+
+              Path('deploy/aws/testing.runtime.env').write_text(runtime_env)
+              Path('deploy/aws/testing.migrate.env').write_text(migrate_env)
+              Path('deploy/aws/testing.deploy.env').write_text(deploy_env)
+
+              validate.validate_settings(
+                  validate.load_env(Path('deploy/aws/testing.runtime.env')),
+                  validate.load_env(Path('deploy/aws/testing.migrate.env')),
+                  validate.load_env(Path('deploy/aws/testing.deploy.env')),
+              )
+              print("GitHub Secrets successfully packaged and validated into deployment bundle.")
           PY
-          tar -czf /tmp/hrms-deploy.tar.gz -C deploy/aws compose.yml deploy.sh validate.py database-preflight.py images.json
+          files="compose.yml deploy.sh validate.py database-preflight.py images.json"
+          if [ -f deploy/aws/testing.runtime.env ]; then
+            files="$files testing.runtime.env testing.migrate.env testing.deploy.env"
+          fi
+          tar -czf /tmp/hrms-deploy.tar.gz -C deploy/aws $files
           bundle_key="testing/releases/$GITHUB_SHA/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.tar.gz"
           aws s3 cp /tmp/hrms-deploy.tar.gz "s3://$DEPLOY_ARTIFACT_BUCKET/$bundle_key" --only-show-errors
           echo "BUNDLE_KEY=$bundle_key" >> "$GITHUB_ENV"
