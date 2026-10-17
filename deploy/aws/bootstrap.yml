@@ -11,7 +11,7 @@ Parameters:
     Description: Set true only if this AWS account has no token.actions.githubusercontent.com provider
   GitHubOidcSubject:
     Type: String
-    Default: repo:Novusha-LPP/HRMS:environment:testing
+    Default: repo:Novusha-LPP@180271750/HRMS@1385010797:environment:testing
     Description: Exact GitHub OIDC subject; use the repository's immutable subject format if enabled
   ApiRepositoryName:
     Type: String

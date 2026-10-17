@@ -206,10 +206,11 @@ Add these **environment variables** under `testing`:
 | `EC2_IMAGE_PLATFORM` | `linux/amd64` or `linux/arm64` from EC2 `uname -m` |
 
 AWS authentication uses GitHub OIDC. No `AWS_ACCESS_KEY_ID`, `AWS_SECRET_ACCESS_KEY`,
-database password, or EC2 SSH key is needed in GitHub. The default trust subject is
-`repo:Novusha-LPP/HRMS:environment:testing`. Repositories created after July 15, 2026, or
-opted into immutable subjects use a subject containing owner/repository IDs; pass the
-actual subject as the stack's `GitHubOidcSubject` parameter if applicable.
+database password, or EC2 SSH key is needed in GitHub. GitHub's API confirms this repository
+uses immutable OIDC subjects. The template uses its exact testing subject:
+`repo:Novusha-LPP@180271750/HRMS@1385010797:environment:testing`.
+If you later customize OIDC claims or reuse this template for another repository, pass
+the actual subject as the stack's `GitHubOidcSubject` parameter.
 See [GitHub AWS OIDC configuration](https://docs.github.com/en/actions/how-tos/secure-your-work/security-harden-deployments/oidc-in-aws).
 
 Once the host, database owner, HTTPS routing, and IAM configuration are ready, add the
