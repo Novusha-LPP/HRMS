@@ -209,6 +209,10 @@ class AttendanceDay(SQLModel, table=True):
     reviewed_by: UUID | None = Field(default=None)
     reviewed_at: datetime | None = Field(default=None)
     is_locked: bool = Field(default=False)  # locked by period close
+    # A status carried over from another system (a legacy correction that changed only the
+    # status, with no punches to recompute from). Recalculation keeps it; any HR edit clears it.
+    status_override: str | None = Field(default=None, max_length=20)
+    override_note: str | None = Field(default=None, max_length=255)
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     version: int = Field(default=0)
 

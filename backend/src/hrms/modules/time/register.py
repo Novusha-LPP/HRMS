@@ -341,7 +341,7 @@ async def edit_day(
     )
     await session.flush()
 
-    ad = await recompute_day(session, tenant_id, emp, work_date, policy, ad)
+    ad = await recompute_day(session, tenant_id, emp, work_date, policy, ad, clear_override=True)
     if ad.review_flags and ad.reviewed_at is None:
         # HR set these punches themselves: that is the review. Held overtime / comp-off follow.
         ad.reviewed_by = actor

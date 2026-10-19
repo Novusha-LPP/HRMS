@@ -299,7 +299,9 @@ async def _apply_correction(session, tenant_id, cor: AttendanceCorrectionRequest
             )
         )
     await session.flush()
-    await recompute_day(session, tenant_id, cor.employment_id, cor.work_date, policy, ad)
+    await recompute_day(
+        session, tenant_id, cor.employment_id, cor.work_date, policy, ad, clear_override=True
+    )
 
 
 async def _check_reviewer(session, tenant_id, principal, scope, cor):

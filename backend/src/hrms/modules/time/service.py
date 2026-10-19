@@ -243,7 +243,11 @@ def event_minutes(
     return max(0, duration), max(0, breaks), started is not None, span
 
 
-async def recompute_day(session, tenant_id, employment_id, day, policy, ad=None):
+async def recompute_day(
+    session, tenant_id, employment_id, day, policy, ad=None, *, clear_override=False
+):
+    """Recalculate a day from its punches. `clear_override` is for edits by a person: what they
+    recorded replaces any status carried over from another system."""
     ad = ad or await lock_day(session, tenant_id, employment_id, day)
     ad = ad or AttendanceDay(
         tenant_id=tenant_id,
@@ -252,6 +256,8 @@ async def recompute_day(session, tenant_id, employment_id, day, policy, ad=None)
         work_date=day,
         recorded_at=now_utc(),
     )
+    if clear_override:
+        ad.status_override = ad.override_note = None
     events = await events_for_day(session, tenant_id, employment_id, day, policy)
     ins = [e.punched_at for e in events if e.punch_type == "IN"]
     outs = [e.punched_at for e in events if e.punch_type == "OUT"]
@@ -358,6 +364,14 @@ async def recompute_day(session, tenant_id, employment_id, day, policy, ad=None)
         ad.status = "MISSED_PUNCH"
         ot = 0
         comp_off = 0.0
+
+    if ad.status_override:
+        # Carried over from another system. Rewards computed from punches that the other
+        # system did not count (an off-day assumption it did not share) are not granted.
+        ad.status = ad.status_override
+        if ad.status_override != AttendanceStatus.OFF_DAY_WORKED:
+            ot = 0
+            comp_off = 0.0
 
     flags = []
     if not open_session and unended_break(events):
