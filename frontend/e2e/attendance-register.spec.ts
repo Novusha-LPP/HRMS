@@ -91,7 +91,8 @@ test("HR finds an employee and corrects a day directly", async ({ page, request 
   await expect(panel).toHaveCount(0);
   const row = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: new RegExp(`^${longDate}`) }) });
   await expect(row.getByText("Edited")).toBeVisible();
-  await expect(row.getByText("8h 15m")).toBeVisible();
+  // exact: an off-day row also shows "+8h 15m OT".
+  await expect(row.getByText("8h 15m", { exact: true })).toBeVisible();
 
   // The same register is a tab of the employee's profile; Escape closes only the day on top.
   if (today.slice(0, 7) === yesterday.slice(0, 7)) {
