@@ -75,7 +75,8 @@ test("HR finds an employee and corrects a day directly", async ({ page, request 
   await panel.getByRole("button", { name: "Add break" }).click();
   await panel.getByLabel("From", { exact: true }).fill("13:00");
   await panel.getByLabel("To", { exact: true }).fill("13:45");
-  await expect(panel.getByText("8h 15m")).toBeVisible();
+  // exact: the "8h 15m beyond shift" badge also contains this text.
+  await expect(panel.getByText("8h 15m", { exact: true })).toBeVisible();
   // An incomplete entry is explained and blocks saving.
   await panel.getByRole("button", { name: "Add time out" }).click();
   await expect(panel.getByText(/needs both times/)).toBeVisible();
