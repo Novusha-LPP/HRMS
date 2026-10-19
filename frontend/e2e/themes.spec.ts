@@ -166,6 +166,9 @@ async function textContrast(page: Page) {
 }
 
 async function audit(page: Page, testInfo: TestInfo, label: string) {
+  // A visible view can still have its previous control colors while CSS transitions run.
+  // Measure the settled state for the entire page, including both segmented buttons/icons.
+  await settle(page.locator("body"));
   const preserveOriginal = await page.locator("html").getAttribute("data-color-theme") === "classic-teal";
   const result = { ...await textContrast(page), contrastEnforced: !preserveOriginal };
   const path = testInfo.outputPath(`${label}-contrast.json`);
