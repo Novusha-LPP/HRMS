@@ -148,3 +148,18 @@ test("4 · adding someone who already has a record asks first", async ({ page })
   await page.getByLabel("This is a different person").check();
   await expect(submit).toBeEnabled();
 });
+
+test("5 · the reports list who rejoined and how, and download as a file", async ({ page }) => {
+  await signIn(page, s.email);
+  await page.goto("/policy?tab=leave&section=leavers");
+  const report = page.getByTestId("lifecycle-report");
+  await expect(report).toContainText(s.name);
+  await expect(report).toContainText("Started fresh");
+  await expect(report).toContainText("New contract");
+  await page.locator("#lr-from").fill(daysAgo(200)); // the leave was settled 100 days ago
+  await page.locator("#lr-kind").selectOption("separation-settlements");
+  await expect(report).toContainText("Annual");
+  const download = page.waitForEvent("download");
+  await page.getByRole("button", { name: "Download CSV" }).click();
+  expect((await download).suggestedFilename()).toMatch(/^separation-settlements-\d{4}-\d{2}-\d{2}\.csv$/);
+});

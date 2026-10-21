@@ -238,6 +238,9 @@ erDiagram
     employments ||--o{ attendance_correction_requests : employment_id
     employments ||--o{ attendance_days : employment_id
     employments ||--o{ comp_off_grants : employment_id
+    employments ||--o{ company_transfers : from_employment_id
+    persons ||--o{ company_transfers : person_id
+    employments ||--o{ company_transfers : to_employment_id
     employments ||--o{ correction_approval_actions : approver_employment_id
     employments ||--o{ employee_approval_flows : employment_id
     employments ||--o{ employee_compensations : employment_id
@@ -271,6 +274,8 @@ erDiagram
     employments ||--o{ org_units : pm_employment_id
     employments ||--o{ personnel_actions : employment_id
     employments ||--o{ possible_duplicates : employment_id
+    employee_kyc_documents ||--o{ prior_service : document_id
+    persons ||--o{ prior_service : person_id
     employments ||--o{ punches : employment_id
     employments ||--o{ rejoin_records : employment_id
     personnel_actions ||--o{ rejoin_records : personnel_action_id
@@ -818,6 +823,14 @@ erDiagram
 
 ```mermaid
 erDiagram
+    company_transfers {
+        uuid tenant_id PK
+        uuid id PK
+        uuid person_id FK
+        uuid from_employment_id FK
+        uuid to_employment_id FK
+        uuid created_by FK
+    }
     employment_spells {
         uuid tenant_id PK
         uuid id PK
@@ -841,6 +854,13 @@ erDiagram
         uuid balance_transaction_id FK
         uuid created_by FK
     }
+    prior_service {
+        uuid tenant_id PK
+        uuid id PK
+        uuid person_id FK
+        uuid document_id FK
+        uuid created_by FK
+    }
     rejoin_policies {
         uuid tenant_id PK
         uuid id PK
@@ -857,6 +877,9 @@ erDiagram
         uuid approved_by FK
         uuid created_by FK
     }
+    employments ||--o{ company_transfers : from_employment_id
+    persons ||--o{ company_transfers : person_id
+    employments ||--o{ company_transfers : to_employment_id
     employments ||--o{ employment_spells : employment_id
     leave_types ||--o{ leave_separation_rules : leave_type_id
     legal_entities ||--o{ leave_separation_rules : legal_entity_id
@@ -865,6 +888,8 @@ erDiagram
     employments ||--o{ leave_separation_settlements : employment_id
     leave_types ||--o{ leave_separation_settlements : leave_type_id
     employment_spells ||--o{ leave_separation_settlements : spell_id
+    employee_kyc_documents ||--o{ prior_service : document_id
+    persons ||--o{ prior_service : person_id
     legal_entities ||--o{ rejoin_policies : legal_entity_id
     employments ||--o{ rejoin_records : employment_id
     employment_spells ||--o{ rejoin_records : new_spell_id
@@ -888,6 +913,7 @@ erDiagram
 | `auth_throttle` | Platform and access | Failed-attempt counters and lockouts for sign-in and similar endpoints. |
 | `candidates` | Recruitment | People who applied or were sourced. |
 | `comp_off_grants` | Time and attendance | Compensatory leave earned for working on an off day. |
+| `company_transfers` | Other | A person moved from one company of the group to another: the employment they left, the one they joined, when, and whether leave was carried over or settled. |
 | `connected_apps` | Integrations | Outside systems a tenant connects (ERP, CRM, BI). |
 | `correction_approval_actions` | Time and attendance | Append-only decisions on attendance correction requests. |
 | `cost_centres` | Organisation | Cost centres that assignments and units are charged to. |
@@ -952,6 +978,7 @@ erDiagram
 | `policy_templates` | Time and attendance | Attendance rules: working hours, grace, half day, overtime. |
 | `positions` | Organisation | Budgeted seats in an org unit, for a job and grade. |
 | `possible_duplicates` | Integrations | Records from an app that look like an existing employee. |
+| `prior_service` | Other | A period of work for an earlier employer that this company recognises for leave eligibility, gratuity, both or neither. Belongs to the person, not one employment. |
 | `punches` | Time and attendance | Clock-in and clock-out events. Never edited: corrections add rows (is_corrected), and VOID rows cancel earlier ones. |
 | `recruitment_events` | Recruitment | Append-only history of what happened to openings and applications. |
 | `recruitment_stages` | Recruitment | Pipeline stages a tenant uses for candidates. |

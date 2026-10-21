@@ -32,6 +32,8 @@ jobs:
     uses: ./.github/workflows/checks.yml
     with:
       postgres_image: postgres:16-alpine
+      # Coverage is enforced on pull requests and releases; tracing it is slow.
+      coverage: false
 
   deploy:
     needs: [checks, deployment-config]

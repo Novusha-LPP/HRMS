@@ -32,6 +32,8 @@ import { PersonnelActionSheet } from "../components/people/PersonnelActionSheet"
 import { ACTION_META, actionsFor } from "../lib/personnelActions";
 import type { ActionKind } from "../lib/personnelActions";
 import { PersonnelHistory } from "../components/people/PersonnelHistory";
+import { PriorServiceSection } from "../components/people/PriorServiceSection";
+import { MoveCompanySheet } from "../components/people/MoveCompanySheet";
 import { SignInSlipsSheet } from "../components/people/SignInSlips";
 import type { SlipEmployee } from "../components/people/SignInSlips";
 import { usePopover } from "../components/ui/Popover";
@@ -42,6 +44,7 @@ import { inr } from "../lib/money";
 
 interface Row {
   id: string;
+  personId?: string;
   employeeNumber: string;
   name: string;
   email?: string;
@@ -86,6 +89,7 @@ function tenure(hireDate: string) {
 function toRow(e: Employment, name: string, company?: string, dob?: string | null, gender?: string | null): Row {
   return {
     id: e.id,
+    personId: e.person_id,
     company,
     employeeNumber: e.employee_number,
     name,
@@ -168,6 +172,7 @@ export function EmployeePage() {
     }
   };
   const [transferring, setTransferring] = useState<Row | null>(null);
+  const [movingCompany, setMovingCompany] = useState<Row | null>(null);
   const [acting, setActing] = useState<{ row: Row; kind: ActionKind } | null>(null);
   const [slipsFor, setSlipsFor] = useState<SlipEmployee[] | null>(null);
 
@@ -488,9 +493,11 @@ export function EmployeePage() {
         onClose={() => setDetail(null)}
         onTransfer={() => { if (detail) { setTransferring(detail); setDetail(null); } }}
         onAction={(kind) => { if (detail) { setActing({ row: detail, kind }); setDetail(null); } }}
+        onMoveCompany={() => { if (detail) { setMovingCompany(detail); setDetail(null); } }}
       />
       <AddEmployeeSheet open={adding} onClose={closeAdding} />
       <TransferSheet row={transferring} onClose={() => setTransferring(null)} />
+      <MoveCompanySheet row={movingCompany} onClose={() => setMovingCompany(null)} />
       <PersonnelActionSheet subject={acting?.row ?? null} kind={acting?.kind ?? null} onClose={() => setActing(null)} />
       <SignInSlipsSheet employees={slipsFor} onClose={() => setSlipsFor(null)} />
     </>
@@ -509,6 +516,7 @@ function EmployeeSheet({
   onClose,
   onTransfer,
   onAction,
+  onMoveCompany,
 }: {
   row: Row | null;
   canPlace: boolean;
@@ -519,6 +527,7 @@ function EmployeeSheet({
   onClose: () => void;
   onTransfer: () => void;
   onAction: (kind: ActionKind) => void;
+  onMoveCompany: () => void;
 }) {
   const { user } = useAuth();
   const [params] = useSearchParams();
@@ -622,6 +631,12 @@ function EmployeeSheet({
                             {ACTION_META[kind].menu}
                           </button>
                         ))}
+                        {row.state !== "SEPARATED" && (user?.legalEntities.length ?? 0) > 1 && (
+                          <button type="button" role="menuitem" className="menu-item w-full"
+                            onClick={() => { setMenuOpen(false); onMoveCompany(); }}>
+                            Move to another company
+                          </button>
+                        )}
                       </div>
                     )}
                   </div>
@@ -739,6 +754,7 @@ function EmployeeSheet({
               )}
 
               <PersonnelHistory employmentId={row.id} canCancel={canPlace && !isSelf} />
+              {canPlace && !isSelf && row.personId && <PriorServiceSection personId={row.personId} />}
             </>
           )}
           {activeTab === "attendance" && (

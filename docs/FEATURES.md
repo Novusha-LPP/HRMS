@@ -508,6 +508,23 @@ This document serves as the authoritative, comprehensive inventory of all featur
 341. **Leave History Migration Script (`migrate_exim_leave_history.py`)**: Migrating historical leave applications and balances.
 342. **Automated AWS EC2 / ECS Deployment Scripts**: Shell scripts (`deploy.sh`) automating zero-downtime rolling deploys.
 
+### Leavers, rejoining and moving between companies
+
+343. **Employment Stints**: Each stint of an employment (joined, left, why, gratuity paid) is recorded, so a rejoin keeps one record with its whole history (`employment_spells`).
+344. **Leave Rules for Leavers**: Per company and leave type, lapse, pay out (encash, with a cap) or hold unused leave when someone leaves; the most specific rule in force wins; every outcome is a leave-ledger entry.
+345. **Held Leave Job**: The daily `leave-holds` job lapses held leave after its hold period, or marks it restored when the person rejoined.
+346. **Rejoin: Continue or Start Fresh**: HR chooses whether earlier service and leave continue or start over, with a preview, a company default, a longest break that may continue, a recorded reason, and gratuity-paid handling.
+347. **Rejoin Policies**: Company defaults for rejoining (continue or start fresh, longest break that may continue).
+348. **Duplicate-Hire Guard**: Adding a person who already has an employment is refused unless confirmed; the Add employee screen warns when a name (and birth date) matches someone already on record.
+349. **One UAN Per Person**: A different UAN on another employment of the same person is refused.
+350. **Earlier Service**: Work for earlier employers can be recorded and recognised for leave eligibility and for gratuity.
+351. **Move to Another Company**: Ends the job in one company and starts one in another on the same day; leave is carried over or settled; login, identity record and documents follow the person.
+352. **Employment History View**: The profile lists each stint and how each rejoin was decided.
+353. **Leavers and Rejoiners Reports**: Rejoins, leave settled for leavers and company moves, as tables and spreadsheet-safe CSV files.
+354. **Lifecycle Metrics and Dashboard**: Prometheus metrics and a Grafana dashboard for rejoins, settlements, held leave, transfers and refused duplicate hires.
+355. **Lifecycle Integrity Checks**: The nightly integrity job flags employments with no current stint, two open stints, no service start date, or held leave overdue.
+356. **Change History for Settings**: Leave rules for leavers, rejoin policies, earlier service and company moves are recorded with who made each change.
+
 ---
 
 *Document generated and synchronized with codebase version 1.1.*

@@ -82,6 +82,10 @@ CHANGE_LOG_TARGETS = {
     "holiday_calendar": "holiday_calendars",
     "holiday_calendar_assignment": "holiday_calendar_assignments",
     "approval_flow": "approval_flows",
+    "leave_separation_rule": "leave_separation_rules",
+    "rejoin_policy": "rejoin_policies",
+    "prior_service": "prior_service",
+    "company_transfer": "company_transfers",
 }
 # approval_instances.request_type -> the request's table (approvals/router.py).
 REQUEST_TARGETS = {
@@ -144,6 +148,41 @@ CHECKS: tuple[Check, ...] = (
         "integration_mapping_target_missing",
         "connected-app mappings pointing at a company, department, location or job that is gone",
         _typed("integration_mappings", "kind", "target_id", MAPPING_TARGETS),
+    ),
+    Check(
+        "employment_without_current_stint",
+        "employments with no record of the stint they are in (employment_spells)",
+        """
+        SELECT count(*) FROM employments e
+        WHERE e.archived_at IS NULL AND NOT EXISTS (
+            SELECT 1 FROM employment_spells s
+            WHERE s.tenant_id = e.tenant_id AND s.employment_id = e.id
+              AND s.spell_no = e.current_spell_no)
+        """,
+    ),
+    Check(
+        "employment_with_two_open_stints",
+        "employments recorded as being in more than one stint at once",
+        """
+        SELECT count(*) FROM (
+            SELECT 1 FROM employment_spells
+            WHERE left_on IS NULL
+            GROUP BY tenant_id, employment_id HAVING count(*) > 1) t
+        """,
+    ),
+    Check(
+        "employment_without_service_start",
+        "employments with no date to count service from (continuity_start_date)",
+        "SELECT count(*) FROM employments WHERE continuity_start_date IS NULL",
+    ),
+    Check(
+        "held_leave_overdue",
+        "held leave that should have lapsed or been restored days ago (is the daily job running?)",
+        """
+        SELECT count(*) FROM leave_separation_settlements
+        WHERE action = 'HOLD' AND resolution IS NULL
+          AND hold_expires_on IS NOT NULL AND hold_expires_on < current_date - 2
+        """,
     ),
     Check(
         "delegation_step_missing",

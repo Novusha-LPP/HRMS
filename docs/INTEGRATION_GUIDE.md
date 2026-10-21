@@ -135,6 +135,20 @@ If your system sends more exits in 24 hours than the company's safety valve allo
 `202` with outcome `HELD_FOR_REVIEW`, and HR must release it. Rehire with
 `POST …/{id}/rehire {"hire_date": "…"}`.
 
+A rehire can also say what happens to the person's earlier service and leave. All four fields are
+optional, and leaving them out uses the company's rejoin policy (without one, earlier service
+continues, as it always has):
+
+| Field | Meaning |
+|---|---|
+| `rejoin_mode` | `CONTINUE` keeps earlier service and held leave; `FRESH` starts over and lapses unused leave |
+| `break_condoned` | The break is accepted as not interrupting service. Needed to continue after a break longer than the company allows |
+| `reason` | Why. Required for `FRESH`, and for continuing after a long break |
+| `gratuity_paid_at_exit` | Gratuity was paid when they left, so service restarts and only `FRESH` is allowed |
+
+A choice the company's rules rule out is refused with `422` and code `REJOIN_NOT_ALLOWED`; the
+message says why. The `employee.rehired` event carries `rejoin_mode` in its `changes`.
+
 ## 5. Reading changes made in HRMS: the events feed
 
 Poll every 30–60 seconds. Pass the `next_cursor` from your last call as `after`, and store it only

@@ -81,3 +81,14 @@ export function findPossibleDuplicates(
     return true;
   });
 }
+
+/** "3 years 2 months", "5 months", "Under a month". */
+export function describeService(months: number): string {
+  if (months <= 0) return "Under a month";
+  const years = Math.floor(months / 12);
+  const rest = months % 12;
+  const parts: string[] = [];
+  if (years) parts.push(`${years} ${years === 1 ? "year" : "years"}`);
+  if (rest) parts.push(`${rest} ${rest === 1 ? "month" : "months"}`);
+  return parts.join(" ");
+}

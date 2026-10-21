@@ -8,6 +8,13 @@ _APPROVER_RULES = """
 
 DOCS: dict[str, tuple[str, str]] = {
     # ─── Unused leave when someone leaves ────────────────────────────────────
+    "report_leave_settlements": (
+        "Report: leave settled for leavers",
+        "What happened to the unused leave of people who left in the date range (default: the "
+        "last 90 days): days unused, paid out, lapsed or still held, the rule applied, when a "
+        "hold ends and how it ended. Only people your access covers appear. `format=csv` "
+        "downloads it as a spreadsheet file.",
+    ),
     "list_separation_rules": (
         "List leave rules for leavers",
         "The rules that say what happens to unused leave when someone leaves, including ones "

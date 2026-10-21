@@ -134,3 +134,63 @@ async def test_the_history_lists_each_stint_and_how_a_rejoin_was_decided(api):
     assert newest["rejoin"]["mode"] == "FRESH" and newest["rejoin"]["reason"] == "New contract"
     assert first["spell_no"] == 1 and first["exit_reason"] == "RESIGNATION"
     assert first["rejoin"] is None
+
+
+async def test_the_integrity_checks_find_broken_lifecycle_data(api):
+    from sqlalchemy import text
+
+    from hrms.core import database
+    from hrms.core.ids import to_uuid
+    from hrms.db.integrity import run_checks
+
+    client, engine = api
+    _, _, emp = await _setup(client)
+    tid = await _tenant_of(engine, emp)
+
+    async def findings():
+        async with database.AsyncSessionLocal() as session, session.begin():
+            await session.execute(
+                text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tid)}
+            )
+            return await run_checks(session)
+
+    wanted = (
+        "employment_without_current_stint",
+        "employment_with_two_open_stints",
+        "employment_without_service_start",
+        "held_leave_overdue",
+    )
+    clean = await findings()
+    assert all(clean[name] == 0 for name in wanted)
+    employment = to_uuid(emp["id"])
+    async with engine.begin() as conn:
+        # A second open stint, a lost service date, and a stint number nothing records.
+        await conn.execute(
+            text(
+                "INSERT INTO employment_spells (tenant_id, id, employment_id, spell_no, "
+                "joined_on) VALUES (:t, gen_random_uuid(), :e, 2, '2021-01-01')"
+            ),
+            {"t": tid, "e": employment},
+        )
+        await conn.execute(
+            text("UPDATE employments SET continuity_start_date = NULL WHERE id = :e"),
+            {"e": employment},
+        )
+        await conn.execute(
+            text("UPDATE employments SET current_spell_no = 9 WHERE id = :e"), {"e": employment}
+        )
+    broken = await findings()
+    assert broken["employment_with_two_open_stints"] == 1
+    assert broken["employment_without_service_start"] == 1
+    assert broken["employment_without_current_stint"] == 1
+
+
+async def _tenant_of(engine, emp):
+    from sqlalchemy import text
+
+    from hrms.core.ids import to_uuid
+
+    async with engine.connect() as conn:
+        return await conn.scalar(
+            text("SELECT tenant_id FROM employments WHERE id = :e"), {"e": to_uuid(emp["id"])}
+        )

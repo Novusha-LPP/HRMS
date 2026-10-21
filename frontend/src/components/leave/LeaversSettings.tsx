@@ -12,6 +12,7 @@ import { ACTION_LABEL, MODE_LABEL } from "../../lib/rejoin";
 import { Skeleton, Notice } from "../ui/Feedback";
 import { useToast, errorMessage } from "../ui/Toast";
 import { UsageHelpButton } from "../ui/UsageHelpButton";
+import { LifecycleReports } from "./LifecycleReports";
 
 const today = () => format(new Date(), "yyyy-MM-dd");
 
@@ -30,6 +31,7 @@ export function LeaversSettings() {
         <SeparationRules />
         <RejoinPolicies />
       </div>
+      <LifecycleReports />
     </div>
   );
 }

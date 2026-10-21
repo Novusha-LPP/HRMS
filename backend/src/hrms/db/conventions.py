@@ -182,6 +182,7 @@ DOMAINS: dict[str, str | tuple[str, ...]] = {
     "employments.employment_state": "hrms.modules.people.models:EmploymentState",
     "rejoin_records.mode": "hrms.modules.people.models:RejoinMode",
     "rejoin_policies.default_mode": "hrms.modules.people.models:RejoinMode",
+    "company_transfers.leave_mode": "hrms.modules.people.models:TransferLeaveMode",
     "leave_separation_rules.on_separation": "hrms.modules.leave.models:SeparationAction",
     "leave_separation_settlements.action": "hrms.modules.leave.models:SeparationAction",
     "leave_separation_settlements.resolution": "hrms.modules.leave.models:SettlementResolution",

@@ -201,13 +201,13 @@ async def preview_rejoin(
 @router.get(
     "/v1/employees/{employment_id}/employment-history",
     response_model=EmploymentHistory,
-    dependencies=[require_permission("people.read")],
+    dependencies=[require_permission("people.write")],
 )
 async def employment_history(
     employment_id: str, scope: ScopeDep, tenant_id: TenantDep, session: SessionDep
 ) -> EmploymentHistory:
     """Each stint of this employment, newest first, with how each rejoin was decided."""
-    scope = scope.for_permission("people.read")
+    scope = scope.for_permission("people.write")
     emp_uuid = to_uuid(employment_id)
     await authorize_employment(session, tenant_id, scope, emp_uuid)
     emp = (

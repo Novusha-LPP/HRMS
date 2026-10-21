@@ -690,7 +690,14 @@ async def accrue_period(
     clause, params = employment_clause, employment_params or {}
     emp_rows = await session.execute(
         text(f"""
-            SELECT e.id, COALESCE(e.continuity_start_date, e.hire_date), e.employment_state
+            SELECT e.id, COALESCE(e.continuity_start_date, e.hire_date), e.employment_state,
+                   COALESCE((
+                       SELECT sum(
+                           EXTRACT(YEAR FROM age(ps.to_date, ps.from_date)) * 12
+                           + EXTRACT(MONTH FROM age(ps.to_date, ps.from_date)))
+                       FROM prior_service ps
+                       WHERE ps.tenant_id = e.tenant_id AND ps.person_id = e.person_id
+                         AND ps.recognised_for_leave), 0) AS prior_months
             FROM employments e
             WHERE e.tenant_id = CAST(:tid AS uuid)
               AND (e.separation_date IS NULL OR e.separation_date > CAST(:as_of AS date))
@@ -698,13 +705,15 @@ async def accrue_period(
         """),
         {"tid": str(tenant_id), "as_of": as_of, **params},
     )
-    employees = sorted(((UUID(str(r[0])), r[1], r[2]) for r in emp_rows), key=lambda e: str(e[0]))
+    employees = sorted(
+        ((UUID(str(r[0])), r[1], r[2], int(r[3])) for r in emp_rows), key=lambda e: str(e[0])
+    )
 
     # Everything per employee is resolved up front in a handful of queries (policy sets
     # once per placement, not per person), then each leave type is credited with one
     # set-based write — see engine.record_accruals. A 2,000-person run used to be ~100k
     # statements in one request.
-    emp_ids = [emp_id for emp_id, _, _ in employees]
+    emp_ids = [emp_id for emp_id, _, _, _ in employees]
     fy_months = await resolve_fy_start_months_bulk(session, tenant_id, emp_ids)
     policy_sets = await resolve_leave_policy_sets_bulk(session, tenant_id, emp_ids, as_of)
     bucket_policies: dict[tuple, LeaveBucketPolicy | None] = {}
@@ -738,7 +747,7 @@ async def accrue_period(
             session, tenant_id, bucket_id, as_of, fy_months, emp_ids
         )
         credits: list[tuple[UUID, float, int]] = []
-        for emp_id, hire_date, emp_state in employees:
+        for emp_id, hire_date, emp_state, prior_months in employees:
             pset = policy_sets.get(emp_id)
             key = (pset.id if pset else None, bucket_id)
             if key not in bucket_policies:
@@ -754,7 +763,9 @@ async def accrue_period(
                 continue
             eligible = (
                 entitlement.probation_eligible or emp_state != "PROBATION"
-            ) and tenure_months(hire_date, as_of) >= entitlement.min_service_months
+            ) and (
+                tenure_months(hire_date, as_of) + prior_months >= entitlement.min_service_months
+            )
             if not eligible or emp_id in already:
                 continue
             # A month that rounds to 0 is still recorded, so the count of months stays right.

@@ -14,6 +14,13 @@ Sign-in outcomes are hrms_http_requests_total{route="/v1/auth/login"} by status:
 Database pool (sampled at scrape time):
   hrms_db_pool_size, hrms_db_pool_checked_out, hrms_db_pool_overflow, hrms_db_pool_limit
 
+Employment lifecycle:
+  hrms_rejoins_total{mode}                                    CONTINUE or FRESH
+  hrms_leave_separation_settlements_total{action}             LAPSE, ENCASH or HOLD
+  hrms_leave_holds_resolved_total{outcome}                    lapsed or restored
+  hrms_company_transfers_total{leave_mode}                    CARRY or SETTLE
+  hrms_hire_past_employment_refused_total                     duplicate-hire guard hits
+
 Jobs:
   hrms_leave_accrual_run_seconds                              histogram
   hrms_leave_accruals_credited_total
@@ -93,6 +100,26 @@ SCHEDULED_ACTIONS = Counter(
     "Scheduled personnel actions processed when due",
     ["outcome"],
 )
+REJOINS = Counter(
+    "hrms_rejoins_total", "People who rejoined, by whether earlier service continued", ["mode"]
+)
+SEPARATION_SETTLEMENTS = Counter(
+    "hrms_leave_separation_settlements_total",
+    "Unused leave balances settled when someone left, by what was done",
+    ["action"],
+)
+HELD_LEAVE_RESOLVED = Counter(
+    "hrms_leave_holds_resolved_total",
+    "Held leave balances closed by the daily job, by outcome",
+    ["outcome"],
+)
+COMPANY_TRANSFERS = Counter(
+    "hrms_company_transfers_total", "People moved to another company, by leave mode", ["leave_mode"]
+)
+PAST_EMPLOYMENT_REFUSED = Counter(
+    "hrms_hire_past_employment_refused_total",
+    "Hires refused because the person already had an employment",
+)
 INTEGRATION_REQUESTS = Counter(
     "hrms_integration_requests_total",
     "Calls from connected apps, by app code, operation and outcome",
@@ -112,6 +139,14 @@ INTEGRATION_SESSIONS = Counter(
 # have a baseline before the first action is ever processed.
 for _outcome in ("applied", "failed"):
     SCHEDULED_ACTIONS.labels(_outcome)
+for _mode in ("CONTINUE", "FRESH"):
+    REJOINS.labels(_mode)
+for _action in ("LAPSE", "ENCASH", "HOLD"):
+    SEPARATION_SETTLEMENTS.labels(_action)
+for _resolution in ("lapsed", "restored"):
+    HELD_LEAVE_RESOLVED.labels(_resolution)
+for _leave_mode in ("CARRY", "SETTLE"):
+    COMPANY_TRANSFERS.labels(_leave_mode)
 
 
 class _PoolCollector(Collector):
