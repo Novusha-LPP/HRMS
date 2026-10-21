@@ -263,7 +263,7 @@ is promoted from testing to production unchanged.
 
 | Where | What is stored | Who manages it |
 |---|---|---|
-| **GitHub → Settings → Environments → `testing` → Secrets** | `RDS_OWNER_PASSWORD`, `HRMS_APP_ROLE_PASSWORD`, `HRMS_PLATFORM_ROLE_PASSWORD`, `HRMS_SECRET_KEY`, `HRMS_METRICS_TOKEN`, `HRMS_FIELD_ENCRYPTION_KEYS` | you. If any is missing, the workflow warns and keeps the files already on EC2. |
+| **GitHub → Settings → Environments → `testing` → Secrets** | `RDS_OWNER_PASSWORD`, `HRMS_APP_ROLE_PASSWORD`, `HRMS_PLATFORM_ROLE_PASSWORD`, `HRMS_SECRET_KEY`, `HRMS_METRICS_TOKEN`, `HRMS_FIELD_ENCRYPTION_KEYS`, `HRMS_PAYROLL_ENCRYPTION_KEYS`, `HRMS_PAYROLL_PEPPER` | you. If any is missing, the workflow warns and keeps the files already on EC2. |
 | **Same environment → Variables** (public) | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_ROLE_ARN`, `AWS_TESTING_ENABLED`, `EC2_INSTANCE_ID`, `DEPLOY_ARTIFACT_BUCKET`, `ECR_API_REPOSITORY`, `ECR_WEB_REPOSITORY`, `EC2_IMAGE_PLATFORM`, `RDS_HOSTNAME`, `RDS_DATABASE`, `RDS_OWNER_USERNAME`, `HRMS_WEB_API_URL`, `HRMS_CORS_ORIGINS`, `HRMS_DEFAULT_TIMEZONE`, `HRMS_DOCUMENT_STORAGE`, `HRMS_DOCUMENT_S3_BUCKET`; optional `FRONTEND_ECS_ENABLED` | you |
 | **EC2 `/etc/hrms/`** | the 3 env files (root, mode 600) and `rds-global-bundle.pem` (RDS CA certificate) | `deploy.sh` installs them |
 | **EC2 `/opt/hrms/testing/releases/…`** | each release bundle; symlink `current` = live release; `deploy.lock` prevents parallel deploys | `deploy.sh` |

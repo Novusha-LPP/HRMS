@@ -97,6 +97,23 @@ def validate_settings(runtime: dict, migrate: dict, deploy: dict) -> None:
                 raise ValueError()
     except (KeyError, ValueError):
         raise ValueError("Set valid, unique HRMS_FIELD_ENCRYPTION_KEYS with 32-byte keys") from None
+    try:
+        pay_keys = runtime["HRMS_PAYROLL_ENCRYPTION_KEYS"].split(",")
+        pay_ids = set()
+        for item in pay_keys:
+            key_id, material = item.split(":", 1)
+            if not key_id or key_id == "dev" or key_id in pay_ids or item in keys:
+                raise ValueError()
+            pay_ids.add(key_id)
+            if len(base64.b64decode(material, altchars=b"-_", validate=True)) != 32:
+                raise ValueError()
+    except (KeyError, ValueError):
+        raise ValueError(
+            "Set valid, unique HRMS_PAYROLL_ENCRYPTION_KEYS (32-byte keys, not the PII keys)"
+        ) from None
+    pepper = runtime.get("HRMS_PAYROLL_PEPPER", "")
+    if len(pepper) < 32 or "REPLACE" in pepper:
+        raise ValueError("Set a random HRMS_PAYROLL_PEPPER of at least 32 characters")
     origins = runtime.get("HRMS_CORS_ORIGINS", "").split(",")
     for value in origins + [deploy.get("HRMS_WEB_API_URL", "")]:
         url = urlsplit(value.strip())

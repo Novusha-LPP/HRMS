@@ -131,6 +131,8 @@ jobs:
           HRMS_SECRET_KEY: ${{ secrets.HRMS_SECRET_KEY }}
           HRMS_METRICS_TOKEN: ${{ secrets.HRMS_METRICS_TOKEN }}
           HRMS_FIELD_ENCRYPTION_KEYS: ${{ secrets.HRMS_FIELD_ENCRYPTION_KEYS }}
+          HRMS_PAYROLL_ENCRYPTION_KEYS: ${{ secrets.HRMS_PAYROLL_ENCRYPTION_KEYS }}
+          HRMS_PAYROLL_PEPPER: ${{ secrets.HRMS_PAYROLL_PEPPER }}
           HRMS_WEB_API_URL: ${{ vars.HRMS_WEB_API_URL }}
           HRMS_CORS_ORIGINS: ${{ vars.HRMS_CORS_ORIGINS }}
           HRMS_DEFAULT_TIMEZONE: ${{ vars.HRMS_DEFAULT_TIMEZONE || 'Asia/Kolkata' }}
@@ -157,6 +159,8 @@ jobs:
               'HRMS_SECRET_KEY',
               'HRMS_METRICS_TOKEN',
               'HRMS_FIELD_ENCRYPTION_KEYS',
+              'HRMS_PAYROLL_ENCRYPTION_KEYS',
+              'HRMS_PAYROLL_PEPPER',
           ]
           missing = [k for k in required_secrets if not os.environ.get(k)]
 
@@ -178,6 +182,8 @@ jobs:
                   f"HRMS_SECRET_KEY={os.environ['HRMS_SECRET_KEY']}",
                   f"HRMS_METRICS_TOKEN={os.environ['HRMS_METRICS_TOKEN']}",
                   f"HRMS_FIELD_ENCRYPTION_KEYS={os.environ['HRMS_FIELD_ENCRYPTION_KEYS']}",
+                  f"HRMS_PAYROLL_ENCRYPTION_KEYS={os.environ['HRMS_PAYROLL_ENCRYPTION_KEYS']}",
+                  f"HRMS_PAYROLL_PEPPER={os.environ['HRMS_PAYROLL_PEPPER']}",
                   f"HRMS_CORS_ORIGINS={os.environ['HRMS_CORS_ORIGINS']}",
                   "HRMS_ALLOW_PUBLIC_REGISTRATION=false",
                   "HRMS_API_DOCS_ENABLED=true",

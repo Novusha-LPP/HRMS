@@ -33,6 +33,8 @@ def config():
         "HRMS_SECRET_KEY": "c" * 64,
         "HRMS_METRICS_TOKEN": "d" * 64,
         "HRMS_FIELD_ENCRYPTION_KEYS": "k1:" + base64.urlsafe_b64encode(b"e" * 32).decode(),
+        "HRMS_PAYROLL_ENCRYPTION_KEYS": "p1:" + base64.urlsafe_b64encode(b"f" * 32).decode(),
+        "HRMS_PAYROLL_PEPPER": "g" * 48,
         "HRMS_CORS_ORIGINS": "https://testing.example.com",
     }
     migrate = {
