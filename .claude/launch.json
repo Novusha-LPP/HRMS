@@ -1,0 +1,7 @@
+{
+  "version": "0.0.1",
+  "configurations": [
+    { "name": "hrms-try-api", "runtimeExecutable": "/tmp/claude-1000/-home-aiserver-HRMS/f2a70809-28ae-4951-8f23-0078d63568be/scratchpad/try_api.sh", "runtimeArgs": [], "port": 18015 },
+    { "name": "hrms-try-web", "runtimeExecutable": "/tmp/claude-1000/-home-aiserver-HRMS/f2a70809-28ae-4951-8f23-0078d63568be/scratchpad/try_web.sh", "runtimeArgs": [], "port": 18180 }
+  ]
+}
