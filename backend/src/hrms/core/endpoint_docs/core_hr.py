@@ -427,4 +427,32 @@ and their access is written to the employee's access log.
         "Preview a KYC document",
         "The same as download, but served inline so a browser can display it.",
     ),
+    "set_employee_photo": (
+        "Set or replace a profile photo",
+        """
+Replaces the person's profile photo with the PNG or JPEG you send (`415` for anything else,
+`422` if the image cannot be read, `413` over the upload limit). Any earlier photo and its
+thumbnail are removed. You can change your own; changing someone else's needs `kyc.write`
+(or `people.write`) over them. The new photo starts as `PENDING` and does not reset the
+employee's KYC verification.
+""",
+    ),
+    "remove_employee_photo": (
+        "Remove a profile photo",
+        "Deletes the person's profile photo and its thumbnail; the app goes back to initials. "
+        "Same access as setting it: your own, or `kyc.write` / `people.write` over them.",
+    ),
+    "employee_photo": (
+        "A person's profile photo",
+        """
+Returns the person's current profile photo (their `PHOTO` document, unless HR rejected it) as a
+small square JPEG, for avatars. Add `?size=large` for the whole picture (at most 640 pixels
+on its longer side), to look at it. The thumbnail is made on first use and kept encrypted next to
+the original. Only the photo is served here, never the other identity documents.
+
+You can always see your own. For anyone else you need `people.read` over that person. `204`
+when there is no photo, in which case the app shows initials. The response carries an `ETag`;
+send it back as `If-None-Match` to get `304` while the photo is unchanged.
+""",
+    ),
 }

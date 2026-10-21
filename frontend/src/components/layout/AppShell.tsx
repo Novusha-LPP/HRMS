@@ -298,7 +298,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
           isHrmsTheme ? "hover:bg-white/10" : "hover:bg-fg/[0.045]"
         } ${collapsed ? "justify-center p-1" : "p-1.5"} ${open ? (isHrmsTheme ? "bg-white/10" : "bg-fg/[0.045]") : ""}`}
       >
-        <Avatar name={user.name} size="md" />
+        <Avatar name={user.name} size="md" employmentId={user.employmentId} />
         {!collapsed && (
           <>
             {/* Midnight's sidebar uses a dedicated foreground on its navy surface. */}
@@ -314,7 +314,7 @@ function UserMenu({ collapsed }: { collapsed: boolean }) {
       {open && (
         <div className="popover absolute bottom-full left-0 mb-2 w-64">
           <div className="flex items-center gap-3 px-2.5 py-2.5">
-            <Avatar name={user.name} size="lg" />
+            <Avatar name={user.name} size="lg" employmentId={user.employmentId} viewable />
             <div className="min-w-0 leading-tight">
               <p className="truncate text-[13px] font-medium text-fg">{user.name}</p>
               <p className="truncate text-xs text-fg-subtle">{ROLE_LABEL[user.role]} · {user.tenantName}</p>

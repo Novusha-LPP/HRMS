@@ -76,6 +76,7 @@ async function fixtures(page: Page, options: FixtureOptions = {}): Promise<Fixtu
     if (path === "/v1/dashboard/layout") return reply({ dashboard: "hr", widgets: [{ widget: "kpi_headcount", size: "quarter" }], is_default: true, sections: "headcount", catalog: [{ id: "kpi_headcount", title: "Headcount", description: "People employed", category: "People", default_size: "quarter", sizes: ["quarter"] }] });
     if (path === "/v1/dashboard/hr") return reply({ headcount: { total: 24 } });
     if (["/v1/leave/applications", "/v1/corrections", "/v1/employees"].includes(path)) return reply([]);
+    if (/^\/v1\/kyc\/employees\/[^/]+\/photo$/.test(path)) return route.fulfill({ status: 204 });
     state.unexpectedRequests.push(`GET ${path}`);
     return reply({ message: `Missing celebration fixture: ${path}` }, 404);
   });

@@ -12,12 +12,13 @@ document it is recorded in the append-only kyc_access_log.
 
 import re
 from datetime import UTC, datetime
+from typing import Literal
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, File, Form, HTTPException, Query, UploadFile, status
+from fastapi import APIRouter, File, Form, Header, HTTPException, Query, UploadFile, status
 from fastapi.responses import Response
 from sqlalchemy import text
-from sqlmodel import select
+from sqlmodel import col, select
 from starlette.concurrency import run_in_threadpool
 
 from hrms.core import document_store
@@ -29,6 +30,7 @@ from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
 from hrms.core.versioning import require_version
+from hrms.modules.kyc import photo
 from hrms.modules.kyc.models import (
     DocumentStatus,
     EmployeeKycDocument,
@@ -810,6 +812,9 @@ async def delete_document(
 
     # Delete only after commit, so rollback cannot leave metadata pointing at a removed file.
     session.info.setdefault("delete_files", []).append(doc.storage_path)
+    if doc.document_type == photo.PHOTO_TYPE:
+        session.info["delete_files"].append(photo.thumbnail_ref(tenant_id, doc.id))
+        session.info["delete_files"].append(photo.large_ref(tenant_id, doc.id))
     rec = await _get_or_create_record(session, tenant_id, doc.employment_id)
     _invalidate_verification(rec)
     session.add(rec)
@@ -841,6 +846,191 @@ async def preview_document(
     scope: ScopeDep,
 ):
     return await _serve_doc_file(document_id, user, tenant_id, session, scope, inline=True)
+
+
+NO_STORE = {"Cache-Control": "no-store"}
+
+
+async def _authorize_photo_change(session, tenant_id, user, scope, emp_uuid) -> None:
+    """Your own photo, or HR's (the same rule as uploading someone's documents)."""
+    if user.employment_id == emp_uuid:
+        return
+    write = scope.for_permission("kyc.write")
+    await authorize_employment(session, tenant_id, write, emp_uuid)
+    if not (write.has("kyc.write") or write.has("people.write")):
+        raise HTTPException(status.HTTP_403_FORBIDDEN, "Missing kyc.write permission")
+
+
+async def _photo_documents(session, tenant_id, emp_uuid):
+    return (
+        (
+            await session.execute(
+                select(EmployeeKycDocument)
+                .where(EmployeeKycDocument.tenant_id == tenant_id)
+                .where(EmployeeKycDocument.employment_id == emp_uuid)
+                .where(EmployeeKycDocument.document_type == photo.PHOTO_TYPE)
+            )
+        )
+        .scalars()
+        .all()
+    )
+
+
+async def _remove_photo_documents(session, tenant_id, documents) -> None:
+    for doc in documents:
+        # Files go only after the commit, so a rollback cannot leave a row without its file.
+        session.info.setdefault("delete_files", []).append(doc.storage_path)
+        session.info["delete_files"].append(photo.thumbnail_ref(tenant_id, doc.id))
+        session.info["delete_files"].append(photo.large_ref(tenant_id, doc.id))
+        await session.delete(doc)
+
+
+@router.put(
+    "/employees/{employment_id}/photo",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Set or replace a person's profile photo",
+)
+async def set_employee_photo(
+    employment_id: str,
+    user: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+    file: UploadFile = File(...),
+) -> Response:
+    emp_uuid = to_uuid(employment_id)
+    await _authorize_photo_change(session, tenant_id, user, scope, emp_uuid)
+    content = await file.read(settings.max_upload_bytes + 1)
+    if len(content) > settings.max_upload_bytes:
+        raise HTTPException(413, "The photo exceeds the upload limit")
+    if content.startswith(b"\x89PNG\r\n\x1a\n"):
+        mime = "image/png"
+    elif content.startswith(b"\xff\xd8\xff"):
+        mime = "image/jpeg"
+    else:
+        raise HTTPException(415, "A profile photo must be a PNG or JPEG image")
+    if await run_in_threadpool(photo.make_thumbnail, content) is None:
+        raise HTTPException(422, "That image could not be read; try another photo")
+
+    await lock_resource(session, tenant_id, f"kyc-photo:{emp_uuid}")
+    existing = await _photo_documents(session, tenant_id, emp_uuid)
+    await _remove_photo_documents(session, tenant_id, existing)
+    doc_id = uuid4()
+    name = _clean_filename(file.filename or f"photo_{doc_id}")
+    ref = await run_in_threadpool(document_store.save, f"kyc/{tenant_id}/{doc_id}_{name}", content)
+    session.info.setdefault("created_files", []).append(ref)
+    session.add(
+        EmployeeKycDocument(
+            tenant_id=tenant_id,
+            id=doc_id,
+            employment_id=emp_uuid,
+            document_type=photo.PHOTO_TYPE,
+            document_title="Profile photo",
+            file_name=name,
+            file_size=len(content),
+            mime_type=mime,
+            storage_path=ref,
+            status=DocumentStatus.PENDING,
+            uploaded_by=user.user_account_id,
+            uploaded_at=datetime.now(UTC),
+        )
+    )
+    await session.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers=NO_STORE)
+
+
+@router.delete(
+    "/employees/{employment_id}/photo",
+    status_code=status.HTTP_204_NO_CONTENT,
+    summary="Remove a person's profile photo",
+)
+async def remove_employee_photo(
+    employment_id: str,
+    user: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> Response:
+    emp_uuid = to_uuid(employment_id)
+    await _authorize_photo_change(session, tenant_id, user, scope, emp_uuid)
+    await lock_resource(session, tenant_id, f"kyc-photo:{emp_uuid}")
+    existing = await _photo_documents(session, tenant_id, emp_uuid)
+    await _remove_photo_documents(session, tenant_id, existing)
+    await session.flush()
+    return Response(status_code=status.HTTP_204_NO_CONTENT, headers=NO_STORE)
+
+
+def _no_photo() -> Response:
+    """Not an error: most people simply have no photo, and the app shows initials."""
+    return Response(
+        status_code=status.HTTP_204_NO_CONTENT, headers={"Cache-Control": "private, max-age=60"}
+    )
+
+
+@router.get(
+    "/employees/{employment_id}/photo",
+    summary="A person's profile photo (small)",
+    responses={204: {"description": "No photo"}, 304: {"description": "Unchanged"}},
+)
+async def employee_photo(
+    employment_id: str,
+    user: CurrentUser,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+    if_none_match: str | None = Header(default=None),
+    size: Literal["small", "large"] = Query(default="small"),
+) -> Response:
+    emp_uuid = to_uuid(employment_id)
+    if user.employment_id != emp_uuid:
+        # The face on a profile is what colleagues already see; the identity scans are not
+        # served here (only the PHOTO type, as a small JPEG) and need kyc access elsewhere.
+        readable = scope.for_permission("people.read")
+        await authorize_employment(session, tenant_id, readable, emp_uuid)
+    doc = (
+        (
+            await session.execute(
+                select(EmployeeKycDocument)
+                .where(EmployeeKycDocument.tenant_id == tenant_id)
+                .where(EmployeeKycDocument.employment_id == emp_uuid)
+                .where(EmployeeKycDocument.document_type == photo.PHOTO_TYPE)
+                .where(EmployeeKycDocument.status != DocumentStatus.REJECTED)
+                .order_by(col(EmployeeKycDocument.uploaded_at).desc())
+                .limit(1)
+            )
+        )
+        .scalars()
+        .first()
+    )
+    if doc is None:
+        return _no_photo()
+    etag = f'"{doc.id}"' if size == "small" else f'"{doc.id}-large"'
+    headers = {
+        "Cache-Control": "private, max-age=300",
+        "ETag": etag,
+        "X-Content-Type-Options": "nosniff",
+        "Content-Security-Policy": "sandbox",
+    }
+    if if_none_match == etag:
+        return Response(status_code=status.HTTP_304_NOT_MODIFIED, headers=headers)
+    large = size == "large"
+    ref = (photo.large_ref if large else photo.thumbnail_ref)(tenant_id, doc.id)
+    thumb: bytes | None
+    try:
+        thumb = await run_in_threadpool(document_store.load, ref)
+    except document_store.DocumentMissing:
+        try:
+            original = await run_in_threadpool(document_store.load, doc.storage_path)
+        except document_store.DocumentMissing:
+            return _no_photo()
+        render = photo.make_large if large else photo.make_thumbnail
+        thumb = await run_in_threadpool(render, original)
+        if thumb is None:
+            return _no_photo()
+        key = ref[len(document_store.REF_PREFIX) :]
+        await run_in_threadpool(document_store.save, key, thumb)
+    content = thumb
+    return Response(content=content, media_type="image/jpeg", headers=headers)
 
 
 async def _serve_doc_file(

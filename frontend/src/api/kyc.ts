@@ -213,6 +213,31 @@ export const kycApi = {
   deleteDocument: (documentId: string) =>
     api.delete(`/v1/kyc/documents/${documentId}`),
 
+  setProfilePhoto: (employmentId: string, file: File) => {
+    const fd = new FormData();
+    fd.append("file", file);
+    return api.putForm<void>(`/v1/kyc/employees/${encodeURIComponent(employmentId)}/photo`, fd);
+  },
+
+  removeProfilePhoto: (employmentId: string) =>
+    api.delete(`/v1/kyc/employees/${encodeURIComponent(employmentId)}/photo`),
+
+  /** A person's small profile photo, or null when they have none or you may not see it. */
+  async profilePhoto(
+    employmentId: string,
+    size: "small" | "large" = "small",
+    /** Just changed: skip the browser's cached answer so the new picture (or none) shows at once. */
+    fresh = false,
+  ): Promise<Blob | null> {
+    const res = await fetch(`${API_BASE_URL}/v1/kyc/employees/${encodeURIComponent(employmentId)}/photo?size=${size}`, {
+      headers: { "X-HRMS-Session": "cookie" }, credentials: "include", signal: AbortSignal.timeout(20_000),
+      cache: fresh ? "reload" : size === "large" ? "no-cache" : "default",
+    });
+    if (res.status === 204 || res.status === 403 || res.status === 404) return null;
+    if (!res.ok) throw new Error("Failed to load photo");
+    return res.blob();
+  },
+
   async fetchDocumentBlob(relativeUrl: string): Promise<{ blob: Blob; url: string }> {
     const headers = { "X-HRMS-Session": "cookie" };
     const res = await fetch(`${API_BASE_URL}${relativeUrl}`, {

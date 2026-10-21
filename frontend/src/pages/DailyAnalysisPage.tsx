@@ -661,7 +661,7 @@ export function DailyAnalysisPage() {
                       {/* Employee Profile */}
                       <td>
                         <div className="flex items-center gap-3">
-                          <Avatar name={emp.name} size="sm" />
+                          <Avatar name={emp.name} size="sm" employmentId={emp.employment_id} />
                           <div className="min-w-0 leading-tight">
                             <span className="block truncate font-medium text-fg">
                               {emp.name}
@@ -808,7 +808,7 @@ export function DailyAnalysisPage() {
         title={
           inspectEmployee ? (
             <div className="flex items-center gap-3">
-              <Avatar name={inspectEmployee.name} size="md" />
+              <Avatar name={inspectEmployee.name} size="md" employmentId={inspectEmployee.employment_id} />
               <div>
                 <h3 className="font-semibold text-fg">{inspectEmployee.name}</h3>
                 <p className="text-xs text-fg-subtle">

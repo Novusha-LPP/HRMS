@@ -158,7 +158,7 @@ function PeopleList({ company, department, selectedId, onChoose }: {
                 type="button" role="option" aria-selected={active} onClick={() => onChoose(e)}
                 className={`flex w-full items-center gap-3 rounded-lg px-2.5 py-2 text-left transition-colors ${active ? "bg-brand-500/10" : "hover:bg-muted"}`}
               >
-                <Avatar name={e.name} size="sm" />
+                <Avatar name={e.name} size="sm" employmentId={e.employment_id} />
                 <span className="min-w-0 leading-tight">
                   <span className={`block truncate text-[13px] font-medium ${active ? "text-accent" : "text-fg"}`}>{e.name}</span>
                   <span className="block truncate text-xs text-fg-subtle">{e.employee_number}{e.department ? ` · ${e.department}` : ""}</span>

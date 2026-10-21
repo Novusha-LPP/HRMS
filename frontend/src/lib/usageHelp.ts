@@ -1,5 +1,25 @@
-export type UsageHelpTopic = "organization" | "departments" | "companies" | "company-departments" | "teams" | "approvals" | "payroll"
-  | "integrations-overview" | "integrations-keys" | "integrations-settings" | "integrations-mappings" | "integrations-log" | "integrations-review";
+export type UsageHelpTopic =
+  | "organization"
+  | "org-overview"
+  | "departments"
+  | "companies"
+  | "company-departments"
+  | "teams"
+  | "locations"
+  | "jobs"
+  | "grades"
+  | "positions"
+  | "cost-centres"
+  | "employee-ids"
+  | "company-admins"
+  | "approvals"
+  | "payroll"
+  | "integrations-overview"
+  | "integrations-keys"
+  | "integrations-settings"
+  | "integrations-mappings"
+  | "integrations-log"
+  | "integrations-review";
 
 export interface UsageHelp {
   title: string;
@@ -116,35 +136,50 @@ export const usageHelp: Record<UsageHelpTopic, UsageHelp> = {
     note: "Several employees can use the same workflow. Transfers do not change their selected workflows. Changes apply to new requests; submitted requests keep their original approvers. Employees cannot approve their own requests.",
   },
   organization: {
-    title: "Set up your organization",
-    introduction: "Define departments once, then organize each company’s teams and employees.",
+    title: "Set up and manage your group organization",
+    introduction: "Structure your enterprise across legal entities, shared departments, physical locations, job titles, grades, positions, and cost centres.",
     steps: [
-      { title: "Create the department list", description: "Open Departments and create Sales, HR, Finance, or other departments. No company selection is needed yet." },
-      { title: "Assign departments to companies", description: "Select Assign to company, choose a company, tick the departments it needs, then select Assign departments. Repeat for other companies." },
-      { title: "Manage teams within each company", description: "Open Companies → Departments & teams. Choose a department to create teams and assign employees." },
+      { title: "Review group-wide metrics", description: "Use the Overview tab to monitor active headcount, registered entities, operating hubs, retention brackets, and workforce allocation." },
+      { title: "Register legal entities & locations", description: "Add your parent and subsidiary companies under Companies. Define operating offices, factories, sites, and remote hubs under Locations." },
+      { title: "Configure departments and teams", description: "Create reusable department templates under Departments, assign them to authorized companies, and organize internal teams and employee rosters." },
+      { title: "Standardize jobs, grades, and positions", description: "Define universal Job titles and hierarchical career Grades. Create approved Positions with headcount caps to track budgeted seats and open vacancies." },
+      { title: "Set up cost centres and employee ID schemes", description: "Add Cost centres for financial allocation and payroll booking. Configure automatic Employee ID schemes to sequentially number new hires per company or group-wide." },
     ],
-    note: "The same department can belong to several companies. Their teams and employees remain separate.",
+    note: "Group administrators configure shared masters such as companies, global locations, job titles, and tenant ID schemes. Company administrators manage team assignments, employee placements, and company-specific workflows within their authorized entities.",
   },
-  departments: {
-    title: "Use the shared department list",
-    introduction: "Create a reusable list of departments before assigning companies.",
+  "org-overview": {
+    title: "Understand organization overview & workforce analytics",
+    introduction: "Get an executive snapshot of your entire enterprise structure, operating footprint, employee seniority, and workforce distribution.",
     steps: [
-      { title: "Create a department", description: "Select Create department. Enter a name and an optional code, then save. Add each department your organization needs." },
-      { title: "Assign one or several departments", description: "Select Assign to company. Choose the company, tick the departments, then select Assign departments. Departments already assigned are marked Assigned." },
-      { title: "Open a company’s departments", description: "Select a company name on a department card, or go to Companies → Departments & teams. Manage teams and employees there." },
-      { title: "Edit a shared department", description: "Select its pencil icon to change the name or code. The change updates that department in every assigned company." },
+      { title: "Track key organizational KPIs", description: "Monitor headline numbers for total active staff, registered legal entities, operating locations/hubs, active departments, average employee tenure, and statutory KYC verification rates." },
+      { title: "Analyze employee seniority and retention", description: "Review the tenure breakdown across Veterans (10+ years), Established (5 to 10 years), and Growth (< 5 years) to understand workforce stability and retention patterns." },
+      { title: "Inspect operating locations & hubs", description: "Preview active office, site, and plant locations across cities. Click Manage locations to jump directly to location configuration." },
+      { title: "Examine workforce allocation", description: "Toggle between By company and By department in the allocation widget to view active staff distribution and percentages across subsidiaries and business units." },
+      { title: "Quick navigation to organization modules", description: "Click on any summary metric card (Legal entities, Locations & hubs, Departments) to open that module for editing." },
     ],
-    note: "A group administrator creates and edits shared departments. Company administrators can assign existing departments within their authorized companies.",
+    note: "All overview metrics calculate automatically from active employee records and current organization settings. KYC compliance measures the percentage of active staff with verified identity and statutory records.",
   },
   companies: {
-    title: "Manage companies and their teams",
-    introduction: "Each company has its own departments, teams, and employee assignments.",
+    title: "Manage group legal entities & companies",
+    introduction: "Each company represents a registered legal entity or subsidiary within your enterprise group, with its own workforce, departments, and payroll.",
     steps: [
-      { title: "Open the company", description: "Find its card and select Departments & teams." },
-      { title: "Assign its departments", description: "Select Assign departments, choose departments from the shared list, then save." },
-      { title: "Manage teams and employees", description: "On a department card, select Manage teams & employees. Create teams, view members, and assign employees." },
+      { title: "Add a legal entity", description: "Select Add company, enter the registered legal name, short trading name or code, corporate registration/tax ID, operating currency, and registered office address." },
+      { title: "Open company workspaces", description: "Find any company card and select Departments & teams to manage that company's active departments, internal teams, and assigned employee rosters." },
+      { title: "Update company details", description: "Click the pencil icon on any company card to edit corporate registration information, currency, or contact addresses. Use the History icon to view audit logs." },
+      { title: "Assign company-specific administrators", description: "Use Company admins (Access tab) to grant company-scoped access to HR managers or accountants who should only administer this specific entity." },
     ],
-    note: "To add or edit a company, use Add company or the pencil icon. Company details are managed by a group administrator.",
+    note: "Creating or modifying legal entities requires group administrator permissions. A company cannot be deleted if active employee employments, departments, or payroll histories are attached to it.",
+  },
+  departments: {
+    title: "Manage shared departments & company assignments",
+    introduction: "Define master departments once at the group level, then assign them to the companies that operate those business functions.",
+    steps: [
+      { title: "Create shared department masters", description: "Select Create department, enter a name (e.g. Engineering, Human Resources, Finance) and a short code (e.g. ENG, HR, FIN). Shared departments are reusable across all companies." },
+      { title: "Assign departments to companies", description: "Select Assign to company, choose the target company, tick the departments it operates, and save. Already assigned departments are marked as Assigned." },
+      { title: "Build company teams & assign staff", description: "Click on an assigned company card or open Companies → Departments & teams to create internal teams and assign employees inside that department." },
+      { title: "Edit master department details", description: "Select the pencil icon to update a department's name or code. Renaming updates the master definition across all assigned companies while preserving company teams." },
+    ],
+    note: "Shared departments ensure consistent group-wide reporting. Teams and employee memberships created inside a company's department remain strictly isolated to that company.",
   },
   "company-departments": {
     title: "Manage this company’s departments",
@@ -167,5 +202,85 @@ export const usageHelp: Record<UsageHelpTopic, UsageHelp> = {
       { title: "Edit the team", description: "Select its card, then Edit team. The History icon shows name and code changes." },
     ],
     note: "Changes take effect today and preserve the employee’s job, location, manager, and assignment history. New employees must first be placed in this department through the Employees page. If a bulk update partly fails, successful changes stay saved and failed employees remain selected for retry.",
+  },
+  locations: {
+    title: "Manage operating locations, offices & sites",
+    introduction: "Locations represent the physical offices, manufacturing plants, customer sites, and remote hubs where employees are based.",
+    steps: [
+      { title: "Add a physical location or hub", description: "Select Add location, enter the location name (e.g. Corporate HQ, Tech Center, Warehouse Site 1), and select its type: Office, Site, Plant, or Remote." },
+      { title: "Set geographic details & company scope", description: "Specify the city and country. Choose whether the location is restricted to a specific company or shared across All companies for multi-tenant offices." },
+      { title: "Assign locations to employees", description: "When placing employees into departments or onboarding new hires, select their primary location. This drives geo-fencing, attendance rules, and state statutory compliance." },
+      { title: "Edit locations & view change history", description: "Click the pencil icon to modify address or type details. Select the History icon to view timestamped audit logs of all modifications." },
+    ],
+    note: "Every employee must be assigned a location when placed into a department. Shared locations allow employees from different group subsidiaries to share the same physical office.",
+  },
+  jobs: {
+    title: "Define standard job titles & designations",
+    introduction: "Maintain a standardized, group-wide catalog of job designations and functional disciplines across all group companies.",
+    steps: [
+      { title: "Add a job title", description: "Select Add job title, enter the formal designation title (e.g. Senior Software Engineer, Accounts Manager, Plant Operator)." },
+      { title: "Assign standard code and function", description: "Optionally enter a unique job code (e.g. ENG-01) and functional discipline (e.g. Technology, Operations, Finance) for categorization and ERP integration." },
+      { title: "Link to positions and employments", description: "Select defined job titles when creating approved department positions or updating an employee's employment designation." },
+      { title: "Review audit history", description: "Click the History icon on any job title row to view who created or modified the title, code, or functional classification." },
+    ],
+    note: "Job titles are universal across all companies in the tenant. They represent the professional designation, whereas Positions represent specific approved seats with headcount limits.",
+  },
+  grades: {
+    title: "Configure grades & hierarchical levels",
+    introduction: "Establish hierarchical career levels, pay bands, and seniority grades (e.g. L1–L6, M1–M3, W1–W4) across the organization.",
+    steps: [
+      { title: "Add a career grade", description: "Select Add grade, enter a short code (e.g. M1, L2, VP) and a descriptive level name (e.g. Associate Manager, Lead Specialist)." },
+      { title: "Set hierarchy sequence order", description: "Enter an order number where lower numbers represent entry/junior levels and higher numbers represent senior leadership. Reports and sorting rely on this sequence." },
+      { title: "Connect to positions and compensation", description: "Link grades to approved department positions and payroll salary structures to enforce structured pay ranges and transparent promotion paths." },
+      { title: "Manage lifecycle status", description: "In edit mode, toggle status between Active (available for new positions and hires) and Inactive (retained on existing staff records but hidden from new selections)." },
+    ],
+    note: "Grades provide uniform career leveling across diverse subsidiaries. Inactivating a grade preserves historical compensation and promotion records without disrupting current employees.",
+  },
+  positions: {
+    title: "Track approved positions & workforce vacancies",
+    introduction: "Positions represent budgeted, approved seats within a specific company department or team (e.g. 'Shift Supervisor × 3' or 'Frontend Lead × 1').",
+    steps: [
+      { title: "Create an approved position", description: "Select Add position, enter an operational position title (e.g. Shift Supervisor), and select the target company department or team." },
+      { title: "Map job title & grade", description: "Optionally link the position to a master Job Title and Grade to inherit leveling guidelines and compensation structure benchmarks." },
+      { title: "Set approved headcount quota", description: "Enter the approved headcount quota (e.g. 3 seats) or leave blank for an unrestricted role. Positions with quotas automatically calculate open vacancies." },
+      { title: "Set effective dates & lifecycle", description: "Specify the Approved from date and optional End date for contract or project roles. Active positions appear in recruitment and vacancy metrics." },
+      { title: "Monitor open vacancies", description: "View filled seats versus approved quotas in the table and HR Dashboard. As employees are placed into the position, vacancies update in real time." },
+    ],
+    note: "Positions belong to a specific company's department or team (never the abstract shared department template). To move a seat to another department, retire the position and create a new one in the destination unit.",
+  },
+  "cost-centres": {
+    title: "Manage accounting cost centres",
+    introduction: "Cost centres define financial accounting codes where employee compensation, statutory contributions, and operational costs are booked.",
+    steps: [
+      { title: "Add a cost centre", description: "Select Add cost centre, enter the accounting code (e.g. CC-101, CC-OPS, CC-ENG) matching your general ledger chart of accounts, and enter a descriptive name." },
+      { title: "Assign to employee records", description: "Select the cost centre when hiring or editing employee records and configuring payroll salaries to tag payroll expenses to the correct business unit." },
+      { title: "Export for financial journals", description: "Group payroll summaries, bank payment advice files, and general ledger journal exports by cost centre for streamlined reconciliation in your ERP." },
+      { title: "Retire obsolete cost centres", description: "When an accounting unit is discontinued, edit the cost centre and set its status to Inactive. Existing historical payroll records remain intact." },
+    ],
+    note: "Cost centres are shared across the tenant. Inactive cost centres are preserved for past payroll audits and accounting reports, but cannot be assigned to new employee records.",
+  },
+  "employee-ids": {
+    title: "Configure automatic employee ID numbering",
+    introduction: "Employee ID schemes generate consistent, sequential identification codes for new hires automatically upon onboarding.",
+    steps: [
+      { title: "Add an ID numbering scheme", description: "Select Add scheme. Choose the Scope: 'Whole tenant' for a global group pattern, or select a specific company for subsidiary-specific numbering." },
+      { title: "Define prefix and separator", description: "Enter an uppercase prefix (e.g. ACME, NOV, EMP) and an optional separator character (such as '-', '/', or leave empty)." },
+      { title: "Set digit padding & starting number", description: "Choose digit padding (e.g. 4 digits generates 0001) and enter the starting sequence number (e.g. 1 or 1001). Check the live Next ID preview." },
+      { title: "Automatic assignment during onboarding", description: "When hiring a new employee, HRMS suggests the next sequential ID automatically. A company-specific scheme always overrides the whole-tenant scheme." },
+      { title: "Edit or remove schemes", description: "Edit a scheme to update formatting or advance the sequence. Removing a scheme returns that scope to manual employee ID entry." },
+    ],
+    note: "ID schemes apply only to new hires created after the scheme is configured; existing employees are never renumbered. If no scheme is configured, employee IDs must be entered manually.",
+  },
+  "company-admins": {
+    title: "Manage company administrators & access permissions",
+    introduction: "Configure company-wide administrative accounts for HR managers, accountants, and auditors who manage records across legal entities.",
+    steps: [
+      { title: "Add an administrative user", description: "Select Add admin, enter their full name, official work email address, and an initial secure password." },
+      { title: "Assign an administrative role", description: "Select the role matching their duties, such as Company Admin, HR Manager, Payroll Officer, or Super Admin." },
+      { title: "Define company access scope", description: "Select the specific company they are authorized to manage, or grant All companies scope for group-level administrators." },
+      { title: "Toggle account status & access", description: "Temporarily disable an administrator's sign-in by switching their status to Inactive. Inactive users cannot sign in, but their audit trail is preserved." },
+      { title: "Reset administrator credentials", description: "Use Reset password to generate a secure temporary password when an administrator needs credentials restored." },
+    ],
+    note: "This panel is strictly for administrative logins. Ordinary employee self-service logins (mobile/web portal attendance, leave, payslips) are managed directly on the employee's personal profile under Employees → select employee → Access.",
   },
 };

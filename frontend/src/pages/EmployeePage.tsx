@@ -24,6 +24,7 @@ import { StatusBadge } from "../components/ui/StatusBadge";
 import { Sheet } from "../components/ui/Overlay";
 import { AttendanceRegister } from "../components/attendance/AttendanceRegister";
 import { EmptyState, Notice, Skeleton } from "../components/ui/Feedback";
+import { ProfilePhotoControl } from "../components/ui/ProfilePhotoControl";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { KycSection } from "../components/kyc/KycSection";
 import { PlacementFields } from "../components/people/PlacementFields";
@@ -415,7 +416,7 @@ export function EmployeePage() {
                     </td>
                     <td>
                       <div className="flex items-center gap-3">
-                        <Avatar name={r.name} size="md" />
+                        <Avatar name={r.name} size="md" employmentId={r.id} />
                         <div className="min-w-0 leading-tight">
                           <button
                             className="truncate font-medium text-fg hover:underline"
@@ -642,7 +643,7 @@ function EmployeeSheet({
       {row && (
         <div className="space-y-6">
           <div className="flex items-center gap-4">
-            <Avatar name={row.name} size="xl" />
+            <Avatar name={row.name} size="xl" employmentId={row.id} viewable />
             <div className="min-w-0">
               <p className="truncate text-lg font-semibold tracking-tight text-fg">{row.name}</p>
               <p className="truncate text-[13px] text-fg-muted">{row.designation ?? row.stage ?? "—"}</p>
@@ -651,6 +652,7 @@ function EmployeeSheet({
                 {row.type && <span className="badge badge-neutral">{row.type}</span>}
                 <ManagedByBadge employmentId={row.id} />
               </div>
+              {(canPlace || isSelf) && <ProfilePhotoControl employmentId={row.id} className="mt-3" />}
             </div>
           </div>
 
