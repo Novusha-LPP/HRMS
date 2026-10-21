@@ -11,7 +11,7 @@ import pytest
 from sqlalchemy import text
 
 from hrms.core.ids import to_uuid
-from tests.helpers import bearer, make_user, ok, person_and_employment
+from tests.helpers import bearer, hire, make_user, ok, org_basics, person_and_employment
 from tests.test_attendance_cases import at, company, punch, review_state, set_clock, staff, stored
 
 pytestmark = pytest.mark.database
@@ -95,6 +95,130 @@ async def test_register_lists_every_day_with_its_punches(api, monkeypatch):
 
     found = await ok(client, "GET", "/v1/time/register/employees?search=reg-1")
     assert [e["employment_id"] for e in found] == [emp["id"]]
+
+
+async def test_register_filters_companies_departments_and_teams_within_people_scope(api):
+    client, _ = api
+    admin, first_company, placement, _ = await company(client)
+    second = await ok(client, "POST", "/v1/org/legal-entities", json={"name": "Sister company"})
+    other_placement = await org_basics(client, second["id"])
+    finance = await ok(
+        client,
+        "POST",
+        "/v1/org/org-units",
+        json={
+            "name": "Finance",
+            "type": "DEPARTMENT",
+            "legal_entity_id": first_company,
+            "effective_from": "2020-01-01",
+        },
+    )
+    team = await ok(
+        client,
+        "POST",
+        "/v1/org/org-units",
+        json={
+            "name": "Dispatch",
+            "type": "TEAM",
+            "legal_entity_id": first_company,
+            "parent_id": placement["org_unit_id"],
+            "effective_from": "2020-01-01",
+        },
+    )
+    ops = await person_and_employment(client, first_company, "REG-OPS", legal_first_name="Alpha")
+    await hire(client, ops["id"], placement)
+    team_member = await person_and_employment(
+        client, first_company, "REG-TEAM", legal_first_name="Zed"
+    )
+    await hire(client, team_member["id"], {**placement, "org_unit_id": team["id"]})
+    accountant = await person_and_employment(client, first_company, "REG-FINANCE")
+    await hire(client, accountant["id"], {**placement, "org_unit_id": finance["id"]})
+    sister = await person_and_employment(client, second["id"], "REG-SISTER")
+    await hire(client, sister["id"], other_placement)
+    unplaced = await person_and_employment(client, second["id"], "REG-UNPLACED")
+
+    options = await ok(client, "GET", "/v1/time/register/filters")
+    assert {c["id"] for c in options["companies"]} == {first_company, second["id"]}
+    # Both companies have a department called Ops; they must remain distinct.
+    assert {d["id"] for d in options["departments"]} == {
+        placement["org_unit_id"],
+        finance["id"],
+        other_placement["org_unit_id"],
+    }
+    assert {d["legal_entity_id"] for d in options["departments"]} == {
+        first_company,
+        second["id"],
+    }
+
+    async def find(**params):
+        return await ok(client, "GET", "/v1/time/register/employees", params=params)
+
+    found = await find(legal_entity_id=first_company, department_id=placement["org_unit_id"])
+    assert {e["employment_id"] for e in found} == {ops["id"], team_member["id"]}
+    assert {e["department"] for e in found} == {"Ops"}
+    assert {e["department_id"] for e in found} == {placement["org_unit_id"]}
+    assert {e["legal_entity_id"] for e in found} == {first_company}
+    assert all(e["company"] for e in found)
+    # Stable pages keep the same department filter and include each employee once.
+    first_page = await find(department_id=placement["org_unit_id"], limit=1, offset=0)
+    second_page = await find(department_id=placement["org_unit_id"], limit=1, offset=1)
+    assert [e["employment_id"] for e in first_page + second_page] == [
+        ops["id"],
+        team_member["id"],
+    ]
+    assert await find(department_id=placement["org_unit_id"], limit=1, offset=2) == []
+    register = await ok(
+        client,
+        "GET",
+        f"/v1/time/register/{team_member['id']}",
+        params={"from_date": "2026-08-10", "to_date": "2026-08-10"},
+    )
+    assert register["department"] == "Ops"
+    found = await find(department_id=placement["org_unit_id"], search="reg-team")
+    assert [e["employment_id"] for e in found] == [team_member["id"]]
+    # Filter before the result cap, even when the employee sorts after the first result.
+    found = await find(department_id=finance["id"], limit=1)
+    assert [e["employment_id"] for e in found] == [accountant["id"]]
+    found = await find(legal_entity_id=second["id"])
+    assert {e["employment_id"] for e in found} == {sister["id"], unplaced["id"]}
+    assert await find(legal_entity_id=second["id"], department_id=finance["id"]) == []
+    assert await find(department_id=finance["id"], search="no match") == []
+    assert (
+        await client.get("/v1/time/register/employees", params={"department_id": "invalid"})
+    ).status_code == 422
+
+    # A company-scoped reader can't widen their scope with either new filter.
+    email, password, _ = await make_user(
+        client, role="HR_MANAGER", scope_type="LEGAL_ENTITY", legal_entity_ids=[first_company]
+    )
+    token = (
+        await ok(
+            client,
+            "POST",
+            "/v1/auth/login",
+            json={
+                "email": email,
+                "password": password,
+            },
+        )
+    )["access_token"]
+    client.headers.update(bearer(token))
+    options = await ok(client, "GET", "/v1/time/register/filters")
+    assert [c["id"] for c in options["companies"]] == [first_company]
+    assert {d["id"] for d in options["departments"]} == {
+        placement["org_unit_id"],
+        finance["id"],
+    }
+    assert await find(legal_entity_id=second["id"]) == []
+    assert await find(department_id=other_placement["org_unit_id"]) == []
+
+    # A different tenant's IDs never return people or appear in the filter choices.
+    client.headers.update(bearer(admin["access_token"]))
+    _, foreign_company, _, _ = await company(client)
+    client.headers.update(bearer(admin["access_token"]))
+    assert await find(legal_entity_id=foreign_company) == []
+    options = await ok(client, "GET", "/v1/time/register/filters")
+    assert foreign_company not in {c["id"] for c in options["companies"]}
 
 
 async def test_hr_edits_a_day_directly(api, monkeypatch):

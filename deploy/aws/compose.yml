@@ -1,0 +1,87 @@
+# RDS is external. This stack never starts a PostgreSQL or backup container.
+name: hrms-testing-aws
+
+x-api: &api
+  image: ${HRMS_API_IMAGE:?image must be pinned by the deployment bundle}
+  restart: unless-stopped
+  env_file:
+    - path: /etc/hrms/testing.runtime.env
+      format: raw
+  environment: &api-env
+    HRMS_ENVIRONMENT: testing
+    HRMS_DEBUG: "false"
+    HRMS_LOG_FORMAT: json
+    HRMS_STORAGE_DIR: /app/storage
+    PGSSLROOTCERT: /app/rds-ca.pem
+    FORWARDED_ALLOW_IPS: ${HRMS_FORWARDED_ALLOW_IPS:-172.30.25.1}
+  volumes:
+    - kyc-storage:/app/storage
+    - /etc/hrms/rds-global-bundle.pem:/app/rds-ca.pem:ro
+  mem_limit: ${HRMS_API_MEMORY:-1g}
+  logging:
+    driver: json-file
+    options: {max-size: "10m", max-file: "3"}
+  networks: [app]
+
+services:
+  migrate:
+    <<: *api
+    restart: "no"
+    profiles: [tools]
+    env_file:
+      - path: /etc/hrms/testing.runtime.env
+        format: raw
+      - path: /etc/hrms/testing.migrate.env
+        format: raw
+    environment:
+      <<: *api-env
+      PROMETHEUS_MULTIPROC_DIR: ""
+    command: [python, -m, hrms.deploy, migrate]
+    volumes:
+      - kyc-storage:/app/storage
+      - /etc/hrms/rds-global-bundle.pem:/app/rds-ca.pem:ro
+      - ./database-preflight.py:/app/database-preflight.py:ro
+
+  api:
+    <<: *api
+    ports:
+      - "${HRMS_BIND_ADDRESS:-127.0.0.1}:${HRMS_API_PORT:-8115}:8015"
+    healthcheck:
+      test: [CMD, python, -c, "import urllib.request; urllib.request.urlopen('http://127.0.0.1:8015/health/ready', timeout=4)"]
+      interval: 10s
+      timeout: 5s
+      start_period: 30s
+      retries: 6
+
+  jobs:
+    <<: *api
+    command: [python, -m, hrms.jobs, schedule]
+    environment:
+      <<: *api-env
+      PROMETHEUS_MULTIPROC_DIR: ""
+    healthcheck: {disable: true}
+
+  web:
+    image: ${HRMS_WEB_IMAGE:?image must be pinned by the deployment bundle}
+    restart: unless-stopped
+    environment:
+      HRMS_ENVIRONMENT: testing
+      HRMS_WEB_API_URL: ${HRMS_WEB_API_URL:?set the public HTTPS API origin}
+      HRMS_WEB_SENTRY_DSN: ${HRMS_WEB_SENTRY_DSN:-}
+    ports:
+      - "${HRMS_BIND_ADDRESS:-127.0.0.1}:${HRMS_WEB_PORT:-8180}:8080"
+    mem_limit: 128m
+    logging:
+      driver: json-file
+      options: {max-size: "10m", max-file: "3"}
+    networks: [app]
+
+volumes:
+  kyc-storage:
+
+networks:
+  app:
+    ipam:
+      config:
+        - subnet: 172.30.25.0/24
+          gateway: 172.30.25.1

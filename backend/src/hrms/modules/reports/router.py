@@ -6,6 +6,7 @@ GET  /v1/reports                 — list saved definitions (system + custom)
 POST /v1/reports                 — save a custom report definition
 GET  /v1/reports/{id}            — get a definition
 POST /v1/reports/{id}/run        — execute and return rows
+POST /v1/reports/{id}/export-attendance — export the attendance calendar as Excel
 DELETE /v1/reports/{id}          — delete a custom report
 """
 
@@ -13,10 +14,11 @@ import json
 from datetime import UTC, date, datetime
 from uuid import UUID, uuid4
 
-from fastapi import APIRouter, HTTPException, Query
+from fastapi import APIRouter, HTTPException, Query, Response
 from pydantic import BaseModel, Field
 from sqlalchemy import text
 from sqlmodel import col, select
+from starlette.concurrency import run_in_threadpool
 
 from hrms.core.authz import Scope, ScopeDep, require_global_permission, require_permission
 from hrms.core.database import SessionDep
@@ -83,6 +85,18 @@ class RunResponse(BaseModel):
     total_rows: int
     truncated: bool = False
     generated_at: datetime
+
+
+class AttendanceExportRequest(BaseModel):
+    filters: list[FilterSpec] = []
+
+
+def _merged_run_filters(saved_filters: list[dict], runtime_filters: list[FilterSpec]) -> list[dict]:
+    """Replace overridden field/operator groups, retaining repeated runtime constraints."""
+    override_keys = {(f.field, f.op) for f in runtime_filters}
+    return [f for f in saved_filters if (f.get("field"), f.get("op")) not in override_keys] + [
+        f.model_dump() for f in runtime_filters
+    ]
 
 
 # ─── Column / filter metadata ─────────────────────────────────────────────────
@@ -203,10 +217,7 @@ async def run_report(
 
     # Replace each overridden field/operator group once, preserving repeated
     # runtime constraints instead of overwriting an earlier override.
-    override_keys = {(f.field, f.op) for f in body.filters}
-    run_filters = [
-        f for f in saved_filters if (f.get("field"), f.get("op")) not in override_keys
-    ] + [f.model_dump() for f in body.filters]
+    run_filters = _merged_run_filters(saved_filters, body.filters)
 
     rows = await _execute_report(
         session, tenant_id, rd.module, saved_columns, run_filters, body.limit + 1, scope
@@ -222,6 +233,77 @@ async def run_report(
         total_rows=min(len(rows), body.limit),
         truncated=len(rows) > body.limit,
         generated_at=datetime.now(UTC),
+    )
+
+
+def _attendance_export_filters(filters: list[dict]) -> tuple[date, date, list[dict]]:
+    """Require an explicit finite calendar and apply every supported population constraint."""
+    from hrms.modules.reports.attendance_service import validate_period
+
+    _attendance_filters(filters)
+    lower, upper, population = [], [], []
+    for spec in filters:
+        field, op, value = spec["field"], spec["op"], spec["value"]
+        if value is None or value == "":
+            continue
+        if field == "work_date":
+            if op == "between":
+                lower.append(date.fromisoformat(str(value[0])))
+                upper.append(date.fromisoformat(str(value[1])))
+            else:
+                parsed = date.fromisoformat(str(value))
+                if op in {"eq", "gte"}:
+                    lower.append(parsed)
+                if op in {"eq", "lte"}:
+                    upper.append(parsed)
+        elif field == "status":
+            raise HTTPException(
+                422, "Remove the status filter to export the full calendar register"
+            )
+        elif field in {"employment_id", "department", "location"}:
+            population.append(spec)
+        else:
+            raise HTTPException(422, "Remove unsupported filters before exporting the register")
+    if not lower or not upper:
+        raise HTTPException(422, "Choose both start and end dates before exporting the register")
+    first, last = max(lower), min(upper)
+    validate_period(first, last)
+    return first, last, population
+
+
+@router.post(
+    "/{report_id}/export-attendance",
+    summary="Download the attendance and leave calendar as Excel",
+    dependencies=[require_permission("reports.read")],
+)
+async def export_attendance_report(
+    report_id: str,
+    body: AttendanceExportRequest,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    scope: ScopeDep,
+) -> Response:
+    from hrms.modules.reports.attendance_service import build_attendance_summary
+    from hrms.modules.reports.attendance_xlsx import MIME, attendance_workbook
+
+    report = await _fetch_def(session, tenant_id, report_id)
+    if report.module != "ATTENDANCE":
+        raise HTTPException(422, "Choose an attendance report to export the attendance register")
+    filters = _merged_run_filters(json.loads(report.filters), body.filters)
+    first, last, population = _attendance_export_filters(filters)
+    data = await build_attendance_summary(
+        session, tenant_id, scope, first, last, population_filters=population
+    )
+    workbook = await run_in_threadpool(attendance_workbook, data.model_dump())
+    filename = f"AttendanceReport_{first.isoformat()}_to_{last.isoformat()}.xlsx"
+    return Response(
+        content=workbook,
+        media_type=MIME,
+        headers={
+            "Content-Disposition": f'attachment; filename="{filename}"',
+            "Cache-Control": "no-store",
+            "Access-Control-Expose-Headers": "Content-Disposition",
+        },
     )
 
 

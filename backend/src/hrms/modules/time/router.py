@@ -182,7 +182,7 @@ async def create_punch(
     )
     session.add(punch)
     await session.flush()
-    await recompute_day(session, tenant_id, emp_uuid, day, policy, ad)
+    await recompute_day(session, tenant_id, emp_uuid, day, policy, ad, clear_override=True)
 
     return PunchResponse(
         id=to_typed_id("punch", uid),

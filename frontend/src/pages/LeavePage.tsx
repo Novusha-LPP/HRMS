@@ -203,7 +203,7 @@ export function LeavePage() {
               <li key={a.id}>
                 <button onClick={() => setOpenId(a.id)} className="group flex w-full items-center gap-4 px-5 py-3.5 text-left transition-colors hover:bg-muted/50">
                   <span className="h-9 w-1 shrink-0 rounded-full" style={{ background: a.leave_type_color }} />
-                  {isApprover && <Avatar name={people.get(a.employment_id) ?? a.employment_id} size="md" />}
+                  {isApprover && <Avatar name={people.get(a.employment_id) ?? a.employment_id} size="md" employmentId={a.employment_id} />}
                   <div className="min-w-0 flex-1">
                     <p className="truncate text-[13px] font-medium text-fg">
                       {isApprover ? <>{people.get(a.employment_id) ?? <span className="font-mono text-xs">{a.employment_id}</span>} <span className="font-normal text-fg-subtle">·</span> </> : null}

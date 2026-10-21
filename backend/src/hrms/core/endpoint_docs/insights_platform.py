@@ -70,6 +70,18 @@ for all sections. The names are: `headcount`, `today`, `actions`, `pending_reque
         "`ONBOARDING`, `LEAVE` or `HEADCOUNT`), including each filter's allowed operators. "
         "Fixed metadata, with no company data.",
     ),
+    "export_attendance_report": (
+        "Download the attendance and leave calendar as Excel",
+        """
+Runs an `ATTENDANCE` report and returns the calendar register as an `.xlsx` file
+(`AttendanceReport_<from>_to_<to>.xlsx`). Needs `reports.read`; rows follow the caller's scope.
+
+`filters` override the saved report's filters. A start and an end date are required, and the
+range is validated like any report period (`422` otherwise). A `status` filter or an unsupported
+filter returns `422`, because the export is the full calendar. A report of another module also
+returns `422`.
+""",
+    ),
     "list_reports": (
         "List saved reports",
         "Built-in (system) and custom report definitions. Filter by `owner_type` to get the "

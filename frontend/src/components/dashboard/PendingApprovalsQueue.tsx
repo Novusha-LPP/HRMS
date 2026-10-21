@@ -95,7 +95,7 @@ export function PendingApprovalsQueue({ items, isLoading, queryKeyToRefresh, emp
             const canDecideHere = it.kind !== "PERSONNEL_ACTION";
             return (
               <li key={`${it.kind}-${it.id}`} className="flex items-center gap-3 px-5 py-3 text-[13px] hover:bg-muted/40 transition-colors">
-                <Avatar name={it.name} size="sm" />
+                <Avatar name={it.name} size="sm" employmentId={it.employment_id} />
                 <span className={`hidden sm:flex h-6 w-6 shrink-0 items-center justify-center rounded-md ${toneFor(it.kind)}`}>
                   <Icon size={12} />
                 </span>

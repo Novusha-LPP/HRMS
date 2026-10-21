@@ -23,6 +23,7 @@ dependencies = [
     "uuid7>=0.1.0",
     "sentry-sdk[fastapi]>=2.19",
     "prometheus-client>=0.21",
+    "pillow>=11.0.0",
 ]
 
 [project.optional-dependencies]

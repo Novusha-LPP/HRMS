@@ -49,8 +49,11 @@ test("HR finds an employee and corrects a day directly", async ({ page, request 
   await page.getByRole("link", { name: "Attendance register" }).first().click();
   await expect(page).toHaveURL(/attendance\/register/);
   await expect(page.getByText("Choose a person")).toBeVisible();
+  await page.getByLabel("Company", { exact: true }).selectOption(le);
+  await page.getByLabel("Department", { exact: true }).selectOption(unit.id);
   await page.getByLabel("Search people").fill(`REG-${tag}`);
   await page.getByRole("option", { name: new RegExp(`Meera Iyer${tag}`) }).click();
+  await expect(page).toHaveURL(new RegExp(`company=${le}.*department=${unit.id}.*employee=${employee.id}`));
   await expect(page.getByText(`REG-${tag} · Stores · Storekeeper`)).toBeVisible();
   await expect(page.getByText("Shift 09:30–18:30")).toBeVisible();
   if (today.slice(0, 7) === yesterday.slice(0, 7)) {
@@ -72,7 +75,8 @@ test("HR finds an employee and corrects a day directly", async ({ page, request 
   await panel.getByRole("button", { name: "Add break" }).click();
   await panel.getByLabel("From", { exact: true }).fill("13:00");
   await panel.getByLabel("To", { exact: true }).fill("13:45");
-  await expect(panel.getByText("8h 15m")).toBeVisible();
+  // exact: the "8h 15m beyond shift" badge also contains this text.
+  await expect(panel.getByText("8h 15m", { exact: true })).toBeVisible();
   // An incomplete entry is explained and blocks saving.
   await panel.getByRole("button", { name: "Add time out" }).click();
   await expect(panel.getByText(/needs both times/)).toBeVisible();
@@ -87,7 +91,8 @@ test("HR finds an employee and corrects a day directly", async ({ page, request 
   await expect(panel).toHaveCount(0);
   const row = page.getByRole("listitem").filter({ has: page.getByRole("button", { name: new RegExp(`^${longDate}`) }) });
   await expect(row.getByText("Edited")).toBeVisible();
-  await expect(row.getByText("8h 15m")).toBeVisible();
+  // exact: an off-day row also shows "+8h 15m OT".
+  await expect(row.getByText("8h 15m", { exact: true })).toBeVisible();
 
   // The same register is a tab of the employee's profile; Escape closes only the day on top.
   if (today.slice(0, 7) === yesterday.slice(0, 7)) {
@@ -107,4 +112,96 @@ test("HR finds an employee and corrects a day directly", async ({ page, request 
   expect(corrections.map((c: { correction_type: string; reason: string }) => [c.correction_type, c.reason])).toEqual([
     ["DIRECT_EDIT", "Biometric / device problem"],
   ]);
+});
+
+test("company and department filters stay in sync with the chosen person's register", async ({ page, request }) => {
+  const tag = randomUUID().slice(0, 8);
+  const adminEmail = `e2e-register-filters-${tag}@example.com`;
+  const admin = await call(request, "POST", "/v1/auth/register-company", {
+    company_name: `Register Group ${tag}`, admin_email: adminEmail, admin_password: password,
+  });
+  const token = admin.access_token;
+  const first = admin.user.legal_entities[0];
+  const second = await call(request, "POST", "/v1/org/legal-entities", { name: `Sister Company ${tag}` }, token);
+  const job = await call(request, "POST", "/v1/org/jobs", { title: "Executive" }, token);
+  const firstLocation = await call(request, "POST", "/v1/org/locations", { name: "HQ", type: "OFFICE", legal_entity_id: first.id }, token);
+  const secondLocation = await call(request, "POST", "/v1/org/locations", { name: "Branch", type: "OFFICE", legal_entity_id: second.id }, token);
+  const department = (name: string, company: string) => call(request, "POST", "/v1/org/org-units", {
+    name, type: "DEPARTMENT", legal_entity_id: company, effective_from: "2020-01-01",
+  }, token);
+  const stores = await department("Stores", first.id);
+  const accounts = await department("Accounts", first.id);
+  const sisterStores = await department("Stores", second.id);
+  async function employee(name: string, number: string, company: string, unit: string, location: string) {
+    const person = await call(request, "POST", "/v1/persons", { legal_first_name: name, legal_last_name: "Test" }, token);
+    const emp = await call(request, "POST", "/v1/employees", {
+      person_id: person.id, legal_entity_id: company, employee_number: number, hire_date: "2020-01-01",
+    }, token);
+    await call(request, "POST", "/v1/personnel-actions", { employment_id: emp.id, type: "HIRE", effective_date: "2020-01-01",
+      changes: { location_id: location, org_unit_id: unit, job_id: job.id } }, token);
+    return emp;
+  }
+  const meera = await employee("Meera", "REG-STORES", first.id, stores.id, firstLocation.id);
+  await employee("Ravi", "REG-ACCOUNTS", first.id, accounts.id, firstLocation.id);
+  await employee("Nila", "REG-SISTER", second.id, sisterStores.id, secondLocation.id);
+  // More than one API page: Meera sorts after these people and must still be selectable.
+  for (let i = 0; i < 101; i++) {
+    const number = String(i).padStart(3, "0");
+    await employee(`Extra${number}`, `REG-EXTRA-${number}`, first.id, stores.id, firstLocation.id);
+  }
+
+  await signIn(page, adminEmail);
+  await page.goto("/attendance/register?month=2026-08");
+  const companySelect = page.getByLabel("Company", { exact: true });
+  const departmentSelect = page.getByLabel("Department", { exact: true });
+  const people = page.getByRole("listbox", { name: "People" });
+  await expect(people.getByRole("option")).toHaveCount(104);
+  await expect(page.getByRole("status").filter({ hasText: /^104 employees$/ })).toBeVisible();
+  await expect(page.getByText(/Showing the first 50/)).toHaveCount(0);
+  await expect(departmentSelect.getByRole("option", { name: `Stores · ${second.name}`, exact: true })).toHaveCount(1);
+
+  await companySelect.selectOption(first.id);
+  await expect(people.getByRole("option")).toHaveCount(103);
+  await expect(departmentSelect.getByRole("option")).toHaveCount(3);
+  await expect(departmentSelect.locator(`option[value="${sisterStores.id}"]`)).toHaveCount(0);
+  await departmentSelect.selectOption(stores.id);
+  await expect(people.getByRole("option")).toHaveCount(102);
+  await people.getByRole("option", { name: /Meera Test/ }).click();
+  await expect(page.getByText("August 2026", { exact: true })).toBeVisible();
+  await expect(page).toHaveURL(new RegExp(`month=2026-08.*company=${first.id}.*department=${stores.id}.*employee=${meera.id}`));
+  await page.reload();
+  await expect(companySelect).toHaveValue(first.id);
+  await expect(departmentSelect).toHaveValue(stores.id);
+  await expect(page.getByText("August 2026", { exact: true })).toBeVisible();
+
+  await departmentSelect.selectOption(accounts.id);
+  await expect(page.getByText("Choose a person", { exact: true })).toBeVisible();
+  await expect(people.getByRole("option", { name: /Ravi Test/ })).toBeVisible();
+  await expect(page).not.toHaveURL(/employee=/);
+  await people.getByRole("option", { name: /Ravi Test/ }).click();
+  await companySelect.selectOption(second.id);
+  await expect(departmentSelect).toHaveValue("");
+  await expect(departmentSelect.getByRole("option")).toHaveCount(2);
+  await expect(page.getByText("Choose a person", { exact: true })).toBeVisible();
+  await expect(people.getByRole("option")).toHaveCount(1);
+  await expect(people.getByRole("option", { name: /Nila Test/ })).toBeVisible();
+  await page.getByLabel("Search people").fill("REG-STORES");
+  await expect(people.getByText(/No one matches/)).toBeVisible();
+  await page.getByLabel("Search people").clear();
+  await expect(people.getByRole("option")).toHaveCount(1);
+
+  await page.getByRole("button", { name: "Clear filters" }).click();
+  await expect(companySelect).toHaveValue("");
+  await expect(departmentSelect).toHaveValue("");
+  await expect(people.getByRole("option")).toHaveCount(104);
+  await departmentSelect.selectOption(sisterStores.id);
+  await expect(people.getByRole("option")).toHaveCount(1);
+  await expect(people.getByRole("option", { name: /Nila Test/ })).toBeVisible();
+  await page.screenshot({ path: "/tmp/hrms-attendance-register-desktop.png", fullPage: true });
+  await page.setViewportSize({ width: 390, height: 844 });
+  await expect(companySelect).toBeVisible();
+  await expect(departmentSelect).toBeVisible();
+  await expect(people.getByRole("option", { name: /Nila Test/ })).toBeVisible();
+  expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(390);
+  await page.screenshot({ path: "/tmp/hrms-attendance-register-mobile.png", fullPage: true });
 });

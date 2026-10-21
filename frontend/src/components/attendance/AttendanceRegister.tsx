@@ -117,7 +117,7 @@ export function AttendanceRegister({ employmentId, canEdit, initialMonth, editDa
       <div className="flex flex-wrap items-center gap-x-4 gap-y-2 px-5 pt-4">
         {(
           <div className="flex min-w-0 items-center gap-3">
-            {data ? <Avatar name={data.name} size="lg" /> : <Skeleton className="h-10 w-10 rounded-full" />}
+            {data ? <Avatar name={data.name} size="lg" employmentId={data.employment_id} /> : <Skeleton className="h-10 w-10 rounded-full" />}
             <div className="min-w-0 leading-tight">
               <p className="truncate text-[15px] font-semibold text-fg">{data?.name ?? "…"}</p>
               <p className="truncate text-xs text-fg-subtle">

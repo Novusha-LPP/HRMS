@@ -37,6 +37,7 @@ from hrms.core.authz import (
 )
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import business_today
+from hrms.core.errors import CodedHTTPException
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.metrics import SCHEDULED_ACTIONS
@@ -49,6 +50,8 @@ from hrms.modules.integrations.ownership import (
     assert_lifecycle_allowed,
 )
 from hrms.modules.kernel.models import UserAccount
+from hrms.modules.leave.separation import settle_on_separation
+from hrms.modules.people import rejoin, spells
 from hrms.modules.people.models import (
     Assignment,
     AssignmentManager,
@@ -628,6 +631,23 @@ async def create_employment(
     if person is None or entity is None:
         raise HTTPException(422, "Person and company must exist in this tenant")
 
+    earlier = (
+        await session.execute(
+            select(Employment.employee_number, Employment.employment_state)
+            .where(Employment.tenant_id == tenant_id)
+            .where(Employment.person_id == person_uuid)
+            .where(col(Employment.archived_at).is_(None))
+        )
+    ).all()
+    if earlier and not body.confirm_new_employment:
+        who = ", ".join(f"{number} ({str(state).lower()})" for number, state in earlier)
+        raise CodedHTTPException(
+            status.HTTP_409_CONFLICT,
+            f"This person already has an employment: {who}. If they left and are coming "
+            "back, rejoin them (Rehire) so their history and leave stay together. If this is "
+            "a separate, new employment, confirm it.",
+            "PAST_EMPLOYMENT_EXISTS",
+        )
     emp = Employment(
         tenant_id=tenant_id,
         id=uid,
@@ -639,6 +659,7 @@ async def create_employment(
     )
     session.add(emp)
     await session.flush()
+    await spells.open_first_spell(session, tenant_id, emp)
     # No assignment yet at this point — the caller still needs to submit a
     # HIRE personnel action to actually place them in a department. Name/
     # department/etc. are correctly null here.
@@ -772,6 +793,14 @@ async def create_personnel_action(
 
     await _validate_assignment_references(session, tenant_id, emp, body.changes or {}, scope)
     await _reject_conflicting_schedule(session, tenant_id, emp_uuid, body.type, body.effective_date)
+    if body.rejoin is not None and body.type != PersonnelActionType.REHIRE:
+        raise HTTPException(422, "rejoin only applies to a REHIRE")
+    if body.type == PersonnelActionType.REHIRE:
+        choice = _rejoin_choice(body.rejoin)
+        if emp.employment_state == EmploymentState.SEPARATED:
+            # Refuse a bad choice now rather than when a scheduled rejoin comes due.
+            await rejoin.decide(session, tenant_id, emp, body.effective_date, choice)
+        body.changes = {**(body.changes or {}), "rejoin": choice.model_dump(mode="json")}
     uid = uuid4()
     pa = PersonnelAction(
         tenant_id=tenant_id,
@@ -1028,6 +1057,14 @@ async def cancel_personnel_action(
     return _pa_response(pa)
 
 
+def _rejoin_choice(raw: dict | None) -> rejoin.RejoinChoice:
+    """The rejoin decision stored with a REHIRE action; an old action has none."""
+    try:
+        return rejoin.RejoinChoice(**(raw or {}))
+    except ValueError as exc:
+        raise HTTPException(422, "Invalid rejoin choice") from exc
+
+
 async def _reject_conflicting_schedule(
     session, tenant_id: UUID, employment_id: UUID, new_type: PersonnelActionType, new_date: date
 ) -> None:
@@ -1047,6 +1084,11 @@ async def _reject_conflicting_schedule(
         )
     ).all()
     for other_type, other_date in scheduled:
+        if new_type == PersonnelActionType.REHIRE and other_type == PersonnelActionType.REHIRE:
+            raise HTTPException(
+                status.HTTP_409_CONFLICT,
+                f"A rejoin is already scheduled for {other_date}. Cancel it first to change it.",
+            )
         if (
             other_type == PersonnelActionType.SEPARATION
             and new_type != PersonnelActionType.REHIRE
@@ -1246,8 +1288,30 @@ async def _apply_personnel_action_change(
         )
 
     if action_type == PersonnelActionType.REHIRE:
+        left_on = emp.separation_date
+        decision = await rejoin.decide(
+            session,
+            tenant_id,
+            emp,
+            pa.effective_date,
+            _rejoin_choice(changes.get("rejoin")),
+            left_on=left_on,
+        )
+        # Keep what was actually decided (the company default may have chosen the mode).
+        pa.changes = {
+            **changes,
+            "rejoin": {
+                **(changes.get("rejoin") or {}),
+                "mode": decision.mode.value,
+                "reason": decision.reason,
+            },
+        }
+        session.add(pa)
         emp.employment_state = EmploymentState.PROBATION
         emp.separation_date = None
+        await rejoin.apply_rejoin(
+            session, tenant_id, emp, decision, personnel_action_id=pa.id, actor=pa.recorded_by
+        )
     elif action_type == PersonnelActionType.CONFIRM:
         emp.employment_state = EmploymentState.ACTIVE
     elif action_type == PersonnelActionType.PLACE_ON_NOTICE:
@@ -1255,6 +1319,12 @@ async def _apply_personnel_action_change(
     elif action_type == PersonnelActionType.SEPARATION:
         emp.employment_state = EmploymentState.SEPARATED
         emp.separation_date = pa.effective_date
+        spell = await spells.close_current_spell(
+            session, tenant_id, emp, pa.effective_date, pa.reason_code, pa.recorded_by
+        )
+        await settle_on_separation(
+            session, tenant_id, emp, spell, pa.effective_date, pa.recorded_by
+        )
         current = await _current_assignment(session, tenant_id, pa.employment_id)
         if current:
             current.effective_to = pa.effective_date

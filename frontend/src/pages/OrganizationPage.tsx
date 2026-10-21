@@ -21,7 +21,22 @@ import { useToast, errorMessage } from "../components/ui/Toast";
 import { useAuth } from "../context/AuthContext";
 import { format } from "date-fns";
 
+import type { UsageHelpTopic } from "../lib/usageHelp";
+
 type Tab = "overview" | "companies" | "departments" | "locations" | "jobs" | "grades" | "positions" | "cost-centres" | "employee-ids" | "access";
+
+const TAB_HELP_TOPICS: Record<Tab, UsageHelpTopic> = {
+  overview: "org-overview",
+  companies: "companies",
+  departments: "departments",
+  locations: "locations",
+  jobs: "jobs",
+  grades: "grades",
+  positions: "positions",
+  "cost-centres": "cost-centres",
+  "employee-ids": "employee-ids",
+  access: "company-admins",
+};
 
 export function OrganizationPage() {
   const { user } = useAuth();
@@ -37,23 +52,23 @@ export function OrganizationPage() {
       <PageHeader
         title="Organization"
         description="Companies, departments, locations, job titles, grades, positions and cost centres across the group."
-        actions={tab === "companies" && params.get("company") ? undefined : <UsageHelpButton key={tab} topic={tab === "departments" ? "departments" : tab === "companies" ? "companies" : "organization"} />}
+        actions={tab === "companies" && params.get("company") ? undefined : <UsageHelpButton key={tab} topic={TAB_HELP_TOPICS[tab] ?? "organization"} />}
       />
       <Tabs
         className="mb-6"
         value={tab}
         onChange={setTab}
         items={[
-          { value: "overview", label: "Overview" },
-          { value: "companies", label: "Companies" },
-          { value: "departments", label: "Departments" },
-          { value: "locations", label: "Locations" },
-          { value: "jobs", label: "Job titles" },
-          { value: "grades", label: "Grades" },
-          { value: "positions", label: "Positions" },
-          { value: "cost-centres", label: "Cost centres" },
-          { value: "employee-ids", label: "Employee IDs" },
-          ...(canManageAccess ? [{ value: "access" as const, label: "Company admins" }] : []),
+          { value: "overview", label: "Overview", help: <UsageHelpButton topic="org-overview" iconOnly /> },
+          { value: "companies", label: "Companies", help: <UsageHelpButton topic="companies" iconOnly /> },
+          { value: "departments", label: "Departments", help: <UsageHelpButton topic="departments" iconOnly /> },
+          { value: "locations", label: "Locations", help: <UsageHelpButton topic="locations" iconOnly /> },
+          { value: "jobs", label: "Job titles", help: <UsageHelpButton topic="jobs" iconOnly /> },
+          { value: "grades", label: "Grades", help: <UsageHelpButton topic="grades" iconOnly /> },
+          { value: "positions", label: "Positions", help: <UsageHelpButton topic="positions" iconOnly /> },
+          { value: "cost-centres", label: "Cost centres", help: <UsageHelpButton topic="cost-centres" iconOnly /> },
+          { value: "employee-ids", label: "Employee IDs", help: <UsageHelpButton topic="employee-ids" iconOnly /> },
+          ...(canManageAccess ? [{ value: "access" as const, label: "Company admins", help: <UsageHelpButton topic="company-admins" iconOnly /> }] : []),
         ]}
       />
       {tab === "overview" && <OrganizationOverviewTab onNavigateTab={setTab} />}

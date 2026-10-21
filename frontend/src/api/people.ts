@@ -130,7 +130,14 @@ export const peopleApi = {
     gender?: string | null;
   }) =>
     api.post<Person>("/v1/persons", body),
-  createEmployment: (body: { person_id: string; legal_entity_id: string; employee_number?: string; hire_date: string }) =>
+  createEmployment: (body: {
+    person_id: string;
+    legal_entity_id: string;
+    employee_number?: string;
+    hire_date: string;
+    /** The person already has an earlier employment and this really is a separate, new one. */
+    confirm_new_employment?: boolean;
+  }) =>
     api.post<Employment>("/v1/employees", body),
   getMyProfile: () => api.get<MyProfile>("/v1/persons/me"),
   updateMyProfile: (body: {
@@ -151,8 +158,125 @@ export const personnelActionsApi = {
     changes?: PersonnelActionChanges;
     /** Why HR is changing a field a connected app (e.g. the ERP) owns for this employee. */
     override_reason?: string;
+    /** Only for REHIRE: continue earlier service and leave, or start fresh. */
+    rejoin?: RejoinChoice;
   }) => api.post<PersonnelAction>("/v1/personnel-actions", body),
   list: (employmentId: string) =>
     api.get<PersonnelActionListItem[]>(`/v1/personnel-actions?employment_id=${employmentId}`),
   cancel: (actionId: string) => api.post<PersonnelAction>(`/v1/personnel-actions/${actionId}/cancel`, {}),
+};
+
+export type RejoinMode = "CONTINUE" | "FRESH";
+
+export interface RejoinChoice {
+  mode?: RejoinMode;
+  break_condoned?: boolean;
+  reason?: string;
+  gratuity_paid_at_exit?: boolean;
+}
+
+export interface RejoinPreview {
+  employment_id: string;
+  left_on: string | null;
+  rejoin_on: string;
+  gap_days: number | null;
+  mode: RejoinMode;
+  default_mode: RejoinMode;
+  allowed_modes: RejoinMode[];
+  force_fresh_after_days: number | null;
+  gratuity_paid: boolean | null;
+  automatic: boolean;
+  reason: string | null;
+  can_proceed: boolean;
+  blocked: string[];
+  notes: string[];
+  leave: { leave_type_id: string; leave_type_name: string; days: number; outcome: "KEPT" | "LAPSE" }[];
+}
+
+export interface RejoinPolicy {
+  id: string;
+  legal_entity_id: string | null;
+  default_mode: RejoinMode;
+  force_fresh_after_days: number | null;
+  effective_from: string;
+}
+
+export interface EmploymentSpell {
+  spell_no: number;
+  joined_on: string;
+  left_on: string | null;
+  exit_reason: string | null;
+  gratuity_paid: boolean | null;
+  rejoin: { mode: RejoinMode; break_start: string | null; break_end: string | null; break_condoned: boolean; reason: string | null } | null;
+}
+
+export interface EmploymentHistory {
+  employment_id: string;
+  hire_date: string;
+  continuity_start_date: string | null;
+  spells: EmploymentSpell[];
+}
+
+export interface PersonEmployment {
+  employment_id: string;
+  legal_entity_id: string;
+  employee_number: string;
+  employment_state: string;
+  hire_date: string;
+  separation_date: string | null;
+  can_rejoin: boolean;
+}
+
+export type SeparationAction = "LAPSE" | "ENCASH" | "HOLD";
+
+export interface SeparationRule {
+  id: string;
+  legal_entity_id: string | null;
+  leave_type_id: string | null;
+  on_separation: SeparationAction;
+  hold_days: number | null;
+  max_encash_days: number | null;
+  effective_from: string;
+}
+
+export interface SeparationPreview {
+  employment_id: string;
+  as_of: string;
+  items: {
+    leave_type_id: string;
+    leave_type_name: string;
+    unused_days: number;
+    action: SeparationAction;
+    encash_days: number;
+    lapse_days: number;
+    held_days: number;
+    hold_expires_on: string | null;
+    note: string | null;
+  }[];
+}
+
+export const rejoinApi = {
+  preview: (employmentId: string, q: { effective_date: string; mode?: RejoinMode; break_condoned?: boolean; reason?: string; gratuity_paid_at_exit?: boolean }) => {
+    const params = new URLSearchParams({ effective_date: q.effective_date });
+    if (q.mode) params.set("mode", q.mode);
+    if (q.break_condoned) params.set("break_condoned", "true");
+    if (q.reason) params.set("reason", q.reason);
+    if (q.gratuity_paid_at_exit !== undefined) params.set("gratuity_paid_at_exit", String(q.gratuity_paid_at_exit));
+    return api.get<RejoinPreview>(`/v1/employees/${employmentId}/rejoin-preview?${params}`);
+  },
+  history: (employmentId: string) => api.get<EmploymentHistory>(`/v1/employees/${employmentId}/employment-history`),
+  personEmployments: (personId: string) => api.get<PersonEmployment[]>(`/v1/persons/${personId}/employments`),
+  listPolicies: () => api.get<RejoinPolicy[]>("/v1/people/rejoin-policies"),
+  createPolicy: (body: { legal_entity_id?: string | null; default_mode: RejoinMode; force_fresh_after_days?: number | null; effective_from: string }) =>
+    api.post<RejoinPolicy>("/v1/people/rejoin-policies", body),
+  archivePolicy: (id: string) => api.delete<void>(`/v1/people/rejoin-policies/${id}`),
+};
+
+export const separationApi = {
+  listRules: () => api.get<SeparationRule[]>("/v1/leave/separation-rules"),
+  createRule: (body: { legal_entity_id?: string | null; leave_type_id?: string | null; on_separation: SeparationAction; hold_days?: number | null; max_encash_days?: number | null; effective_from: string }) =>
+    api.post<SeparationRule>("/v1/leave/separation-rules", body),
+  archiveRule: (id: string) => api.delete<void>(`/v1/leave/separation-rules/${id}`),
+  preview: (employmentId: string, asOf: string) =>
+    api.get<SeparationPreview>(`/v1/leave/separation-preview?employment_id=${employmentId}&as_of=${asOf}`),
 };

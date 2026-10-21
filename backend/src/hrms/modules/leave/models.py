@@ -13,7 +13,14 @@ from hrms.core.datetime_utils import now_utc
 
 # Stored values of leave_balance_transactions.reference_type (conventions.DOMAINS).
 LeaveReferenceType = Literal[
-    "ACCRUAL_RUN", "COMP_OFF", "ENCASHMENT", "LEAVE_APPLICATION", "MANUAL", "YEAR_END"
+    "ACCRUAL_RUN",
+    "COMP_OFF",
+    "ENCASHMENT",
+    "LEAVE_APPLICATION",
+    "MANUAL",
+    "REJOIN",
+    "SEPARATION",
+    "YEAR_END",
 ]
 
 
@@ -342,3 +349,60 @@ class LeaveBalanceTransaction(SQLModel, table=True):
     recorded_by: UUID
     approved_by: UUID | None = Field(default=None)
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+
+
+class SeparationAction(enum.StrEnum):
+    """What a company does with unused leave when someone leaves."""
+
+    LAPSE = "LAPSE"
+    ENCASH = "ENCASH"
+    HOLD = "HOLD"
+
+
+class SettlementResolution(enum.StrEnum):
+    """How a held balance ended: it lapsed after the hold, or the person rejoined."""
+
+    LAPSED = "LAPSED"
+    RESTORED = "RESTORED"
+
+
+class LeaveSeparationRule(SQLModel, table=True):
+    """Unused-leave treatment on separation for a company and leave type (either may be any)."""
+
+    __tablename__ = "leave_separation_rules"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    legal_entity_id: UUID | None = Field(default=None)
+    leave_type_id: UUID | None = Field(default=None)
+    on_separation: str = Field(max_length=10)
+    hold_days: int | None = Field(default=None, ge=0)
+    max_encash_days: float | None = Field(default=None, ge=0)
+    effective_from: date
+    archived_at: datetime | None = Field(default=None)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
+
+
+class LeaveSeparationSettlement(SQLModel, table=True):
+    """What was done with one leave balance when one stint of an employment ended."""
+
+    __tablename__ = "leave_separation_settlements"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    employment_id: UUID = Field(index=True)
+    spell_id: UUID
+    leave_type_id: UUID
+    bucket_id: UUID
+    days: float = Field(ge=0)
+    encashed_days: float = Field(default=0.0, ge=0)
+    lapsed_days: float = Field(default=0.0, ge=0)
+    action: str = Field(max_length=10)
+    settled_on: date
+    balance_transaction_id: UUID | None = Field(default=None)
+    hold_expires_on: date | None = Field(default=None)
+    resolution: str | None = Field(default=None, max_length=10)
+    resolved_on: date | None = Field(default=None)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)

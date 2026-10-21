@@ -15,6 +15,7 @@ import {
   Umbrella,
   CalendarCheck2,
   PenLine,
+  LogOut,
 } from "lucide-react";
 import type { LeaveType } from "../api/leave";
 import { leaveApi } from "../api/leave";
@@ -27,8 +28,9 @@ import { useToast, errorMessage } from "../components/ui/Toast";
 import { usePeopleDirectory } from "../lib/usePeopleDirectory";
 import { LeavePolicySetsTab } from "../components/leave/LeavePolicySetsTab";
 import { HolidayCalendars } from "../components/policy/HolidayCalendars";
+import { LeaversSettings } from "../components/leave/LeaversSettings";
 
-export type LeavePolicySection = "policy-sets" | "types" | "holidays" | "operations";
+export type LeavePolicySection = "policy-sets" | "types" | "holidays" | "operations" | "leavers";
 
 export interface LeavePoliciesViewProps {
   standaloneHeader?: boolean;
@@ -54,7 +56,7 @@ export function LeavePoliciesView({
   ) as LeavePolicySection | null;
 
   const section: LeavePolicySection =
-    rawSection && ["policy-sets", "types", "holidays", "operations"].includes(rawSection)
+    rawSection && ["policy-sets", "types", "holidays", "operations", "leavers"].includes(rawSection)
       ? rawSection
       : "types";
 
@@ -123,6 +125,7 @@ export function LeavePoliciesView({
             { value: "policy-sets", label: "Policy Sets & Rules", icon: Shield },
             { value: "operations", label: "Grants & Operations", icon: Wallet },
             { value: "holidays", label: "Holiday Calendar", icon: CalendarDays },
+            { value: "leavers", label: "Leavers & Rejoining", icon: LogOut },
           ]}
         />
 
@@ -137,6 +140,7 @@ export function LeavePoliciesView({
           <LeaveTypesCard types={types.data ?? []} loading={types.isPending} />
         )}
         {section === "holidays" && <HolidayCalendars />}
+        {section === "leavers" && <LeaversSettings />}
         {section === "operations" && (
           <div className="grid gap-5 lg:grid-cols-2">
             <CompOffCard employees={employeeOptions} />

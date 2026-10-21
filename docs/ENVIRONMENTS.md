@@ -6,7 +6,7 @@ one place: `HRMS_ENVIRONMENT` and that environment's env file.
 | | **local** | **testing** | **production** |
 |---|---|---|---|
 | What it is | A developer's machine | The shared test deployment | The live deployment |
-| URLs | `localhost:5173` → `localhost:8015` | `testinghrms.alvision.in` → `hrmsapi.alvision.in` | To be decided |
+| URLs | `localhost:5173` → `localhost:8015` | AWS: `testhrms.alvision.in` → `testhrmsapi.alvision.in` (see [REAL_ENVIRONMENT_MAP.md](REAL_ENVIRONMENT_MAP.md)). The older `testinghrms.alvision.in` → `hrmsapi.alvision.in` is the developer machine's Vite/uvicorn exposed by a Cloudflare tunnel. | To be decided |
 | Data | Demo or synthetic data only | **Real employee data** (imported tenants) | Real employee data |
 | Runs from | The working tree (`npm run dev`, `uvicorn --reload`) | Released images (`deploy/compose.yml`) | The same released images |
 | Settings | `backend/.env`, `frontend/.env` | `deploy/env/testing.env` | `deploy/env/production.env` |

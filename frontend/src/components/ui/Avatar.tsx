@@ -1,3 +1,7 @@
+import { useState } from "react";
+import { useProfilePhoto } from "../../lib/useProfilePhoto";
+import { PhotoViewer } from "./PhotoViewer";
+
 const TONES = [
   "bg-brand-500/15 text-accent",
   "bg-info/10 text-info",
@@ -19,11 +23,42 @@ export function initials(name: string) {
   return name.split(/\s+/).filter(Boolean).map((p) => p[0]).join("").slice(0, 2).toUpperCase() || "?";
 }
 
-export function Avatar({ name, size = "md", className = "" }: {
+export function Avatar({ name, size = "md", className = "", employmentId, viewable = false }: {
   name: string;
   size?: keyof typeof SIZES;
   className?: string;
+  /** Shows this person's profile photo when they have one; initials otherwise. */
+  employmentId?: string | null;
+  /** Clicking the photo opens it larger. Leave off where the avatar sits inside a button or link. */
+  viewable?: boolean;
 }) {
+  const photo = useProfilePhoto(employmentId);
+  const [viewing, setViewing] = useState(false);
+  if (photo) {
+    const picture = (
+      <img
+        src={photo}
+        alt=""
+        draggable={false}
+        className={`avatar inline-block shrink-0 select-none rounded-full object-cover ${SIZES[size]} ${className}`}
+        aria-hidden={viewable ? undefined : true}
+      />
+    );
+    if (!viewable || !employmentId) return picture;
+    return (
+      <>
+        <button
+          type="button"
+          onClick={() => setViewing(true)}
+          aria-label={`View photo of ${name}`}
+          className="shrink-0 cursor-zoom-in rounded-full focus-visible:outline focus-visible:outline-2 focus-visible:outline-offset-2"
+        >
+          {picture}
+        </button>
+        <PhotoViewer open={viewing} onClose={() => setViewing(false)} employmentId={employmentId} name={name} />
+      </>
+    );
+  }
   let hash = 0;
   for (const ch of name) hash = (hash * 31 + ch.charCodeAt(0)) | 0;
   const tone = TONES[Math.abs(hash) % TONES.length];

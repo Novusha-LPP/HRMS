@@ -61,8 +61,12 @@ scrape_configs:
     params:
       module: [http_2xx]
     static_configs:
+      # Dev servers on this machine, exposed by the Cloudflare tunnel "rabs" (~/.cloudflared/config3.yml).
       - targets: ["https://testinghrms.alvision.in/", "https://hrmsapi.alvision.in/health/live"]
         labels: {environment: testing}
+      # The AWS testing deployment (EC2 + RDS), docs/REAL_ENVIRONMENT_MAP.md.
+      - targets: ["https://testhrms.alvision.in/", "https://testhrmsapi.alvision.in/health/live"]
+        labels: {environment: testing, deployment: aws}
     relabel_configs: *blackbox
 
   - job_name: hrms-host

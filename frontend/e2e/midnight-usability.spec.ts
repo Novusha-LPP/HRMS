@@ -118,12 +118,19 @@ for (const mode of ["light", "dark"] as const) test(`${mode}: reduced motion dis
   const gate = new Promise<void>(resolve => { release = resolve; });
   await page.route("**/v1/dashboard/hr?**", async route => { await gate; await route.fallback(); });
   await page.goto("/dashboard");
-  const skeleton = page.locator(".skeleton").first();
-  await expect(skeleton).toBeVisible();
-  const shimmer = await skeleton.evaluate(element => {
-    const css = getComputedStyle(element, "::after");
-    return { animation: css.animationName, duration: css.animationDuration, display: css.display };
-  });
+  await expect(page.locator(".skeleton").first()).toBeVisible();
+  // Re-query on every attempt: React may swap the skeleton node, and a detached element
+  // reports empty computed styles.
+  let shimmer = { animation: "", duration: "", display: "" };
+  await expect.poll(async () => {
+    shimmer = await page.evaluate(() => {
+      const element = document.querySelector(".skeleton");
+      if (!element) return { animation: "", duration: "", display: "" };
+      const css = getComputedStyle(element, "::after");
+      return { animation: css.animationName, duration: css.animationDuration, display: css.display };
+    });
+    return shimmer.animation !== "";
+  }).toBe(true);
   release();
   await expect(page.locator(".stat-value").first()).toHaveText("24");
   await page.getByRole("radio", { name: "Overview", exact: true }).click();

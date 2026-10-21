@@ -75,6 +75,18 @@ class RehireRequest(_Body):
     designation: str | None = Field(default=None, max_length=200)
     manager_external_id: str | None = Field(default=None, max_length=100)
     source_updated_at: datetime | None = None
+    rejoin_mode: Literal["CONTINUE", "FRESH"] | None = Field(
+        default=None,
+        description="Keep earlier service and held leave (CONTINUE) or start over (FRESH). "
+        "Leave out to use the company's default.",
+    )
+    break_condoned: bool = Field(
+        default=False, description="The break is accepted as not interrupting service."
+    )
+    reason: str | None = Field(default=None, max_length=300)
+    gratuity_paid_at_exit: bool | None = Field(
+        default=None, description="Gratuity was paid when they left, so service restarts."
+    )
 
 
 class BulkRecord(EmployeeUpsert):

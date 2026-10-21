@@ -72,7 +72,7 @@ function HROnboardingView() {
                     <tr key={c.id} onClick={() => setOpenEmp(c.employment_id)} className="group cursor-pointer">
                       <td>
                         <div className="flex items-center gap-3">
-                          <Avatar name={name ?? c.employment_id} size="sm" />
+                          <Avatar name={name ?? c.employment_id} size="sm" employmentId={c.employment_id} />
                           <div className="min-w-0 leading-tight">
                             <p className="truncate font-medium text-fg">{name ?? "Unknown employee"}</p>
                             <p className="truncate font-mono text-[11px] text-fg-subtle">{c.employment_id}</p>

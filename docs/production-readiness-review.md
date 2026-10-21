@@ -1,6 +1,6 @@
 # Production readiness review — 14 October 2026
 
-Reviewed on `codex/fix-0064-tenant-key`, isolated from the live main checkout.
+Reviewed on `fix/fix-0064-tenant-key`, isolated from the live main checkout.
 
 ## Resolved code blockers
 

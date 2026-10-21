@@ -35,8 +35,11 @@ from hrms.modules.time.holidays import holiday_scope_sql
 from hrms.modules.time.models import AttendanceDay, Punch
 from hrms.modules.time.schemas import (
     DayPunchesUpdate,
+    RegisterCompany,
     RegisterDay,
+    RegisterDepartment,
     RegisterEmployee,
+    RegisterFilters,
     RegisterPunch,
     RegisterResponse,
 )
@@ -66,6 +69,61 @@ LABEL = {
     "BREAK_END": "break end",
 }
 
+# Both the picker and its filters use the complete people.read scope. Team members
+# belong to their parent department, as they do in the employee directory.
+_REGISTER_PEOPLE_SQL = """
+    SELECT e.id, e.employee_number, e.legal_entity_id, le.name AS company,
+           p.legal_first_name || ' ' || p.legal_last_name AS name,
+           CASE WHEN ou.type = 'TEAM' THEN parent_ou.id ELSE ou.id END AS department_id,
+           CASE WHEN ou.type = 'TEAM' THEN parent_ou.name ELSE ou.name END AS department
+    FROM employments e
+    JOIN legal_entities le ON le.tenant_id = e.tenant_id AND le.id = e.legal_entity_id
+    JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
+    LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
+         AND a.effective_from <= CURRENT_DATE
+         AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
+    LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
+    LEFT JOIN org_units parent_ou ON parent_ou.tenant_id = ou.tenant_id
+         AND parent_ou.id = ou.parent_id
+    WHERE e.tenant_id = :tid AND e.archived_at IS NULL
+"""
+
+
+@router.get(
+    "/filters",
+    response_model=RegisterFilters,
+    summary="Companies and departments in the attendance register's people scope",
+    dependencies=[require_permission("people.read")],
+)
+async def register_filters(
+    scope: ScopeDep,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> RegisterFilters:
+    clause, params = scope.for_permission("people.read").employment_filter_sql("e")
+    rows = await session.execute(
+        text(f"""
+            SELECT DISTINCT legal_entity_id, company, department_id, department
+            FROM ({_REGISTER_PEOPLE_SQL} {clause}) people
+            ORDER BY company, department, legal_entity_id, department_id
+        """),
+        {"tid": tenant_id, **params},
+    )
+    companies = {}
+    departments = []
+    for row in rows.mappings():
+        entity_id = to_typed_id("legal_entity", row["legal_entity_id"])
+        companies[entity_id] = RegisterCompany(id=entity_id, name=row["company"])
+        if row["department_id"]:
+            departments.append(
+                RegisterDepartment(
+                    id=to_typed_id("org_unit", row["department_id"]),
+                    name=row["department"],
+                    legal_entity_id=entity_id,
+                )
+            )
+    return RegisterFilters(companies=list(companies.values()), departments=departments)
+
 
 @router.get(
     "/employees",
@@ -79,33 +137,45 @@ async def find_employees(
     session: SessionDep,
     search: str = Query(default="", max_length=100),
     limit: int = Query(default=50, ge=1, le=100),
+    offset: int = Query(default=0, ge=0),
+    legal_entity_id: str | None = Query(default=None),
+    department_id: str | None = Query(default=None),
 ) -> list[RegisterEmployee]:
     clause, params = scope.for_permission("people.read").employment_filter_sql("e")
+    filters = ""
+    if legal_entity_id:
+        filters += " AND legal_entity_id = :entity_id"
+        params["entity_id"] = to_uuid(legal_entity_id)
+    if department_id:
+        filters += " AND department_id = :department_id"
+        params["department_id"] = to_uuid(department_id)
     rows = await session.execute(
         text(f"""
-            SELECT e.id, e.employee_number,
-                   p.legal_first_name || ' ' || p.legal_last_name AS name, ou.name AS department
-            FROM employments e
-            JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
-            LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
-                 AND a.effective_from <= CURRENT_DATE
-                 AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
-            LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
-            WHERE e.tenant_id = :tid AND e.archived_at IS NULL
-              AND (:search = ''
-                   OR strpos(lower(p.legal_first_name || ' ' || p.legal_last_name), :search) > 0
-                   OR strpos(lower(e.employee_number), :search) > 0)
-              {clause}
-            ORDER BY p.legal_first_name, p.legal_last_name, e.id
-            LIMIT :limit
+            SELECT * FROM ({_REGISTER_PEOPLE_SQL} {clause}) people
+            WHERE (:search = '' OR strpos(lower(name), :search) > 0
+                   OR strpos(lower(employee_number), :search) > 0)
+              {filters}
+            ORDER BY name, id
+            LIMIT :limit OFFSET :offset
         """),
-        {"tid": tenant_id, "search": search.strip().lower(), "limit": limit, **params},
+        {
+            "tid": tenant_id,
+            "search": search.strip().lower(),
+            "limit": limit,
+            "offset": offset,
+            **params,
+        },
     )
     return [
         RegisterEmployee(
             employment_id=to_typed_id("employment", r["id"]),
             employee_number=r["employee_number"],
             name=r["name"],
+            legal_entity_id=to_typed_id("legal_entity", r["legal_entity_id"]),
+            company=r["company"],
+            department_id=to_typed_id("org_unit", r["department_id"])
+            if r["department_id"]
+            else None,
             department=r["department"],
         )
         for r in rows.mappings()
@@ -271,7 +341,7 @@ async def edit_day(
     )
     await session.flush()
 
-    ad = await recompute_day(session, tenant_id, emp, work_date, policy, ad)
+    ad = await recompute_day(session, tenant_id, emp, work_date, policy, ad, clear_override=True)
     if ad.review_flags and ad.reviewed_at is None:
         # HR set these punches themselves: that is the review. Held overtime / comp-off follow.
         ad.reviewed_by = actor
@@ -323,13 +393,17 @@ async def _employee(session, tenant_id, emp):
                 text("""
                     SELECT e.employee_number, e.hire_date, e.separation_date, e.legal_entity_id,
                            p.legal_first_name || ' ' || p.legal_last_name AS name,
-                           ou.name AS department, j.title AS designation
+                           CASE WHEN ou.type = 'TEAM' THEN parent_ou.name ELSE ou.name END
+                               AS department,
+                           j.title AS designation
                     FROM employments e
                     JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
                     LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
                          AND a.effective_from <= CURRENT_DATE
                          AND (a.effective_to IS NULL OR a.effective_to > CURRENT_DATE)
                     LEFT JOIN org_units ou ON ou.tenant_id = a.tenant_id AND ou.id = a.org_unit_id
+                    LEFT JOIN org_units parent_ou ON parent_ou.tenant_id = ou.tenant_id
+                         AND parent_ou.id = ou.parent_id
                     LEFT JOIN jobs j ON j.tenant_id = a.tenant_id AND j.id = a.job_id
                     WHERE e.tenant_id = :tid AND e.id = :eid
                 """),

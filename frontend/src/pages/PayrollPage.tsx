@@ -12,6 +12,18 @@ import { StatutoryTab } from "../components/payroll/StatutoryTab";
 
 type PageTab = "salaries" | "structures" | "components" | "statutory";
 const TABS: PageTab[] = ["salaries", "structures", "components", "statutory"];
+const TAB_HELP = {
+  salaries: "payroll-salaries",
+  structures: "payroll-structures",
+  components: "payroll-components",
+  statutory: "payroll-statutory",
+} as const;
+const TAB_HELP_LABEL: Record<PageTab, string> = {
+  salaries: "How salaries work",
+  structures: "How a CTC is split",
+  components: "How components work",
+  statutory: "How PF and ESIC work",
+};
 
 /**
  * Payroll set-up: statutory values, pay components, salary structures and each employee's salary.
@@ -44,7 +56,12 @@ export function PayrollPage() {
       <PageHeader
         title="Payroll"
         description="Salary structures, each employee's salary, and the PF and ESIC values payroll calculates with."
-        actions={<UsageHelpButton topic="payroll" />}
+        actions={
+          <div className="flex flex-wrap items-center gap-2">
+            <UsageHelpButton topic={TAB_HELP[tab]} label={TAB_HELP_LABEL[tab]} />
+            <UsageHelpButton topic="payroll" label="Setup guide" />
+          </div>
+        }
       />
       <Tabs<PageTab>
         className="mb-6"

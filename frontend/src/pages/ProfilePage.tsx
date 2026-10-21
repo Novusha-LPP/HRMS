@@ -11,6 +11,7 @@ import { StatusBadge, humanize } from "../components/ui/StatusBadge";
 import { useAuth } from "../context/AuthContext";
 import { Tabs } from "../components/ui/Tabs";
 import { useToast, errorMessage } from "../components/ui/Toast";
+import { ProfilePhotoControl } from "../components/ui/ProfilePhotoControl";
 import { peopleApi } from "../api/people";
 import { KycSection } from "../components/kyc/KycSection";
 import { kycApi, type KycStatus } from "../api/kyc";
@@ -219,7 +220,7 @@ function EmployeeProfile() {
       <aside className="grid gap-4 lg:grid-cols-[minmax(0,3fr)_minmax(0,2fr)] xl:sticky xl:top-6 xl:order-2 xl:mt-16 xl:grid-cols-1">
         <section className="card p-5">
           <div className="flex items-center gap-4 xl:flex-col xl:text-center">
-            <Avatar name={displayName} size="xl" />
+            <Avatar name={displayName} size="xl" employmentId={user?.employmentId} viewable />
             <div className="min-w-0">
               <p className="truncate text-base font-semibold text-fg">{displayName}</p>
               {displayName !== legalName && <p className="truncate text-xs text-fg-subtle">Legal name: {legalName}</p>}
@@ -230,6 +231,7 @@ function EmployeeProfile() {
               ) : null}
             </div>
           </div>
+          {user?.employmentId && <ProfilePhotoControl employmentId={user.employmentId} className="mt-4 xl:justify-center" />}
           <dl className="mt-4 grid gap-3 border-t border-line pt-4 text-[13px] sm:grid-cols-3 xl:grid-cols-1">
             <RailRow icon={Mail} label="Email" value={p.email} />
             <RailRow icon={Phone} label="Mobile" value={p.mobile} />

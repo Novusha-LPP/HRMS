@@ -10,6 +10,19 @@ const api = "http://127.0.0.1:18015";
 const password = "Synthetic-test-password-123";
 const newPassword = "Synthetic-new-password-456";
 const png = Buffer.from("iVBORw0KGgoAAAANSUhEUgAAAAEAAAABCAQAAAC1HAwCAAAAC0lEQVR42mP8/x8AAwMCAO+a3ioAAAAASUVORK5CYII=", "base64");
+const jpeg = Buffer.from(
+  "/9j/4AAQSkZJRgABAQAAAQABAAD/2wBDAAYEBQYFBAYGBQYHBwYIChAKCgkJChQODwwQFxQYGBcUFhYaHSUfGhsjHBYWICwgIyYnKSopGR8tMC0oMCUoKSj/" +
+  "2wBDAQcHBwoIChMKChMoGhYaKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCgoKCj/wAARCABkAGQDASIAAhEBAxEB/" +
+  "8QAHwAAAQUBAQEBAQEAAAAAAAAAAAECAwQFBgcICQoL/8QAtRAAAgEDAwIEAwUFBAQAAAF9AQIDAAQRBRIhMUEGE1FhByJxFDKBkaEII0KxwRVS0fAkM2Jy" +
+  "ggkKFhcYGRolJicoKSo0NTY3ODk6Q0RFRkdISUpTVFVWV1hZWmNkZWZnaGlqc3R1dnd4eXqDhIWGh4iJipKTlJWWl5iZmqKjpKWmp6ipqrKztLW2t7i5usLD" +
+  "xMXGx8jJytLT1NXW19jZ2uHi4+Tl5ufo6erx8vP09fb3+Pn6/8QAHwEAAwEBAQEBAQEBAQAAAAAAAAECAwQFBgcICQoL/8QAtREAAgECBAQDBAcFBAQAAQJ3" +
+  "AAECAxEEBSExBhJBUQdhcRMiMoEIFEKRobHBCSMzUvAVYnLRChYkNOEl8RcYGRomJygpKjU2Nzg5OkNERUZHSElKU1RVVldYWVpjZGVmZ2hpanN0dXZ3eHl6" +
+  "goOEhYaHiImKkpOUlZaXmJmaoqOkpaanqKmqsrO0tba3uLm6wsPExcbHyMnK0tPU1dbX2Nna4uPk5ebn6Onq8vP09fb3+Pn6/9oADAMBAAIRAxEAPwDCooor" +
+  "706wooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAoooo" +
+  "AKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACiiigAooooAKKKKACii" +
+  "igAooooAKKKKACiiigD/9k=",
+  "base64"
+);
 
 type Seed = {
   adminToken: string; adminId: string;
@@ -303,3 +316,46 @@ test("6 · changes their password, signs out, and only the new password works", 
   expect(old.status()).toBe(401);
   await signIn(page, s.email, newPassword);
 });
+
+test("7 · uploads a profile photo and sees it rendered as a round avatar", async ({ page }) => {
+  await page.route("**/photo*", (route) => route.continue());
+  await signIn(page, s.email, newPassword);
+  await page.goto("/profile");
+
+  // Before uploading a photo, the profile and account menu show initials
+  const asideAvatar = page.locator("aside .avatar").first();
+  await expect(asideAvatar).toBeVisible();
+  await expect(page.locator("aside img.avatar")).toHaveCount(0);
+
+  // Upload a real photograph document
+  await page.getByRole("tab", { name: "KYC & Documents" }).click();
+  await expect(page).toHaveURL(/tab=kyc/);
+  const photoRow = page.locator("li").filter({ hasText: "Photograph" }).first();
+  await photoRow.getByRole("button", { name: "Upload" }).click();
+  await page.locator("[role=dialog] input[type=file]").setInputFiles({
+    name: "portrait.jpg",
+    mimeType: "image/jpeg",
+    buffer: jpeg,
+  });
+  const uploaded = page.waitForResponse((r) => r.url().includes("/v1/kyc/me/documents") && r.request().method() === "POST");
+  await page.getByRole("button", { name: "Upload document", exact: true }).click();
+  expect((await uploaded).ok()).toBeTruthy();
+  await expect(photoRow.getByText("Pending")).toBeVisible();
+
+  // On the profile page, the round avatar now shows the real photo
+  await page.reload();
+  const avatarImg = page.locator("aside img.avatar").first();
+  await expect(avatarImg).toBeVisible();
+  await expect(avatarImg).toHaveClass(/rounded-full/);
+  await expect(avatarImg).toHaveAttribute("src", /^blob:/);
+
+  // The image successfully decoded in the browser
+  const naturalWidth = await avatarImg.evaluate((img: HTMLImageElement) => img.naturalWidth);
+  expect(naturalWidth).toBeGreaterThan(0);
+
+  // The account menu in the sidebar also displays the round photo avatar
+  const accountAvatar = page.getByRole("button", { name: "Account menu", exact: true }).locator("img.avatar");
+  await expect(accountAvatar).toBeVisible();
+  await expect(accountAvatar).toHaveClass(/rounded-full/);
+});
+

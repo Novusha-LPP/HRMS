@@ -1,0 +1,232 @@
+name: Deploy testing to EC2
+
+on:
+  push:
+    branches: [testing]
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+# Never cancel a deployment while its migrations or remote command are running.
+concurrency:
+  group: hrms-ec2-testing
+  cancel-in-progress: false
+
+jobs:
+  deployment-config:
+    if: github.ref == 'refs/heads/testing'
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - run: python3 -m unittest discover -s deploy/aws/tests -v
+      - run: bash -n deploy/aws/deploy.sh
+      - name: Verify migration failures and service rollback in isolation
+        run: >-
+          docker run --rm --network none -v "$PWD:/repo:ro"
+          --entrypoint python python:3.12-slim
+          /repo/deploy/aws/tests/host_script_scenarios.py
+
+  checks:
+    if: github.ref == 'refs/heads/testing'
+    uses: ./.github/workflows/checks.yml
+    with:
+      postgres_image: postgres:16-alpine
+
+  deploy:
+    needs: [checks, deployment-config]
+    if: github.ref == 'refs/heads/testing' && vars.AWS_TESTING_ENABLED == 'true'
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    environment: testing
+    permissions:
+      contents: read
+      id-token: write
+    env:
+      AWS_REGION: ${{ vars.AWS_REGION }}
+      EC2_INSTANCE_ID: ${{ vars.EC2_INSTANCE_ID }}
+      DEPLOY_ARTIFACT_BUCKET: ${{ vars.DEPLOY_ARTIFACT_BUCKET }}
+      API_REPOSITORY: ${{ vars.ECR_API_REPOSITORY || 'hrms-testing-api' }}
+      WEB_REPOSITORY: ${{ vars.ECR_WEB_REPOSITORY || 'hrms-testing-web' }}
+      IMAGE_PLATFORM: ${{ vars.EC2_IMAGE_PLATFORM || 'linux/amd64' }}
+      AWS_ROLE_ARN: ${{ vars.AWS_ROLE_ARN }}
+    steps:
+      - uses: actions/checkout@v4
+      - name: Validate deployment configuration
+        run: |
+          python3 - <<'PY'
+          import os, re
+          patterns = {
+              'EC2_INSTANCE_ID': r'i-[0-9a-f]{8,17}',
+              'DEPLOY_ARTIFACT_BUCKET': r'[a-z0-9][a-z0-9.-]{1,61}[a-z0-9]',
+              'AWS_REGION': r'[a-z]{2}-[a-z]+-\d',
+              'AWS_ROLE_ARN': r'arn:aws:iam::\d{12}:role/[A-Za-z0-9+=,.@_/-]+',
+              'API_REPOSITORY': r'[a-z0-9][a-z0-9._/-]*',
+              'WEB_REPOSITORY': r'[a-z0-9][a-z0-9._/-]*',
+              'IMAGE_PLATFORM': r'linux/(amd64|arm64)',
+          }
+          for key, pattern in patterns.items():
+              if not re.fullmatch(pattern, os.environ.get(key, '')):
+                  raise SystemExit(f'Set a valid {key} in the testing GitHub environment')
+          PY
+      - uses: aws-actions/configure-aws-credentials@v4
+        with:
+          role-to-assume: ${{ env.AWS_ROLE_ARN }}
+          aws-region: ${{ env.AWS_REGION }}
+      - name: Verify target AWS account
+        if: vars.AWS_ACCOUNT_ID != ''
+        run: |
+          test "$(aws sts get-caller-identity --query Account --output text)" = "${{ vars.AWS_ACCOUNT_ID }}"
+      - uses: aws-actions/amazon-ecr-login@v2
+        id: ecr
+      - uses: docker/setup-qemu-action@v3
+      - uses: docker/setup-buildx-action@v3
+      - name: Image metadata
+        id: meta
+        env:
+          REGISTRY: ${{ steps.ecr.outputs.registry }}
+        run: |
+          echo "api=$REGISTRY/$API_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "web=$REGISTRY/$WEB_REPOSITORY" >> "$GITHUB_OUTPUT"
+          echo "built_at=$(date -u +%Y-%m-%dT%H:%M:%SZ)" >> "$GITHUB_OUTPUT"
+          # Unique per attempt, including when retrying the same commit. ECR tags can be immutable.
+          echo "tag=sha-$GITHUB_SHA-$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT" >> "$GITHUB_OUTPUT"
+      - name: Build and push API
+        id: api
+        uses: docker/build-push-action@v6
+        with:
+          context: backend
+          push: true
+          platforms: ${{ env.IMAGE_PLATFORM }}
+          tags: ${{ steps.meta.outputs.api }}:${{ steps.meta.outputs.tag }}
+          build-args: |
+            GIT_SHA=${{ github.sha }}
+            BUILD_TIME=${{ steps.meta.outputs.built_at }}
+          cache-from: type=gha,scope=testing-api
+          cache-to: type=gha,mode=max,scope=testing-api
+      - name: Build and push frontend
+        id: web
+        uses: docker/build-push-action@v6
+        with:
+          context: .
+          file: deploy/web/Dockerfile
+          push: true
+          platforms: ${{ env.IMAGE_PLATFORM }}
+          tags: ${{ steps.meta.outputs.web }}:${{ steps.meta.outputs.tag }}
+          build-args: GIT_SHA=${{ github.sha }}
+          cache-from: type=gha,scope=testing-web
+          cache-to: type=gha,mode=max,scope=testing-web
+      - name: Package the exact images and deployment scripts
+        env:
+          API_IMAGE: ${{ steps.meta.outputs.api }}@${{ steps.api.outputs.digest }}
+          WEB_IMAGE: ${{ steps.meta.outputs.web }}@${{ steps.web.outputs.digest }}
+          RDS_HOSTNAME: ${{ vars.RDS_HOSTNAME }}
+          RDS_DATABASE: ${{ vars.RDS_DATABASE }}
+          RDS_OWNER_USERNAME: ${{ vars.RDS_OWNER_USERNAME }}
+          RDS_OWNER_PASSWORD: ${{ secrets.RDS_OWNER_PASSWORD }}
+          HRMS_APP_ROLE_PASSWORD: ${{ secrets.HRMS_APP_ROLE_PASSWORD }}
+          HRMS_PLATFORM_ROLE_PASSWORD: ${{ secrets.HRMS_PLATFORM_ROLE_PASSWORD }}
+          HRMS_SECRET_KEY: ${{ secrets.HRMS_SECRET_KEY }}
+          HRMS_METRICS_TOKEN: ${{ secrets.HRMS_METRICS_TOKEN }}
+          HRMS_FIELD_ENCRYPTION_KEYS: ${{ secrets.HRMS_FIELD_ENCRYPTION_KEYS }}
+          HRMS_WEB_API_URL: ${{ vars.HRMS_WEB_API_URL }}
+          HRMS_CORS_ORIGINS: ${{ vars.HRMS_CORS_ORIGINS }}
+          HRMS_DEFAULT_TIMEZONE: ${{ vars.HRMS_DEFAULT_TIMEZONE || 'Asia/Kolkata' }}
+          HRMS_DOCUMENT_STORAGE: ${{ vars.HRMS_DOCUMENT_STORAGE }}
+          HRMS_DOCUMENT_S3_BUCKET: ${{ vars.HRMS_DOCUMENT_S3_BUCKET }}
+          HRMS_DOCUMENT_S3_REGION: ${{ vars.HRMS_DOCUMENT_S3_REGION || vars.AWS_REGION }}
+        run: |
+          python3 - <<'PY'
+          import json, os, sys
+          from pathlib import Path
+          from urllib.parse import quote_plus
+          sys.path.insert(0, 'deploy/aws')
+          import validate
+
+          Path('deploy/aws/images.json').write_text(json.dumps({
+              'commit': os.environ['GITHUB_SHA'],
+              'api': os.environ['API_IMAGE'], 'web': os.environ['WEB_IMAGE'],
+          }))
+
+          required_secrets = [
+              'RDS_OWNER_PASSWORD',
+              'HRMS_APP_ROLE_PASSWORD',
+              'HRMS_PLATFORM_ROLE_PASSWORD',
+              'HRMS_SECRET_KEY',
+              'HRMS_METRICS_TOKEN',
+              'HRMS_FIELD_ENCRYPTION_KEYS',
+          ]
+          missing = [k for k in required_secrets if not os.environ.get(k)]
+
+          if not missing:
+              rds_host = os.environ['RDS_HOSTNAME']
+              rds_db = os.environ['RDS_DATABASE']
+              owner_user = os.environ['RDS_OWNER_USERNAME']
+              owner_pw = quote_plus(os.environ['RDS_OWNER_PASSWORD'])
+              app_pw = quote_plus(os.environ['HRMS_APP_ROLE_PASSWORD'])
+              platform_pw = quote_plus(os.environ['HRMS_PLATFORM_ROLE_PASSWORD'])
+              s3_bucket = os.environ.get('HRMS_DOCUMENT_S3_BUCKET', '').strip()
+              s3_region = os.environ.get('HRMS_DOCUMENT_S3_REGION', 'ap-south-1').strip()
+              doc_storage = os.environ.get('HRMS_DOCUMENT_STORAGE', '').strip() or ('s3' if s3_bucket else 'local')
+
+              runtime_lines = [
+                  f"HRMS_DATABASE_URL=postgresql+asyncpg://hrms_app:{app_pw}@{rds_host}:5432/{rds_db}?ssl=verify-full",
+                  f"HRMS_APP_DATABASE_URL=postgresql+asyncpg://hrms_app:{app_pw}@{rds_host}:5432/{rds_db}?ssl=verify-full",
+                  f"HRMS_PLATFORM_DATABASE_URL=postgresql+asyncpg://hrms_platform:{platform_pw}@{rds_host}:5432/{rds_db}?ssl=verify-full",
+                  f"HRMS_SECRET_KEY={os.environ['HRMS_SECRET_KEY']}",
+                  f"HRMS_METRICS_TOKEN={os.environ['HRMS_METRICS_TOKEN']}",
+                  f"HRMS_FIELD_ENCRYPTION_KEYS={os.environ['HRMS_FIELD_ENCRYPTION_KEYS']}",
+                  f"HRMS_CORS_ORIGINS={os.environ['HRMS_CORS_ORIGINS']}",
+                  "HRMS_ALLOW_PUBLIC_REGISTRATION=false",
+                  "HRMS_API_DOCS_ENABLED=false",
+                  "HRMS_DATABASE_POOL_SIZE=5",
+                  "HRMS_DATABASE_MAX_OVERFLOW=5",
+                  f"HRMS_DEFAULT_TIMEZONE={os.environ['HRMS_DEFAULT_TIMEZONE']}",
+                  "HRMS_JOBS_DAILY_AT=00:30",
+                  "WEB_CONCURRENCY=2",
+                  f"HRMS_DOCUMENT_STORAGE={doc_storage}",
+                  "HRMS_MAIL_BACKEND=disabled",
+              ]
+              if doc_storage == 's3' and s3_bucket:
+                  runtime_lines.append(f"HRMS_DOCUMENT_S3_BUCKET={s3_bucket}")
+                  runtime_lines.append(f"HRMS_DOCUMENT_S3_REGION={s3_region}")
+                  runtime_lines.append(f"AWS_DEFAULT_REGION={s3_region}")
+              runtime_env = "\n".join(runtime_lines) + "\n"
+              migrate_env = (
+                  f"HRMS_DATABASE_URL=postgresql+asyncpg://{owner_user}:{owner_pw}@{rds_host}:5432/{rds_db}?ssl=verify-full\n"
+                  f"HRMS_APP_ROLE_PASSWORD={os.environ['HRMS_APP_ROLE_PASSWORD']}\n"
+                  f"HRMS_PLATFORM_ROLE_PASSWORD={os.environ['HRMS_PLATFORM_ROLE_PASSWORD']}\n"
+              )
+              deploy_env = (
+                  f"HRMS_WEB_API_URL={os.environ['HRMS_WEB_API_URL']}\n"
+                  "HRMS_API_PORT=8115\n"
+                  "HRMS_WEB_PORT=8180\n"
+                  "HRMS_BIND_ADDRESS=127.0.0.1\n"
+                  "HRMS_FORWARDED_ALLOW_IPS=172.30.25.1\n"
+                  "HRMS_API_MEMORY=1g\n"
+              )
+
+              Path('deploy/aws/testing.runtime.env').write_text(runtime_env)
+              Path('deploy/aws/testing.migrate.env').write_text(migrate_env)
+              Path('deploy/aws/testing.deploy.env').write_text(deploy_env)
+
+              validate.validate_settings(
+                  validate.load_env(Path('deploy/aws/testing.runtime.env')),
+                  validate.load_env(Path('deploy/aws/testing.migrate.env')),
+                  validate.load_env(Path('deploy/aws/testing.deploy.env')),
+              )
+              print("GitHub Secrets successfully packaged and validated into deployment bundle.")
+          else:
+              print(f"::warning::Missing GitHub Secrets: {missing}. Using existing /etc/hrms configuration on EC2.")
+          PY
+          files="compose.yml deploy.sh validate.py database-preflight.py images.json"
+          if [ -f deploy/aws/testing.runtime.env ]; then
+            files="$files testing.runtime.env testing.migrate.env testing.deploy.env"
+          fi
+          tar -czf /tmp/hrms-deploy.tar.gz -C deploy/aws $files
+          bundle_key="testing/releases/$GITHUB_SHA/$GITHUB_RUN_ID-$GITHUB_RUN_ATTEMPT.tar.gz"
+          aws s3 cp /tmp/hrms-deploy.tar.gz "s3://$DEPLOY_ARTIFACT_BUCKET/$bundle_key" --only-show-errors
+          echo "BUNDLE_KEY=$bundle_key" >> "$GITHUB_ENV"
+          echo "BUNDLE_SHA256=$(sha256sum /tmp/hrms-deploy.tar.gz | cut -d' ' -f1)" >> "$GITHUB_ENV"
+      - name: Deploy using Systems Manager and wait for the result
+        run: python3 deploy/aws/send-command.py

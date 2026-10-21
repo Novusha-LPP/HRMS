@@ -168,7 +168,7 @@ function MemberRow({ m, s }: { m: TeamMember; s: MemberState }) {
     <tr>
       <td>
         <div className="flex min-w-0 items-center gap-3">
-          <Avatar name={m.name} size="md" />
+          <Avatar name={m.name} size="md" employmentId={m.employment_id} />
           <div className="min-w-0">
             <p className="truncate font-medium text-fg">{m.name}</p>
             <p className="truncate text-xs text-fg-subtle">{[m.employee_number, m.designation].filter(Boolean).join(" · ")}</p>
@@ -222,7 +222,7 @@ function TeamLeaveCard({ leave, loading }: { leave?: TeamLeave[]; loading: boole
         <ul className="divide-y divide-line border-t border-line">
           {leave.map((l) => (
             <li key={l.id} className="flex items-center gap-3 px-5 py-2.5">
-              <Avatar name={l.name} size="sm" />
+              <Avatar name={l.name} size="sm" employmentId={l.employment_id} />
               <div className="min-w-0 flex-1">
                 <p className="truncate text-[13px] font-medium text-fg">{l.name}</p>
                 <p className="flex items-center gap-1.5 truncate text-xs text-fg-subtle">

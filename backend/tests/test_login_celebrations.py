@@ -184,6 +184,7 @@ async def test_only_current_people_appear_and_birthdays_are_deduplicated(api):
             "legal_entity_id": company,
             "employee_number": "duplicate-person",
             "hire_date": "2020-01-01",
+            "confirm_new_employment": True,  # deliberately a second employment for the person
         },
     )
     login = await employee_login(client, self)

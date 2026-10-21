@@ -40,6 +40,7 @@ async function fixtures(page: Page, options: FixtureOptions = {}) {
     if (path === "/v1/employees") return reply([employee]);
     if (path === "/v1/persons") return reply([person]);
     if (["/v1/leave/applications", "/v1/corrections"].includes(path)) return reply([]);
+    if (/^\/v1\/kyc\/employees\/[^/]+\/photo$/.test(path)) return route.fulfill({ status: 204 });
     state.unexpectedRequests.push(`GET ${path}`);
     return reply({ message: `Missing motion fixture: ${path}` }, 404);
   });

@@ -113,7 +113,7 @@ function TeamTodayCard() {
         <ul className="divide-y divide-line border-t border-line">
           {rows.slice(0, 6).map(({ m, s }) => (
             <li key={m.employment_id} className="flex items-center gap-3 px-5 py-2.5 text-[13px]">
-              <Avatar name={m.name} size="sm" />
+              <Avatar name={m.name} size="sm" employmentId={m.employment_id} />
               <span className="min-w-0 flex-1">
                 <span className="block truncate font-medium text-fg">{m.name}</span>
                 <span className="block truncate text-xs text-fg-subtle">{s.firstIn ? `In ${s.firstIn}${s.lastOut ? ` · Out ${s.lastOut}` : ""}` : m.designation ?? m.employee_number}</span>

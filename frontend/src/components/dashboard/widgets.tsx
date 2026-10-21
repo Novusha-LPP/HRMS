@@ -80,7 +80,7 @@ function Empty({ icon, title, description }: { icon: LucideIcon; title: string; 
   );
 }
 
-interface PersonRow { name: string; department: string; company: string }
+interface PersonRow { name: string; department: string; company: string; employment_id?: string }
 
 function PeopleList<T extends PersonRow>({ rows, right }: { rows: T[]; right: (row: T) => ReactNode }) {
   return (
@@ -88,7 +88,7 @@ function PeopleList<T extends PersonRow>({ rows, right }: { rows: T[]; right: (r
       {rows.map((row, i) => (
         <li key={i} className="flex items-center justify-between gap-3 px-5 py-3 text-[13px] transition-colors hover:bg-muted/40">
           <div className="flex min-w-0 items-center gap-3">
-            <Avatar name={row.name} size="sm" />
+            <Avatar name={row.name} size="sm" employmentId={row.employment_id} />
             <div className="min-w-0">
               <p className="truncate font-semibold text-fg">{row.name}</p>
               <p className="truncate text-xs text-fg-subtle">{row.department} • {row.company}</p>

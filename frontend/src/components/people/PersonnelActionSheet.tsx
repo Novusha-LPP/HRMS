@@ -1,13 +1,15 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
 import type { FormEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { addDays, format, parseISO } from "date-fns";
 import { orgApi } from "../../api/org";
-import { peopleApi, personnelActionsApi } from "../../api/people";
-import type { PersonnelActionChanges } from "../../api/people";
+import { peopleApi, personnelActionsApi, rejoinApi, separationApi } from "../../api/people";
+import type { PersonnelActionChanges, RejoinMode } from "../../api/people";
+import { MODE_HELP, MODE_LABEL, buildRejoinChoice, days, describeGap, describeSettlement, ACTION_LABEL } from "../../lib/rejoin";
 import { formatDateOnly } from "../../lib/dates";
 import { Sheet } from "../ui/Overlay";
 import { Notice } from "../ui/Feedback";
+import { UsageHelpButton } from "../ui/UsageHelpButton";
 import { useToast, errorMessage } from "../ui/Toast";
 import { PlacementFields } from "./PlacementFields";
 import { ACTION_META } from "../../lib/personnelActions";
@@ -68,6 +70,16 @@ function ActionForm({ subject, kind, onDone }: { subject: ActionSubject; kind: A
   const [managerId, setManagerId] = useState(subject.managerEmploymentId ?? "");
   const [until, setUntil] = useState("");
   const [placement, setPlacement] = useState<PlacementValues>({ orgUnitId: "", jobId: "", locationId: "", managerEmploymentId: "" });
+  // Rejoin only: "" means "use the company's default".
+  const [rejoinMode, setRejoinMode] = useState<RejoinMode | "">("");
+  const [condoned, setCondoned] = useState(false);
+  const [rejoinReason, setRejoinReason] = useState("");
+  const [gratuityPaid, setGratuityPaid] = useState(false);
+  const [settledReason, setSettledReason] = useState("");
+  useEffect(() => {
+    const t = setTimeout(() => setSettledReason(rejoinReason.trim()), 350);
+    return () => clearTimeout(t);
+  }, [rejoinReason]);
 
   const needsJobs = kind === "PROMOTION" || kind === "CHANGE_JOB";
   const jobs = useQuery({ queryKey: ["jobs"], queryFn: () => orgApi.listJobs(), enabled: needsJobs });
@@ -81,6 +93,22 @@ function ActionForm({ subject, kind, onDone }: { subject: ActionSubject; kind: A
   // still count the employee on the last day itself.
   const effectiveDate = isSeparation && date ? format(addDays(parseISO(date), 1), "yyyy-MM-dd") : date;
   const scheduled = effectiveDate > today();
+
+  const rejoinPreview = useQuery({
+    queryKey: ["rejoin-preview", subject.id, effectiveDate, rejoinMode, condoned, settledReason, gratuityPaid],
+    queryFn: () => rejoinApi.preview(subject.id, {
+      effective_date: effectiveDate, mode: rejoinMode || undefined, break_condoned: condoned,
+      reason: settledReason || undefined, gratuity_paid_at_exit: gratuityPaid || undefined,
+    }),
+    enabled: kind === "REHIRE" && !!effectiveDate,
+    retry: false,
+  });
+  const leavePreview = useQuery({
+    queryKey: ["separation-preview", subject.id, effectiveDate],
+    queryFn: () => separationApi.preview(subject.id, effectiveDate),
+    enabled: isSeparation && !!date,
+    retry: false,
+  });
 
   const changes = (): PersonnelActionChanges | undefined => {
     switch (kind) {
@@ -116,10 +144,20 @@ function ActionForm({ subject, kind, onDone }: { subject: ActionSubject; kind: A
   if (kind === "PLACE_ON_NOTICE" && until && until < date) problems.push("The expected last day can't be before notice starts.");
   if (kind === "REHIRE" && (!placement.orgUnitId || !placement.jobId || !placement.locationId)) problems.push("Choose a department, designation and location.");
 
+  // A rejoin the company's rules rule out is explained in the panel itself. Only trust the
+  // preview once it reflects what is typed; until then the server decides when saving.
+  const previewIsCurrent = !rejoinPreview.isFetching && settledReason === rejoinReason.trim();
+  if (kind === "REHIRE" && previewIsCurrent && rejoinPreview.data && !rejoinPreview.data.can_proceed) {
+    problems.push("Resolve what is shown under Service and leave.");
+  }
+
   const save = useMutation({
     mutationFn: () => personnelActionsApi.create({
       employment_id: subject.id, type: kind, effective_date: effectiveDate,
       reason_code: reasonCode || undefined, changes: changes(),
+      rejoin: kind === "REHIRE"
+        ? buildRejoinChoice({ mode: rejoinMode, condoned, reason: rejoinReason, gratuityPaid })
+        : undefined,
     }),
     onSuccess: (pa) => {
       qc.invalidateQueries({ queryKey: ["employees"] });
@@ -209,6 +247,17 @@ function ActionForm({ subject, kind, onDone }: { subject: ActionSubject; kind: A
         />
       )}
 
+      {kind === "REHIRE" && (
+        <RejoinPanel
+          preview={rejoinPreview.data}
+          loading={rejoinPreview.isFetching}
+          mode={rejoinMode} onMode={setRejoinMode}
+          condoned={condoned} onCondoned={setCondoned}
+          reason={rejoinReason} onReason={setRejoinReason}
+          gratuityPaid={gratuityPaid} onGratuityPaid={setGratuityPaid}
+        />
+      )}
+
       <div className="grid grid-cols-2 gap-3">
         <div>
           <label className="label" htmlFor="pa-date">{meta.dateLabel}</label>
@@ -245,6 +294,20 @@ function ActionForm({ subject, kind, onDone }: { subject: ActionSubject; kind: A
           From {formatDateOnly(effectiveDate)} {subject.name} is shown as separated, and stops counting in attendance and headcount.
         </Notice>
       )}
+      {isSeparation && (leavePreview.data?.items.length ?? 0) > 0 && (
+        <div className="rounded-xl border border-line bg-surface-raised p-4 text-[13px]" data-testid="separation-leave">
+          <p className="font-medium text-fg">Unused leave when they leave</p>
+          <ul className="mt-2 space-y-1 text-fg-muted">
+            {leavePreview.data!.items.map((i) => (
+              <li key={i.leave_type_id}>
+                <span className="font-medium text-fg">{i.leave_type_name}</span>: {days(i.unused_days)} unused · {ACTION_LABEL[i.action]} — {describeSettlement(i)}
+                {i.note && <span className="block text-xs text-fg-subtle">{i.note}</span>}
+              </li>
+            ))}
+          </ul>
+          <p className="mt-2 text-xs text-fg-subtle">This follows your company's leave rules for leavers and is recorded in each person's leave history.</p>
+        </div>
+      )}
       {scheduled && !isSeparation && (
         <p className="text-xs text-fg-subtle">This date is in the future: the change is scheduled and applies automatically on {formatDateOnly(effectiveDate)}. You can cancel it until then.</p>
       )}
@@ -257,5 +320,84 @@ function ActionForm({ subject, kind, onDone }: { subject: ActionSubject; kind: A
       )}
       {save.isPending && <p className="text-xs text-fg-subtle">Saving…</p>}
     </form>
+  );
+}
+
+
+function RejoinPanel({ preview, loading, mode, onMode, condoned, onCondoned, reason, onReason, gratuityPaid, onGratuityPaid }: {
+  preview: import("../../api/people").RejoinPreview | undefined;
+  loading: boolean;
+  mode: RejoinMode | "";
+  onMode: (m: RejoinMode | "") => void;
+  condoned: boolean;
+  onCondoned: (v: boolean) => void;
+  reason: string;
+  onReason: (v: string) => void;
+  gratuityPaid: boolean;
+  onGratuityPaid: (v: boolean) => void;
+}) {
+  const effective = preview?.mode ?? (mode || "CONTINUE");
+  const overLimit = !!preview && preview.force_fresh_after_days !== null && (preview.gap_days ?? 0) > preview.force_fresh_after_days;
+  const needsReason = effective === "FRESH" || (effective === "CONTINUE" && condoned);
+  return (
+    <fieldset className="space-y-3 rounded-xl border border-line p-4" data-testid="rejoin-panel">
+      <legend className="px-1 text-sm font-semibold text-fg">Service and leave <UsageHelpButton topic="rejoin" iconOnly /></legend>
+      {preview && (
+        <p className="text-[13px] text-fg-muted">
+          Left on {preview.left_on ?? "—"} · break of <span className="font-medium text-fg">{describeGap(preview.gap_days)}</span>
+          {preview.force_fresh_after_days !== null && <> · company limit for continuing: {preview.force_fresh_after_days} days</>}
+        </p>
+      )}
+      <div className="space-y-2" role="radiogroup" aria-label="What happens to earlier service and leave">
+        <label className="flex items-start gap-2 text-[13px]">
+          <input type="radio" name="rejoin-mode" checked={mode === ""} onChange={() => onMode("")} />
+          <span><span className="font-medium text-fg">Follow the company default</span>{preview && <span className="text-fg-muted"> ({MODE_LABEL[preview.default_mode]})</span>}</span>
+        </label>
+        {(["CONTINUE", "FRESH"] as RejoinMode[]).map((m) => (
+          <label key={m} className="flex items-start gap-2 text-[13px]">
+            <input type="radio" name="rejoin-mode" checked={mode === m} onChange={() => onMode(m)} />
+            <span><span className="font-medium text-fg">{MODE_LABEL[m]}</span><span className="block text-xs text-fg-muted">{MODE_HELP[m]}</span></span>
+          </label>
+        ))}
+      </div>
+      <label className="flex items-start gap-2 text-[13px]">
+        <input type="checkbox" checked={gratuityPaid} onChange={(e) => onGratuityPaid(e.target.checked)} />
+        <span>Gratuity was paid when they left <span className="block text-xs text-fg-muted">Service then restarts, so they can only start fresh.</span></span>
+      </label>
+      {overLimit && effective === "CONTINUE" && !gratuityPaid && (
+        <label className="flex items-start gap-2 text-[13px]">
+          <input type="checkbox" checked={condoned} onChange={(e) => onCondoned(e.target.checked)} />
+          <span>I accept this break as not interrupting service <span className="block text-xs text-fg-muted">Needed to continue after a break longer than your company allows. Give a reason below.</span></span>
+        </label>
+      )}
+      {(needsReason || mode === "FRESH") && (
+        <div>
+          <label className="label" htmlFor="pa-rejoin-reason">Reason for this choice</label>
+          <input id="pa-rejoin-reason" className="input" maxLength={300} value={reason} onChange={(e) => onReason(e.target.value)} placeholder="For example: new contract, or approved by the director" />
+        </div>
+      )}
+      {preview && preview.leave.length > 0 && (
+        <table className="w-full text-[13px]">
+          <thead><tr className="text-left text-xs text-fg-subtle"><th className="py-1 font-medium">Leave</th><th className="py-1 font-medium">Unused</th><th className="py-1 font-medium">After rejoining</th></tr></thead>
+          <tbody>
+            {preview.leave.map((l) => (
+              <tr key={l.leave_type_id} className="border-t border-line">
+                <td className="py-1">{l.leave_type_name}</td>
+                <td className="py-1">{days(l.days)}</td>
+                <td className="py-1">{l.outcome === "KEPT" ? "Kept" : "Lapses"}</td>
+              </tr>
+            ))}
+          </tbody>
+        </table>
+      )}
+      {preview && preview.blocked.length > 0 && (
+        <ul className="space-y-1 text-xs text-danger" role="alert">{preview.blocked.map((b) => <li key={b}>{b}</li>)}</ul>
+      )}
+      {preview && preview.notes.map((n) => <p key={n} className="text-xs text-fg-subtle">{n}</p>)}
+      {preview?.automatic && mode === "" && preview.mode !== preview.default_mode && (
+        <Notice tone="warning" title={`This will start fresh`}>{preview.reason}</Notice>
+      )}
+      {loading && !preview && <p className="text-xs text-fg-subtle">Checking…</p>}
+    </fieldset>
   );
 }

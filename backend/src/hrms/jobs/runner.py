@@ -8,6 +8,8 @@ so one tenant's failure is logged and counted without stopping the others; the r
   missed day within the month.
 - scheduled-actions: applies personnel actions whose effective date has arrived. Requests
   already apply them lazily; this makes sure they land even on a day nobody signs in.
+- leave-holds: lapses unused leave held after a separation once its hold period is over (or
+  marks it restored if the person rejoined). Does nothing for companies with no separation rules.
 - missed-punches: marks days whose session is still open 24 hours after check-in as
   MISSED_PUNCH, so reports show them for correction.
 - integrations: connected-app housekeeping (held events, feed and sync-log retention).
@@ -28,7 +30,7 @@ from sqlalchemy import text
 from hrms.core import database
 from hrms.core.authz import SYSTEM_ACTOR
 from hrms.core.config import settings
-from hrms.core.datetime_utils import now_utc, safe_tz
+from hrms.core.datetime_utils import business_today, now_utc, safe_tz
 from hrms.jobs.models import JobRun
 
 logger = logging.getLogger("hrms.jobs")
@@ -83,6 +85,14 @@ async def _scheduled_actions(session, tenant_id: UUID) -> str:
         {"tid": tenant_id},
     )
     return "applied; expired reports removed"
+
+
+async def _leave_holds(session, tenant_id: UUID) -> str:
+    """Lapse unused leave held for people who left and did not return in time."""
+    from hrms.modules.leave.separation import resolve_holds
+
+    counts = await resolve_holds(session, tenant_id, business_today())
+    return f"{counts['lapsed']} lapsed, {counts['restored']} restored"
 
 
 async def _missed_punches(session, tenant_id: UUID) -> str:
@@ -166,6 +176,7 @@ async def _integrity(session, tenant_id: UUID) -> dict[str, int]:
 JOBS: dict[str, TenantJob] = {
     "scheduled-actions": _scheduled_actions,
     "accrual": _accrual,
+    "leave-holds": _leave_holds,
     "missed-punches": _missed_punches,
     "integrations": _integrations,
     "integrity": _integrity,

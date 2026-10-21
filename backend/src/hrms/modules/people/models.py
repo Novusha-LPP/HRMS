@@ -64,6 +64,29 @@ class PersonnelActionType(enum.StrEnum):
     CHANGE_JOB = "CHANGE_JOB"
 
 
+class RejoinMode(enum.StrEnum):
+    """What a rejoin does with the person's earlier service and leave."""
+
+    CONTINUE = "CONTINUE"
+    FRESH = "FRESH"
+
+
+class RejoinPolicy(SQLModel, table=True):
+    """How a company (or every company, when none is named) treats someone who rejoins."""
+
+    __tablename__ = "rejoin_policies"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    legal_entity_id: UUID | None = Field(default=None)
+    default_mode: str = Field(max_length=10)
+    force_fresh_after_days: int | None = Field(default=None, ge=0)
+    effective_from: date
+    archived_at: datetime | None = Field(default=None)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
+
+
 class Person(SQLModel, table=True):
     """
     The person record — created once; survives across employments and rehires.
@@ -107,10 +130,54 @@ class Employment(SQLModel, table=True):
     employment_state: str = Field(default=EmploymentState.PROBATION, max_length=50)
     # Service stage (e.g. INTERN, CONTRACT, PERMANENT)
     service_stage: str | None = Field(default=None, max_length=50)
+    # Service is counted from here (leave eligibility, gratuity). Equal to hire_date until a
+    # "start fresh" rejoin moves it; NULL only on rows written before the column existed.
+    continuity_start_date: date | None = Field(default=None)
+    current_spell_no: int = Field(default=1)
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
     recorded_by: UUID | None = Field(default=None)
     version: int = Field(default=0)
     archived_at: datetime | None = Field(default=None)
+
+
+class EmploymentSpell(SQLModel, table=True):
+    """One stint of an employment. A rejoin reuses the employment and opens the next stint."""
+
+    __tablename__ = "employment_spells"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    employment_id: UUID = Field(index=True)
+    spell_no: int = Field()
+    joined_on: date = Field()
+    left_on: date | None = Field(default=None)
+    exit_reason: str | None = Field(default=None, max_length=100)
+    gratuity_paid: bool | None = Field(default=None)
+    leave_settled: bool = Field(default=False)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
+
+
+class RejoinRecord(SQLModel, table=True):
+    """The decision taken when a separated employee rejoined."""
+
+    __tablename__ = "rejoin_records"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    employment_id: UUID = Field(index=True)
+    personnel_action_id: UUID | None = Field(default=None)
+    previous_spell_id: UUID | None = Field(default=None)
+    new_spell_id: UUID | None = Field(default=None)
+    mode: str = Field(max_length=10)
+    break_start: date | None = Field(default=None)
+    break_end: date | None = Field(default=None)
+    break_condoned: bool = Field(default=False)
+    reason: str | None = Field(default=None)
+    approved_by: UUID | None = Field(default=None)
+    restored_leave: dict | None = Field(default=None, sa_column=Column("restored_leave", JSONB))
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
 
 
 class Assignment(SQLModel, table=True):

@@ -37,9 +37,11 @@ from hrms.modules.kernel.auth.router import router as auth_router
 from hrms.modules.kernel.users.router import router as users_router
 from hrms.modules.kyc.router import router as kyc_router
 from hrms.modules.leave.router import router as leave_router
+from hrms.modules.leave.separation_router import router as leave_separation_router
 from hrms.modules.onboarding.router import router as onboarding_router
 from hrms.modules.org.router import router as org_router
 from hrms.modules.payroll.router import router as payroll_router
+from hrms.modules.people.rejoin_router import router as rejoin_router
 from hrms.modules.people.router import router as people_router
 from hrms.modules.platform.router import router as platform_router
 from hrms.modules.policy.router import router as policy_router
@@ -91,7 +93,7 @@ app.add_middleware(
     allow_methods=["*"],
     allow_headers=["*"],
     # Let the web app read these, so it can show "Reference: req_…" when something fails.
-    expose_headers=["X-Request-ID", "X-App-Version"],
+    expose_headers=["X-Request-ID", "X-App-Version", "Content-Disposition"],
 )
 
 if settings.query_metrics:
@@ -111,6 +113,7 @@ app.include_router(users_router)
 app.include_router(org_router)
 app.include_router(platform_router)
 app.include_router(people_router)
+app.include_router(rejoin_router)
 app.include_router(time_router)
 app.include_router(time_register_router)
 app.include_router(holiday_calendars_router)
@@ -119,6 +122,7 @@ app.include_router(reports_router)
 app.include_router(dashboard_router)
 app.include_router(policy_router)
 app.include_router(leave_router)
+app.include_router(leave_separation_router)
 app.include_router(corrections_router)
 app.include_router(approvals_router)
 app.include_router(integrations_router)

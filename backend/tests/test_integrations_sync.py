@@ -309,6 +309,70 @@ async def test_rehire_reuses_the_last_placement(api):
     assert emp["employment_state"] == "PROBATION" and emp["department"] == "Ops"
 
 
+async def test_rehire_through_the_sync_api_can_start_fresh_and_refuses_a_bad_choice(api):
+    client, admin_engine = api
+    w = await world(client)
+    created = (await w.put("RH-2", expect=201, **w.new_hire())).json()
+    await ok(client, "POST", "/v1/integrations/employees/RH-2/exit",
+             json={"last_working_day": str(date.today() - timedelta(days=2))},
+             headers={**w.erp, "Idempotency-Key": "rh2-exit"})
+    # Starting fresh needs a reason, and the app is told why it was refused.
+    refused = await client.post(
+        "/v1/integrations/employees/RH-2/rehire",
+        json={"hire_date": str(date.today()), "rejoin_mode": "FRESH"},
+        headers={**w.erp, "Idempotency-Key": "rh2-bad"},
+    )
+    assert refused.status_code == 422 and refused.json()["code"] == "REJOIN_NOT_ALLOWED"
+    rehired = await ok(client, "POST", "/v1/integrations/employees/RH-2/rehire",
+                       json={"hire_date": str(date.today()), "rejoin_mode": "FRESH",
+                             "reason": "New contract"},
+                       headers={**w.erp, "Idempotency-Key": "rh2-ok"})
+    assert rehired["outcome"] == "APPLIED"
+    from sqlalchemy import text
+
+    from hrms.core.ids import to_uuid
+
+    async with admin_engine.connect() as conn:
+        row = (await conn.execute(
+            text("SELECT mode, reason FROM rejoin_records WHERE employment_id = :e"),
+            {"e": to_uuid(created["employment_id"])},
+        )).one()
+    assert tuple(row) == ("FRESH", "New contract")
+
+
+async def test_a_corrected_hire_date_moves_service_unless_it_was_restarted(api):
+    client, admin_engine = api
+    from sqlalchemy import text
+
+    from hrms.core.ids import to_uuid
+
+    w = await world(client)
+    body = w.new_hire()
+    created = (await w.put("HD-1", expect=201, **body)).json()
+    employment = to_uuid(created["employment_id"])
+
+    async def service_dates():
+        async with admin_engine.connect() as conn:
+            return tuple((await conn.execute(
+                text("SELECT hire_date, continuity_start_date FROM employments WHERE id = :e"),
+                {"e": employment},
+            )).one())
+
+    hired, counted_from = await service_dates()
+    assert hired == counted_from
+    corrected = date(2019, 5, 6)
+    await w.put("HD-1", **{**body, "hire_date": corrected.isoformat()})
+    assert await service_dates() == (corrected, corrected)  # service follows the correction
+
+    async with admin_engine.begin() as conn:  # a "start fresh" rejoin moved service forward
+        await conn.execute(
+            text("UPDATE employments SET continuity_start_date = :d WHERE id = :e"),
+            {"d": date(2025, 1, 1), "e": employment},
+        )
+    await w.put("HD-1", **{**body, "hire_date": "2018-02-03"})
+    assert await service_dates() == (date(2018, 2, 3), date(2025, 1, 1))  # and stays there
+
+
 async def test_simultaneous_creates_for_one_person_make_one_employee(api):
     import asyncio
 
