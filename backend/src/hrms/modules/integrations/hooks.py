@@ -103,6 +103,9 @@ async def personnel_action_applied(
     after = await employee_snapshot(session, tenant_id, emp.id)
     changes = diff(before, after)
     if kind == "REHIRE":
+        mode = ((pa.changes or {}).get("rejoin") or {}).get("mode") or "CONTINUE"
+        # Receiving apps are told whether earlier service and leave carried on or started over.
+        changes["rejoin_mode"] = {"old": None, "new": mode}
         await emit_employee_event(
             session, tenant_id, emp.id, "employee.rehired", changes=changes, origin_app_id=origin
         )

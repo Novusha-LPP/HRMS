@@ -604,6 +604,7 @@ async def test_person_cannot_hold_multiple_levels_using_different_accounts(api):
             "legal_entity_id": admin["user"]["legal_entities"][0]["id"],
             "employee_number": "ALIAS-" + uuid4().hex[:6],
             "hire_date": "2020-01-01",
+            "confirm_new_employment": True,  # deliberately a second employment for the person
         },
     )
     _, _, alias = await make_user(client, second_job["id"])

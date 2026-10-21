@@ -50,6 +50,7 @@ _PREFIX_MAP: dict[str, str] = {
     "employee_id_scheme": "eis",
     "assignment": "asgn",
     "personnel_action": "pa",
+    "rejoin_policy": "rjp",
     "user": "usr",
     "role": "rol",
     # Policy
@@ -67,6 +68,8 @@ _PREFIX_MAP: dict[str, str] = {
     "leave_policy_assignment": "lpa",
     "leave_ledger": "ll",
     "leave_transaction": "ltx",
+    "leave_separation_rule": "lsr",
+    "leave_separation_settlement": "lss",
     # Corrections
     "attendance_correction": "cor",
     "correction_approval": "cappr",

@@ -18,6 +18,8 @@ export type UsageHelpTopic =
   | "payroll-structures"
   | "payroll-components"
   | "payroll-statutory"
+  | "leavers"
+  | "rejoin"
   | "integrations-overview"
   | "integrations-keys"
   | "integrations-settings"
@@ -308,6 +310,71 @@ export const usageHelp: Record<UsageHelpTopic, UsageHelp> = {
         ],
       },
     ],
+  },
+  leavers: {
+    title: "Leavers and rejoining",
+    introduction: "Two company rules for people who leave: what happens to their unused leave, and how a rejoin treats their earlier service. With neither set, nothing changes: leave stays as it is and a rejoin continues earlier service.",
+    steps: [
+      { title: "Decide what happens to unused leave", description: "Add a rule under Unused leave when someone leaves. Lapse removes the balance. Pay it out (encash) pays it, only for leave types marked encashable, and can be capped. Hold keeps it, for a number of days or until they rejoin." },
+      { title: "Pick who the rule covers", description: "Choose a company and a leave type, or leave either on Every. When more than one rule fits, the most specific one in force on the last working day wins." },
+      { title: "Set how a rejoin starts", description: "Under When someone rejoins choose whether a rejoin continues earlier service or starts fresh by default, and the longest break that may still continue." },
+      { title: "See what will happen first", description: "When you record a separation, the sheet lists each unused balance and what the rule does with it. When you rehire someone, it shows the break, the choices and what happens to their leave before you save." },
+    ],
+    note: "Every outcome is a leave-history entry, so nothing is deleted. If gratuity was paid when someone left, a rejoin always starts fresh. Check any legal point, such as paying out leave on exit, with your labour adviser: the rules here are your company's choices.",
+    calculation: {
+      title: "How the choices work",
+      items: [
+        { name: "Lapse", text: "The whole unused balance is removed on the last working day." },
+        { name: "Pay out (encash)", text: "Up to the cap (or all of it with no cap) is paid out and recorded as an encashment. Anything above the cap lapses." },
+        { name: "Hold", text: "The balance stays. After the hold days, if the person has not rejoined, it lapses. If they rejoin and continue, it is restored." },
+        { name: "Continue on rejoin", text: "Earlier service counts and any held leave carries on. Leave that was paid out or lapsed at exit stays gone." },
+        { name: "Start fresh on rejoin", text: "Unused leave lapses and service for leave eligibility starts again from the rejoin date." },
+        { name: "Long breaks", text: "A break longer than the company limit can only continue if HR records that the break is accepted, with a reason." },
+        { name: "The months away", text: "Leave is not credited for the months someone was away, whichever choice is made." },
+      ],
+    },
+    examples: [
+      {
+        title: "Example: a rule that pays out up to 4 days",
+        intro: "Annual leave, 10 days unused on the last working day. Rule: pay out at most 4 days.",
+        rows: [
+          ["Unused balance", "10 days"],
+          ["Paid out (the cap)", "4 days"],
+          ["Lapses (the rest)", "6 days"],
+          ["Balance after leaving", "0 days"],
+        ],
+      },
+      {
+        title: "Example: rejoining after 100 days",
+        intro: "Company policy: continue by default, but a break over 30 days must start fresh. 10 days of leave were still held.",
+        rows: [
+          ["Break", "100 days"],
+          ["Choice offered", "Start fresh"],
+          ["Held leave", "10 days lapse"],
+          ["Service for leave counts from", "The rejoin date"],
+          ["To continue anyway", "Accept the break and give a reason"],
+        ],
+      },
+    ],
+  },
+  rejoin: {
+    title: "Rehire someone who left",
+    introduction: "Bring a former employee back on the same record. Their history stays together, and you decide whether their earlier service and leave carry on or start again.",
+    steps: [
+      { title: "Choose the rejoin date and placement", description: "The date they rejoin, and the department, designation and location they return to." },
+      { title: "Choose what happens to service and leave", description: "Follow the company default, continue earlier service, or start fresh. The sheet shows the length of the break and what happens to each unused leave balance." },
+      { title: "Say if gratuity was paid", description: "If gratuity was paid when they left, their service restarts, so only Start fresh is allowed." },
+      { title: "Give a reason where one is needed", description: "Starting fresh needs a reason. Continuing after a break longer than your company allows needs you to accept the break and give a reason." },
+    ],
+    note: "A returning person has one record, one set of identity numbers and one leave history. If you are about to add someone who has worked here before, rehire them instead of adding them again.",
+    calculation: {
+      title: "What each choice does",
+      items: [
+        { name: "Continue", text: "Earlier service counts. Held leave is restored. Leave paid out or lapsed at exit does not come back." },
+        { name: "Start fresh", text: "Unused leave lapses as leave-history entries. Service for leave eligibility starts from the rejoin date." },
+        { name: "Company default", text: "Set under Leave policies, Leavers and Rejoining. Without one, a rejoin continues." },
+      ],
+    },
   },
   approvals: {
     title: "Set up employee approval workflows",

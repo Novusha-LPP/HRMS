@@ -233,6 +233,53 @@ Employees the caller can see, with their current department, job, location and m
         "One employee's current employment: company, department, job, location, manager and "
         "state. Returns `404` when the employee doesn't exist or is outside the caller's scope.",
     ),
+    "preview_rejoin": (
+        "Preview a rejoin",
+        """
+What rejoining on `effective_date` (default today) would do for someone who has left. Nothing
+is changed.
+
+- **`mode`:** `CONTINUE` keeps earlier service and any leave still held; `FRESH` starts over and
+  lapses unused leave. Without `mode`, the company's rejoin policy decides.
+- **`allowed_modes` and `blocked`:** a break longer than the policy's limit, or gratuity paid at
+  exit, rules out `CONTINUE` unless HR records `break_condoned` with a reason.
+- **`leave`:** each unused balance and whether it is kept or lapses.
+- `can_proceed` is false while anything is in `blocked`.
+""",
+    ),
+    "employment_history": (
+        "Employment history",
+        "Each stint of this employment, newest first: when they joined and left, why, whether "
+        "gratuity was paid, and for a rejoin how it was decided (continue or start fresh, the "
+        "break, and the reason). `continuity_start_date` is where service for leave eligibility "
+        "counts from.",
+    ),
+    "list_person_employments": (
+        "List a person's employments",
+        "Every employment the person has had in companies you can manage, with whether each can "
+        "be rejoined (they have left). Hiring someone who already has an employment is refused "
+        "with `PAST_EMPLOYMENT_EXISTS` unless `confirm_new_employment` is set, so check here "
+        "first and rejoin the earlier employment when that is what is happening.",
+    ),
+    "list_rejoin_policies": (
+        "List rejoin policies",
+        "How each company treats people who rejoin: the default choice and the longest break "
+        "that may still continue. With no policy, rejoining continues earlier service.",
+    ),
+    "create_rejoin_policy": (
+        "Add a rejoin policy",
+        """
+Sets, from `effective_from`, whether a rejoin continues earlier service (`CONTINUE`) or
+starts fresh (`FRESH`) by default, and `force_fresh_after_days`, the longest break that may
+continue without HR recording that it was condoned. Leave `legal_entity_id` blank for every
+company; a company's own policy wins over that one. Two live policies can't start on the same
+date for the same company (409).
+""",
+    ),
+    "archive_rejoin_policy": (
+        "Remove a rejoin policy",
+        "Archives the policy. Rejoins already recorded keep what was decided for them.",
+    ),
     "create_personnel_action": (
         "Apply a personnel action",
         """

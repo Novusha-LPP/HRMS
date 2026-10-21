@@ -1,3 +1,4 @@
+import { findPossibleDuplicates } from "../lib/rejoin";
 import { useMemo, useState } from "react";
 import type { FormEvent } from "react";
 import { useSearchParams } from "react-router-dom";
@@ -11,7 +12,6 @@ import {
 } from "lucide-react";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import { integrationsApi } from "../api/integrations";
-import { ManagedByBadge } from "../components/integrations/ManagedFields";
 import type { Employment } from "../api/people";
 import { orgApi } from "../api/org";
 import { EmployeeWorkflowSection } from "../components/approvals/EmployeeWorkflowSection";
@@ -650,7 +650,6 @@ function EmployeeSheet({
               <div className="mt-2 flex flex-wrap gap-1.5">
                 <StatusBadge status={row.state} />
                 {row.type && <span className="badge badge-neutral">{row.type}</span>}
-                <ManagedByBadge employmentId={row.id} />
               </div>
               {(canPlace || isSelf) && <ProfilePhotoControl employmentId={row.id} className="mt-3" />}
             </div>
@@ -830,6 +829,18 @@ export function AddEmployeeSheet({ open, onClose, initial, onHired, title = "Add
   const resolvedScheme = (idSchemes.data ?? []).find((s) => s.legal_entity_id === entityId)
     ?? (idSchemes.data ?? []).find((s) => !s.legal_entity_id);
 
+  // Someone who already has a record is rejoined, not hired again: a second record splits
+  // their history, leave and identity numbers in two.
+  const everyone = useQuery({ queryKey: ["employees-picker"], queryFn: () => peopleApi.listAllEmployees(), enabled: open });
+  const lookalikes = findPossibleDuplicates(everyone.data ?? [], { first: form.first, last: form.last, dob: form.dob });
+  const [differentPerson, setDifferentPerson] = useState(false);
+  const duplicateKey = lookalikes.map((p) => p.id).join(",");
+  const [lastDuplicateKey, setLastDuplicateKey] = useState("");
+  if (duplicateKey !== lastDuplicateKey) {
+    setLastDuplicateKey(duplicateKey);
+    setDifferentPerson(false);
+  }
+
   const hire = useMutation({
     mutationFn: async () => {
       const person = await peopleApi.createPerson({
@@ -884,7 +895,8 @@ export function AddEmployeeSheet({ open, onClose, initial, onHired, title = "Add
     onError: (e) => toast.error("Couldn’t add employee", errorMessage(e)),
   });
 
-  const valid = form.first.trim() && form.last.trim() && (form.number.trim() || resolvedScheme) && form.hireDate && entityId;
+  const valid = form.first.trim() && form.last.trim() && (form.number.trim() || resolvedScheme) && form.hireDate && entityId
+    && (lookalikes.length === 0 || differentPerson);
   const submit = (e: FormEvent) => { e.preventDefault(); if (valid) hire.mutate(); };
 
   return (
@@ -913,6 +925,23 @@ export function AddEmployeeSheet({ open, onClose, initial, onHired, title = "Add
             <input id="ae-last" className="input" value={form.last} onChange={set("last")} autoComplete="off" />
           </div>
         </div>
+        {lookalikes.length > 0 && (
+          <Notice tone="warning" title="This person may already be in the system">
+            <ul className="mt-1 space-y-0.5" data-testid="hire-lookalikes">
+              {lookalikes.slice(0, 5).map((p) => (
+                <li key={p.id}>{p.full_name ?? `${p.first_name} ${p.last_name}`} · {p.employee_number} · {p.employment_state.toLowerCase()}</li>
+              ))}
+            </ul>
+            <p className="mt-2">
+              If this is the same person coming back, close this and open their profile, then choose <strong>Rehire</strong>:
+              their history and leave stay together and one UAN follows them for life.
+            </p>
+            <label className="mt-2 flex items-center gap-2">
+              <input type="checkbox" checked={differentPerson} onChange={(e) => setDifferentPerson(e.target.checked)} />
+              <span>This is a different person</span>
+            </label>
+          </Notice>
+        )}
         <div className="grid grid-cols-2 gap-3">
           <div>
             <label className="label" htmlFor="ae-dob">Date of birth <span className="font-normal text-fg-subtle">(optional)</span></label>

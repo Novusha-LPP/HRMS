@@ -26,6 +26,7 @@ from hrms.core.authn import CurrentUser
 from hrms.core.authz import ScopeDep, authorize_employment
 from hrms.core.config import settings
 from hrms.core.database import SessionDep
+from hrms.core.errors import CodedHTTPException
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
@@ -48,6 +49,7 @@ from hrms.modules.kyc.schemas import (
     VerifyDocumentRequest,
     VerifyOverallKycRequest,
 )
+from hrms.modules.people.models import Employment
 
 router = APIRouter(prefix="/v1/kyc", tags=["Employee KYC"])
 
@@ -301,6 +303,48 @@ async def get_my_kyc(
     return await _build_dossier(session, tenant_id, user.employment_id, mask=False)
 
 
+async def _assert_one_uan_per_person(session, tenant_id: UUID, employment_id: UUID, uan) -> None:
+    """A UAN belongs to the person for life. A second employment must carry the same number,
+    never a new one (EPFO creates a second UAN only when the first was not given)."""
+    if not uan:
+        return
+    person_id = (
+        await session.execute(
+            text("SELECT person_id FROM employments WHERE tenant_id = :t AND id = :e"),
+            {"t": tenant_id, "e": employment_id},
+        )
+    ).scalar()
+    if person_id is None:
+        return
+    others = (
+        (
+            await session.execute(
+                select(EmployeeKycRecord)
+                .join(
+                    Employment,
+                    (col(Employment.tenant_id) == col(EmployeeKycRecord.tenant_id))
+                    & (col(Employment.id) == col(EmployeeKycRecord.employment_id)),
+                )
+                .where(col(EmployeeKycRecord.tenant_id) == tenant_id)
+                .where(col(Employment.person_id) == person_id)
+                .where(col(EmployeeKycRecord.employment_id) != employment_id)
+                .where(col(EmployeeKycRecord.uan_number).is_not(None))
+            )
+        )
+        .scalars()
+        .all()
+    )
+    for other in others:
+        if other.uan_number and other.uan_number != uan:
+            raise CodedHTTPException(
+                409,
+                "This person already has a UAN on file (ending "
+                f"{other.uan_number[-4:]}) from another employment. A person keeps one UAN for "
+                "life, so use that number instead of a new one.",
+                "UAN_ALREADY_ASSIGNED",
+            )
+
+
 @router.patch("/me", response_model=KycRecordResponse, summary="Update own KYC details")
 async def update_my_kyc(
     body: KycRecordUpdateRequest,
@@ -318,7 +362,11 @@ async def update_my_kyc(
 
     # Update fields provided in request
     await require_version(session, rec, body.version)
-    for field, val in body.model_dump(exclude_unset=True, exclude={"version"}).items():
+    changes = body.model_dump(exclude_unset=True, exclude={"version"})
+    await _assert_one_uan_per_person(
+        session, tenant_id, user.employment_id, changes.get("uan_number")
+    )
+    for field, val in changes.items():
         setattr(rec, field, val)
 
     _invalidate_verification(rec)
@@ -629,7 +677,9 @@ async def update_employee_kyc(
 
     rec = await _get_or_create_record(session, tenant_id, emp_uuid)
     await require_version(session, rec, body.version)
-    for field, val in body.model_dump(exclude_unset=True, exclude={"version"}).items():
+    changes = body.model_dump(exclude_unset=True, exclude={"version"})
+    await _assert_one_uan_per_person(session, tenant_id, emp_uuid, changes.get("uan_number"))
+    for field, val in changes.items():
         setattr(rec, field, val)
 
     _invalidate_verification(rec)

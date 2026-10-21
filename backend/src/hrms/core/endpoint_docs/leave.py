@@ -7,6 +7,40 @@ _APPROVER_RULES = """
 """
 
 DOCS: dict[str, tuple[str, str]] = {
+    # ─── Unused leave when someone leaves ────────────────────────────────────
+    "list_separation_rules": (
+        "List leave rules for leavers",
+        "The rules that say what happens to unused leave when someone leaves, including ones "
+        "that start in the future. With no rule in force, nothing happens to the balance.",
+    ),
+    "create_separation_rule": (
+        "Add a leave rule for leavers",
+        """
+Says what happens to unused leave when someone leaves, from a start date.
+
+- **`on_separation`:** `LAPSE` removes the balance, `ENCASH` pays it out (only for leave types
+  marked encashable) and `HOLD` keeps it, optionally for `hold_days` days.
+- **`max_encash_days`:** only with `ENCASH`. Anything above the cap lapses.
+- **`legal_entity_id` and `leave_type_id`:** leave one blank to cover every company or every
+  leave type. The most specific rule in force on the last day applies.
+- Two live rules can't start on the same date for the same company and leave type (409).
+""",
+    ),
+    "archive_separation_rule": (
+        "Remove a leave rule for leavers",
+        "Archives the rule. Leavers already settled keep what was done for them.",
+    ),
+    "preview_separation_settlement": (
+        "Preview leave settlement for a leaver",
+        "What would happen to this person's unused leave if they left on `as_of` (default "
+        "today): the unused days per leave type and whether each lapses, is encashed or is held. "
+        "Nothing is changed. Needs `leave.read` over the employee.",
+    ),
+    "list_separation_settlements": (
+        "List leave settlements for an employee",
+        "What was done with this person's unused leave each time they left: days encashed, "
+        "lapsed or held, and how a hold ended (lapsed, or restored when they rejoined).",
+    ),
     # ─── Leave types ─────────────────────────────────────────────────────────
     "list_leave_types": (
         "List leave types",

@@ -138,7 +138,7 @@ async def _build(client, engine):
             {"e": emps["probation"], "t": tid},
         )
         await q(
-            text("UPDATE employments SET hire_date=:h WHERE id=:e"),
+            text("UPDATE employments SET hire_date=:h, continuity_start_date=:h WHERE id=:e"),
             {"e": emps["new_joiner"], "h": AS_OF - timedelta(days=20)},
         )
         # CL and CL2 share one bucket: an employee is credited for it once per period.
@@ -245,7 +245,8 @@ async def _build(client, engine):
 async def REFERENCE(session, tenant_id, recorded_by):
     """The previous run_accrual loop for tenant-wide scope (verbatim but for the ORDER BY)."""
     rows = await session.execute(
-        text("""SELECT e.id, e.hire_date, e.employment_state FROM employments e
+        text("""SELECT e.id, COALESCE(e.continuity_start_date, e.hire_date), e.employment_state
+                FROM employments e
                 WHERE e.tenant_id = CAST(:tid AS uuid)
                   AND e.employment_state NOT IN ('SEPARATED')"""),
         {"tid": str(tenant_id)},

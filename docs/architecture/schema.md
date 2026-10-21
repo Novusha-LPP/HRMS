@@ -145,6 +145,7 @@ erDiagram
     org_units ||--o{ job_openings : org_unit_id
     legal_entities ||--o{ leave_policy_assignments : legal_entity_id
     org_units ||--o{ leave_policy_assignments : org_unit_id
+    legal_entities ||--o{ leave_separation_rules : legal_entity_id
     legal_entities ||--o{ locations : legal_entity_id
     cost_centres ||--o{ org_units : cost_centre_id
     org_units ||--o{ org_units : department_template_id
@@ -157,6 +158,7 @@ erDiagram
     grades ||--o{ positions : grade_id
     jobs ||--o{ positions : job_id
     org_units ||--o{ positions : org_unit_id
+    legal_entities ||--o{ rejoin_policies : legal_entity_id
     legal_entities ||--o{ salary_structures : legal_entity_id
 ```
 
@@ -243,6 +245,7 @@ erDiagram
     employments ||--o{ employee_kyc_records : employment_id
     persons ||--o{ employee_kyc_records : person_id
     employments ||--o{ employee_policy_assignments : employment_id
+    employments ||--o{ employment_spells : employment_id
     legal_entities ||--o{ employments : legal_entity_id
     persons ||--o{ employments : person_id
     employments ||--o{ external_identities : employment_id
@@ -261,6 +264,7 @@ erDiagram
     employments ||--o{ leave_encashments : employment_id
     employments ||--o{ leave_monthly_ledger : employment_id
     employments ||--o{ leave_policy_assignments : employment_id
+    employments ||--o{ leave_separation_settlements : employment_id
     employments ||--o{ onboarding_cases : employment_id
     employments ||--o{ org_units : head_employment_id
     employments ||--o{ org_units : lead_employment_id
@@ -268,6 +272,8 @@ erDiagram
     employments ||--o{ personnel_actions : employment_id
     employments ||--o{ possible_duplicates : employment_id
     employments ||--o{ punches : employment_id
+    employments ||--o{ rejoin_records : employment_id
+    personnel_actions ||--o{ rejoin_records : personnel_action_id
     employments ||--o{ user_accounts : employment_id
 ```
 
@@ -513,6 +519,10 @@ erDiagram
     leave_policy_sets ||--o{ leave_policy_assignments : leave_policy_set_id
     legal_entities ||--o{ leave_policy_assignments : legal_entity_id
     org_units ||--o{ leave_policy_assignments : org_unit_id
+    leave_types ||--o{ leave_separation_rules : leave_type_id
+    leave_balance_transactions ||--o{ leave_separation_settlements : balance_transaction_id
+    leave_balance_buckets ||--o{ leave_separation_settlements : bucket_id
+    leave_types ||--o{ leave_separation_settlements : leave_type_id
     leave_balance_buckets ||--o{ leave_type_bucket_mapping : bucket_id
     leave_types ||--o{ leave_type_bucket_mapping : leave_type_id
 ```
@@ -804,6 +814,64 @@ erDiagram
     user_accounts ||--o{ daily_report_snapshots : user_id
 ```
 
+## Other
+
+```mermaid
+erDiagram
+    employment_spells {
+        uuid tenant_id PK
+        uuid id PK
+        uuid employment_id FK
+        uuid created_by FK
+    }
+    leave_separation_rules {
+        uuid tenant_id PK
+        uuid id PK
+        uuid legal_entity_id FK
+        uuid leave_type_id FK
+        uuid created_by FK
+    }
+    leave_separation_settlements {
+        uuid tenant_id PK
+        uuid id PK
+        uuid employment_id FK
+        uuid spell_id FK
+        uuid leave_type_id FK
+        uuid bucket_id FK
+        uuid balance_transaction_id FK
+        uuid created_by FK
+    }
+    rejoin_policies {
+        uuid tenant_id PK
+        uuid id PK
+        uuid legal_entity_id FK
+        uuid created_by FK
+    }
+    rejoin_records {
+        uuid tenant_id PK
+        uuid id PK
+        uuid employment_id FK
+        uuid personnel_action_id FK
+        uuid previous_spell_id FK
+        uuid new_spell_id FK
+        uuid approved_by FK
+        uuid created_by FK
+    }
+    employments ||--o{ employment_spells : employment_id
+    leave_types ||--o{ leave_separation_rules : leave_type_id
+    legal_entities ||--o{ leave_separation_rules : legal_entity_id
+    leave_balance_transactions ||--o{ leave_separation_settlements : balance_transaction_id
+    leave_balance_buckets ||--o{ leave_separation_settlements : bucket_id
+    employments ||--o{ leave_separation_settlements : employment_id
+    leave_types ||--o{ leave_separation_settlements : leave_type_id
+    employment_spells ||--o{ leave_separation_settlements : spell_id
+    legal_entities ||--o{ rejoin_policies : legal_entity_id
+    employments ||--o{ rejoin_records : employment_id
+    employment_spells ||--o{ rejoin_records : new_spell_id
+    personnel_actions ||--o{ rejoin_records : personnel_action_id
+    employment_spells ||--o{ rejoin_records : previous_spell_id
+```
+
 ## Tables
 
 | Table | Area | What it holds |
@@ -832,6 +900,7 @@ erDiagram
 | `employee_kyc_documents` | People | Uploaded KYC documents and their verification status. |
 | `employee_kyc_records` | People | An employee's identity, statutory and bank details (encrypted). |
 | `employee_policy_assignments` | Time and attendance | Which attendance policy applies to an employee, unit or company from a date. The latest start wins; effective_to is inclusive. |
+| `employment_spells` | Other | One stint of an employment: when the person joined and left. A rejoin opens the next stint; the employment record itself is reused. |
 | `employments` | People | A person's employment with one company: the employee record. |
 | `entity_change_log` | Reports, history and jobs | Append-only field-level history of changes to master data. |
 | `external_identities` | Integrations | An employee's id in a connected app. |
@@ -863,6 +932,8 @@ erDiagram
 | `leave_monthly_ledger` | Leave | Monthly movement of each bucket per employee, opening to closing. |
 | `leave_policy_assignments` | Leave | Which leave policy set applies to an employee, unit or company from a date. The latest start wins; effective_to is inclusive. |
 | `leave_policy_sets` | Leave | A named set of leave entitlements. |
+| `leave_separation_rules` | Other | What to do with unused leave when someone leaves, for a company and leave type (either may be 'any') from a date. The most specific rule in force applies. |
+| `leave_separation_settlements` | Other | What was done with one leave balance when one stint of an employment ended: lapsed, encashed, or held (and later lapsed or restored on a rejoin). |
 | `leave_type_bucket_mapping` | Leave | Which bucket each leave type draws from. |
 | `leave_types` | Leave | Kinds of leave and their application rules. |
 | `legal_entities` | Organisation | A company of the tenant: the employer of record. |
@@ -884,6 +955,8 @@ erDiagram
 | `punches` | Time and attendance | Clock-in and clock-out events. Never edited: corrections add rows (is_corrected), and VOID rows cancel earlier ones. |
 | `recruitment_events` | Recruitment | Append-only history of what happened to openings and applications. |
 | `recruitment_stages` | Recruitment | Pipeline stages a tenant uses for candidates. |
+| `rejoin_policies` | Other | How a company treats someone who rejoins: continue earlier service by default or start fresh, and how long a break can be before it must start fresh. |
+| `rejoin_records` | Other | What was decided when a separated employee rejoined: keep earlier service and leave (CONTINUE) or start over (FRESH), who approved it, and why. |
 | `report_definitions` | Reports, history and jobs | Saved report layouts and filters. |
 | `role_assignments` | Platform and access | A role granted to a login, with the scope it applies to. |
 | `roles` | Platform and access | Roles a tenant can grant (built-in ones are is_system). |

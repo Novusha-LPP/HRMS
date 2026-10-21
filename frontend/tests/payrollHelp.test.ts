@@ -36,3 +36,13 @@ test("the worked examples quote the figures the calculator produces", () => {
   const text = rows.join("\n");
   for (const figure of ["₹13,200", "₹46,400", "₹4,208", "₹592", "₹137", "₹16,871"]) assert.ok(text.includes(figure), figure);
 });
+
+test("leavers and rejoin help explain the choices with examples", () => {
+  const leavers = usageHelp.leavers;
+  assert.ok(leavers.steps.length >= 4 && (leavers.examples?.length ?? 0) >= 2);
+  const rows = (leavers.examples ?? []).flatMap((e) => e.rows.map((r) => r.join(" "))).join("\n");
+  assert.match(rows, /4 days/);
+  assert.match(rows, /6 days/);
+  assert.match(usageHelp.rejoin.note, /rehire them/i);
+  assert.ok((usageHelp.rejoin.calculation?.items.length ?? 0) >= 3);
+});

@@ -690,7 +690,8 @@ async def accrue_period(
     clause, params = employment_clause, employment_params or {}
     emp_rows = await session.execute(
         text(f"""
-            SELECT e.id, e.hire_date, e.employment_state FROM employments e
+            SELECT e.id, COALESCE(e.continuity_start_date, e.hire_date), e.employment_state
+            FROM employments e
             WHERE e.tenant_id = CAST(:tid AS uuid)
               AND (e.separation_date IS NULL OR e.separation_date > CAST(:as_of AS date))
             {clause}

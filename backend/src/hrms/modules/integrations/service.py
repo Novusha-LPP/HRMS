@@ -39,6 +39,7 @@ from hrms.modules.people.models import (
     PersonnelActionStatus,
     PersonnelActionType,
 )
+from hrms.modules.people.spells import open_first_spell
 
 BCRYPT_HASH = re.compile(r"^\$2[aby]\$1[0-4]\$[./A-Za-z0-9]{53}$")
 
@@ -922,6 +923,7 @@ async def create_employee(
     )
     session.add(emp)
     await session.flush()
+    await open_first_spell(session, ctx.tenant_id, emp)
 
     password_hash, must_change = await _password_for_new_login(ctx, body, settings, code)
     account = UserAccount(
@@ -1116,6 +1118,10 @@ async def update_employee(
             "old": emp.hire_date.isoformat(),
             "new": fields["hire_date"].isoformat(),
         }
+        # Service counts from the hire date unless a "start fresh" rejoin moved it; a corrected
+        # hire date carries it along only in the first case.
+        if emp.continuity_start_date in (None, emp.hire_date):
+            emp.continuity_start_date = fields["hire_date"]
         emp.hire_date = fields["hire_date"]
         session.add(emp)
         await session.flush()
@@ -1523,6 +1529,21 @@ async def rehire_employee(
     manager_id = await _manager_employment(ctx, body.manager_external_id)
     if manager_id:
         changes["manager_employment_id"] = str(manager_id)
+    from fastapi import HTTPException
+
+    from hrms.modules.people import rejoin
+
+    choice = rejoin.RejoinChoice(
+        mode=body.rejoin_mode,
+        break_condoned=body.break_condoned,
+        reason=body.reason,
+        gratuity_paid_at_exit=body.gratuity_paid_at_exit,
+    )
+    try:
+        await rejoin.decide(ctx.session, ctx.tenant_id, emp, body.hire_date, choice)
+    except HTTPException as exc:
+        raise SyncError(422, str(exc.detail), "REJOIN_NOT_ALLOWED") from exc
+    changes["rejoin"] = choice.model_dump(mode="json")
     pa = await _personnel_action(ctx, emp, PersonnelActionType.REHIRE, body.hire_date, changes)
     account = await _load_account(ctx, emp.id)
     if account is not None and account.status != "ACTIVE":

@@ -74,6 +74,12 @@ class EmploymentCreate(BaseModel):
     employee_number: str | None = Field(default=None, max_length=50)
     hire_date: date
     service_stage: str | None = Field(default=None)
+    confirm_new_employment: bool = Field(
+        default=False,
+        description="The person already has an earlier employment and this really is a new "
+        "one. Without it the request is refused with PAST_EMPLOYMENT_EXISTS: someone who left "
+        "should rejoin through a REHIRE personnel action instead.",
+    )
 
 
 class EmploymentResponse(BaseModel):
@@ -129,6 +135,13 @@ class PersonnelActionCreate(BaseModel):
     changes: dict[str, Any] | None = Field(
         default=None,
         description="Changed fields and new values; use typed IDs for references.",
+    )
+    rejoin: dict[str, Any] | None = Field(
+        default=None,
+        description="Only for REHIRE: whether earlier service and leave continue or start "
+        "fresh (`mode`: CONTINUE or FRESH), `break_condoned`, `reason` and "
+        "`gratuity_paid_at_exit`. Leave out to use the company's default. See "
+        "`GET /v1/employees/{employment_id}/rejoin-preview`.",
     )
     idempotency_key: str | None = Field(
         default=None,

@@ -77,6 +77,29 @@ RELATIONS = {
     },
     "assignment_managers": {"assignment_id": "assignments", "manager_employment_id": "employments"},
     "personnel_actions": {"employment_id": "employments"},
+    "employment_spells": {"employment_id": "employments", "created_by": "user_accounts"},
+    "leave_separation_rules": {
+        "legal_entity_id": "legal_entities",
+        "leave_type_id": "leave_types",
+        "created_by": "user_accounts",
+    },
+    "leave_separation_settlements": {
+        "employment_id": "employments",
+        "spell_id": "employment_spells",
+        "leave_type_id": "leave_types",
+        "bucket_id": "leave_balance_buckets",
+        "balance_transaction_id": "leave_balance_transactions",
+        "created_by": "user_accounts",
+    },
+    "rejoin_policies": {"legal_entity_id": "legal_entities", "created_by": "user_accounts"},
+    "rejoin_records": {
+        "employment_id": "employments",
+        "personnel_action_id": "personnel_actions",
+        "previous_spell_id": "employment_spells",
+        "new_spell_id": "employment_spells",
+        "approved_by": "user_accounts",
+        "created_by": "user_accounts",
+    },
     "employee_id_schemes": {"legal_entity_id": "legal_entities"},
     "employee_policy_assignments": {
         "employment_id": "employments",
@@ -217,6 +240,11 @@ _STRICT_TABLES = {
     "pay_components",
     "salary_structures",
     "employee_compensations",
+    "employment_spells",
+    "rejoin_records",
+    "leave_separation_rules",
+    "leave_separation_settlements",
+    "rejoin_policies",
 }
 _NULLABLE_TIMESTAMPS = {
     "created_at",

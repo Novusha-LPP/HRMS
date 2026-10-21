@@ -1,12 +1,13 @@
 import { useState } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
-import { personnelActionsApi } from "../../api/people";
+import { personnelActionsApi, rejoinApi } from "../../api/people";
 import type { PersonnelActionListItem } from "../../api/people";
 import { formatDateOnly } from "../../lib/dates";
 import { ConfirmDialog } from "../ui/Overlay";
 import { Skeleton } from "../ui/Feedback";
 import { useToast, errorMessage } from "../ui/Toast";
 import { reasonLabel } from "../../lib/personnelActions";
+import { MODE_LABEL } from "../../lib/rejoin";
 
 const LABEL: Record<string, string> = {
   HIRE: "Placed in a department", REHIRE: "Rehired", TRANSFER: "Transfer", PROMOTION: "Promotion",
@@ -48,11 +49,37 @@ export function PersonnelHistory({ employmentId, canCancel }: { employmentId: st
     onError: (e) => toast.error("Couldn’t cancel the change", errorMessage(e)),
   });
 
+  const history = useQuery({ queryKey: ["employment-history", employmentId], queryFn: () => rejoinApi.history(employmentId), retry: false });
+
   if (actions.isPending) return <Skeleton className="h-24 rounded-xl" />;
   if (actions.isError || !actions.data?.length) return null;
 
+  const spells = history.data?.spells ?? [];
+
   return (
-    <div>
+    <div className="space-y-4">
+      {spells.length > 1 && (
+        <div data-testid="employment-stints">
+          <p className="eyebrow mb-2">Time with the company</p>
+          <ul className="divide-y divide-line rounded-xl border border-line">
+            {spells.map((sp) => (
+              <li key={sp.spell_no} className="px-4 py-2.5 text-[13px]">
+                <p className="font-medium text-fg">
+                  {formatDateOnly(sp.joined_on)} – {sp.left_on ? formatDateOnly(sp.left_on) : "now"}
+                  {sp.exit_reason && <span className="font-normal text-fg-subtle"> · left: {reasonLabel(sp.exit_reason)}</span>}
+                </p>
+                {sp.rejoin && (
+                  <p className="text-xs text-fg-subtle">
+                    Rejoined — {MODE_LABEL[sp.rejoin.mode].toLowerCase()}
+                    {sp.rejoin.reason ? ` · ${sp.rejoin.reason}` : ""}
+                  </p>
+                )}
+              </li>
+            ))}
+          </ul>
+        </div>
+      )}
+      <div>
       <p className="eyebrow mb-2">Employment changes</p>
       <ul className="divide-y divide-line rounded-xl border border-line">
         {actions.data.slice(0, 8).map((a) => {
@@ -74,6 +101,7 @@ export function PersonnelHistory({ employmentId, canCancel }: { employmentId: st
           );
         })}
       </ul>
+      </div>
       <ConfirmDialog
         open={cancelling !== null}
         onClose={() => setCancelling(null)}

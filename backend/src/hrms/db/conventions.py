@@ -180,6 +180,11 @@ DOMAINS: dict[str, str | tuple[str, ...]] = {
     "employee_kyc_documents.status": "hrms.modules.kyc.models:DocumentStatus",
     "employee_kyc_records.status": "hrms.modules.kyc.models:KycStatus",
     "employments.employment_state": "hrms.modules.people.models:EmploymentState",
+    "rejoin_records.mode": "hrms.modules.people.models:RejoinMode",
+    "rejoin_policies.default_mode": "hrms.modules.people.models:RejoinMode",
+    "leave_separation_rules.on_separation": "hrms.modules.leave.models:SeparationAction",
+    "leave_separation_settlements.action": "hrms.modules.leave.models:SeparationAction",
+    "leave_separation_settlements.resolution": "hrms.modules.leave.models:SettlementResolution",
     "job_openings.status": "hrms.modules.recruitment.models:OpeningStatus",
     "leave_applications.status": (
         "hrms.modules.leave.models:LeaveApplicationStatus",
