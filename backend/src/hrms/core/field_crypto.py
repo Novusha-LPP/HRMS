@@ -101,12 +101,13 @@ class FieldCipher:
     def encrypt(self, value: str, column: str) -> str:
         nonce = os.urandom(12)
         aead = self._aead_for(self.active_id, column)
+        assert aead is not None  # the active id is always one of the configured keys
         sealed = aead.encrypt(nonce, value.encode(), column.encode())
         token = base64.urlsafe_b64encode(nonce + sealed).decode().rstrip("=")
         return f"{self.prefix}{self.active_id}:{token}"
 
     def is_sealed(self, stored: str | None) -> bool:
-        return bool(stored) and stored.startswith(self.prefix)
+        return stored is not None and stored.startswith(self.prefix)
 
     def decrypt(self, stored: str, column: str) -> str:
         if not stored.startswith(self.prefix):
