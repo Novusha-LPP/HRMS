@@ -243,7 +243,7 @@ Not secret. Full list with defaults: `backend/src/hrms/core/config.py`.
 - **Identity of the deployment:** `HRMS_ENVIRONMENT` (local/testing/production), `HRMS_VERSION`, `HRMS_ENV_FILE`
 - **Network:** `HRMS_CORS_ORIGINS`, `HRMS_WEB_API_URL`, `HRMS_API_PORT`, `HRMS_WEB_PORT`, `HRMS_BIND_ADDRESS`, `HRMS_FORWARDED_ALLOW_IPS` (172.30.25.1 = Docker bridge gateway)
 - **Documents:** `HRMS_DOCUMENT_STORAGE` (`local`|`s3`), `HRMS_DOCUMENT_S3_BUCKET`, `HRMS_DOCUMENT_S3_REGION`, `HRMS_STORAGE_DIR`
-- **Behaviour:** `HRMS_ALLOW_PUBLIC_REGISTRATION` (false on testing), `HRMS_API_DOCS_ENABLED` (false on testing), `HRMS_DEFAULT_TIMEZONE` (Asia/Kolkata), `HRMS_JOBS_DAILY_AT` (00:30), `HRMS_THROTTLE_ENABLED`, login lockout limits
+- **Behaviour:** `HRMS_ALLOW_PUBLIC_REGISTRATION` (false on testing), `HRMS_API_DOCS_ENABLED` (true on testing, false on production), `HRMS_DEFAULT_TIMEZONE` (Asia/Kolkata), `HRMS_JOBS_DAILY_AT` (00:30), `HRMS_THROTTLE_ENABLED`, login lockout limits
 - **Performance:** `HRMS_DATABASE_POOL_SIZE`/`_MAX_OVERFLOW` (5/5 on testing), `WEB_CONCURRENCY` (2), `HRMS_API_MEMORY` (1g)
 - **Logging:** `HRMS_LOG_LEVEL`, `HRMS_LOG_FORMAT` (json when deployed)
 - **Mail:** `HRMS_MAIL_BACKEND` = `disabled` (SES supported; needs `HRMS_MAIL_FROM`, `HRMS_PLATFORM_RESET_BASE_URL`)

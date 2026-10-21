@@ -29,6 +29,7 @@ from hrms.core.authz import ScopeDep, authorize_employment, require_permission
 from hrms.core.change_audit import record_change
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import business_today
+from hrms.core.field_crypto import open_amount, seal_amount
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
@@ -1147,8 +1148,9 @@ async def set_employee_compensation(
         before=None,
         after={
             "employment_id": emp_uuid,
-            "annual_ctc": draft.annual_ctc,
-            "previous_annual_ctc": before_ctc,
+            # Sealed: the change log is readable by more people than payroll is.
+            "annual_ctc": seal_amount(draft.annual_ctc, "annual_ctc"),
+            "previous_annual_ctc": seal_amount(before_ctc, "annual_ctc"),
             "structure": structure.name,
             "effective_from": draft.effective_from,
             "reason": draft.reason,
@@ -1222,7 +1224,7 @@ async def list_salaries(
             department=r["department"],
             designation=r["designation"],
             employment_state=r["employment_state"],
-            annual_ctc=r["annual_ctc"],
+            annual_ctc=open_amount(r["annual_ctc"], "annual_ctc"),
             structure_name=r["structure_name"],
             effective_from=r["effective_from"],
         )

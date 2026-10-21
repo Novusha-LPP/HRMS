@@ -53,6 +53,8 @@ def test_production_requires_a_scrape_token():
         platform_database_url="postgresql+asyncpg://hrms_platform:strong@db/hrms",
         cors_origins="https://hrms.example.com",
         field_encryption_keys="t1:MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
+        payroll_encryption_keys="p1:MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=",
+        payroll_pepper="pepper-for-the-tests-0123456789abcdef",
     )
     with pytest.raises(ValidationError, match="HRMS_METRICS_TOKEN"):
         Settings(**production)

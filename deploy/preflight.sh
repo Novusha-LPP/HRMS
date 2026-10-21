@@ -17,7 +17,8 @@ for line in Path(sys.argv[1]).read_text().splitlines():
     if sep:
         values[key.strip()] = value.strip().strip('\"').strip("'")
 required = ['HRMS_ENVIRONMENT','HRMS_VERSION','HRMS_SECRET_KEY','HRMS_METRICS_TOKEN',
-            'HRMS_FIELD_ENCRYPTION_KEYS','HRMS_APP_ROLE_PASSWORD','HRMS_DB_OWNER_PASSWORD',
+            'HRMS_FIELD_ENCRYPTION_KEYS','HRMS_PAYROLL_ENCRYPTION_KEYS','HRMS_PAYROLL_PEPPER',
+            'HRMS_APP_ROLE_PASSWORD','HRMS_DB_OWNER_PASSWORD',
             'HRMS_PLATFORM_ROLE_PASSWORD',
             'HRMS_WEB_API_URL','HRMS_CORS_ORIGINS','HRMS_BACKUP_DIR']
 missing = [name for name in required if not values.get(name)]

@@ -126,9 +126,11 @@ async def api(monkeypatch, tmp_path):
     )
     monkeypatch.setattr(settings, "storage_dir", str(tmp_path))
     # Encryption at rest on, as in every deployed environment (core/field_crypto.py).
-    from hrms.core.field_crypto import DEV_KEYS
+    from hrms.core.field_crypto import DEV_KEYS, DEV_PAYROLL_KEYS, DEV_PAYROLL_PEPPER
 
     monkeypatch.setattr(settings, "field_encryption_keys", DEV_KEYS)
+    monkeypatch.setattr(settings, "payroll_encryption_keys", DEV_PAYROLL_KEYS)
+    monkeypatch.setattr(settings, "payroll_pepper", DEV_PAYROLL_PEPPER)
     # Every test registers its own company from the same address: keep the
     # anonymous-registration limit out of the way (the throttle tests set their
     # own) and start from clean attempt counters.

@@ -180,7 +180,7 @@ jobs:
                   f"HRMS_FIELD_ENCRYPTION_KEYS={os.environ['HRMS_FIELD_ENCRYPTION_KEYS']}",
                   f"HRMS_CORS_ORIGINS={os.environ['HRMS_CORS_ORIGINS']}",
                   "HRMS_ALLOW_PUBLIC_REGISTRATION=false",
-                  "HRMS_API_DOCS_ENABLED=false",
+                  "HRMS_API_DOCS_ENABLED=true",
                   "HRMS_DATABASE_POOL_SIZE=5",
                   "HRMS_DATABASE_MAX_OVERFLOW=5",
                   f"HRMS_DEFAULT_TIMEZONE={os.environ['HRMS_DEFAULT_TIMEZONE']}",

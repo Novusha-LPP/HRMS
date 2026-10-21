@@ -9,7 +9,8 @@ Payroll foundation tables (migration 0050).
 - SalaryStructure + SalaryStructureLine: how a CTC is split into components. Editing a
   structure saves a new version, so the salaries already assigned with the old version keep
   the breakup they were given.
-- EmployeeCompensation: an employee's annual CTC on a structure version, effective-dated with
+- EmployeeCompensation: an employee's annual CTC (encrypted at rest, migration 0073) on a
+  structure version, effective-dated with
   no overlaps; a revision closes the current row and opens a new one.
 """
 
@@ -21,6 +22,8 @@ from uuid import UUID
 
 from sqlalchemy import Column, Numeric
 from sqlmodel import Field, SQLModel
+
+from hrms.core.field_crypto import EncryptedDecimal
 
 # Stored values (hrms.db.conventions.DOMAINS checks the database CHECKs against these).
 ComponentStatus = Literal["ACTIVE", "INACTIVE"]
@@ -139,7 +142,10 @@ class EmployeeCompensation(SQLModel, table=True):
     id: UUID = Field(primary_key=True)
     employment_id: UUID = Field(index=True)
     structure_id: UUID
-    annual_ctc: Decimal = Field(sa_column=_money("annual_ctc", nullable=False))
+    # Sealed at rest (payroll keys + pepper, core/field_crypto.py): the database holds a token.
+    annual_ctc: Decimal = Field(
+        sa_column=Column("annual_ctc", EncryptedDecimal("annual_ctc"), nullable=False)
+    )
     currency: str = Field(default="INR", max_length=3)
     effective_from: date
     effective_to: date | None = Field(default=None)
