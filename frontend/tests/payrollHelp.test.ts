@@ -19,3 +19,20 @@ test("payroll usage help defines all required setup and assignment steps", () =>
   assert.equal(help.steps[3].title, "Assign salaries to employees");
   assert.match(help.steps[3].description, /salaries|employees/i);
 });
+
+test("each payroll tab has help that explains how the numbers are worked out", () => {
+  for (const topic of ["payroll-salaries", "payroll-structures", "payroll-components", "payroll-statutory"] as const) {
+    const help = usageHelp[topic];
+    assert.ok(help, `${topic} must exist`);
+    assert.ok(help.steps.length >= 3, `${topic} needs steps`);
+    assert.ok(help.calculation && help.calculation.items.length >= 3, `${topic} needs a calculation section`);
+    assert.ok(help.examples && help.examples.length >= 1, `${topic} needs a worked example`);
+    for (const example of help.examples ?? []) assert.ok(example.rows.length >= 3);
+  }
+});
+
+test("the worked examples quote the figures the calculator produces", () => {
+  const rows = (usageHelp["payroll-structures"].examples ?? []).flatMap((e) => e.rows.map((r) => r.join(" ")));
+  const text = rows.join("\n");
+  for (const figure of ["₹13,200", "₹46,400", "₹4,208", "₹592", "₹137", "₹16,871"]) assert.ok(text.includes(figure), figure);
+});

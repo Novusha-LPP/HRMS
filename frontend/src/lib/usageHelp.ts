@@ -14,6 +14,10 @@ export type UsageHelpTopic =
   | "company-admins"
   | "approvals"
   | "payroll"
+  | "payroll-salaries"
+  | "payroll-structures"
+  | "payroll-components"
+  | "payroll-statutory"
   | "integrations-overview"
   | "integrations-keys"
   | "integrations-settings"
@@ -26,6 +30,10 @@ export interface UsageHelp {
   introduction: string;
   steps: { title: string; description: string }[];
   note: string;
+  /** How the numbers are worked out, in the order the calculation does it. */
+  calculation?: { title: string; items: { name: string; text: string }[] };
+  /** Worked examples with real figures: label on the left, amount on the right. */
+  examples?: { title: string; intro: string; rows: [string, string][] }[];
 }
 
 /** Saved in-app instructions, selected by the screen's Help button. */
@@ -123,6 +131,183 @@ export const usageHelp: Record<UsageHelpTopic, UsageHelp> = {
       },
     ],
     note: "Salaries require at least one active salary structure. Once configured, you can assign or revise salaries either from the Payroll Salaries tab or directly within each employee's profile. Revisions preserve complete compensation history.",
+  },
+  "payroll-salaries": {
+    title: "Understand salaries and the breakup",
+    introduction: "Each person has one annual CTC (cost to company) and a salary structure. Payroll splits the CTC into the monthly components on their payslip.",
+    steps: [
+      { title: "See who has a salary", description: "The list shows every current employee with their annual CTC and the date it starts. People with no salary are counted in the notice at the top. Search or filter to find someone, then open them." },
+      { title: "Assign the first salary", description: "Choose Assign salary. Enter the annual CTC, the date it starts, and the structure that splits it. Add the reason and, if you like, a note. The breakup is shown before you save so you can check it." },
+      { title: "Revise it later", description: "Choose Revise salary for a raise or a change of structure. The revision starts on the date you set, and the earlier salary stays in the history with the dates it applied. A salary that starts in the future shows a Starts badge." },
+      { title: "If the breakup cannot be worked out", description: "The page says why, for example the CTC is too low for the fixed amounts in the structure, or a PF or ESIC value has not been loaded. Fix that cause and open the person again." },
+    ],
+    note: "Previews never change anything. A salary only takes effect from the date you save it with, and people keep the structure version they were given until you revise them.",
+    calculation: {
+      title: "How the breakup is worked out",
+      items: [
+        { name: "Monthly CTC", text: "Annual CTC divided by 12." },
+        { name: "Earnings", text: "Each earning in the structure is worked out from the monthly CTC, or from a component listed above it, in the structure's order." },
+        { name: "Employer cost", text: "Employer PF and employer ESIC are added to the earnings and count inside the CTC, so they are not extra." },
+        { name: "The balance", text: "The balancing component (usually Special allowance) takes whatever is left, so earnings plus employer PF, employer ESIC and reimbursements always add up to the monthly CTC." },
+        { name: "Gross and net", text: "Gross pay is all the earnings. Net before tax is gross pay minus employee PF, employee ESIC and any other deductions." },
+        { name: "Not included yet", text: "Professional tax and income tax (TDS) are not calculated yet, so net pay is before them." },
+        { name: "Provisional", text: "If any PF or ESIC value used has not been verified by the payroll reviewer, the breakup is marked provisional." },
+      ],
+    },
+    examples: [
+      {
+        title: "Example: annual CTC of ₹6,00,000 (ESIC does not apply)",
+        intro: "Standard structure, India default values. Monthly CTC = 6,00,000 ÷ 12.",
+        rows: [
+          ["Monthly CTC", "₹50,000"],
+          ["Basic = 50% of CTC", "₹25,000"],
+          ["House rent allowance = 40% of Basic", "₹10,000"],
+          ["PF wages = Basic ₹25,000, limited to the ₹15,000 ceiling", "₹15,000"],
+          ["Employer PF = 12% of ₹15,000", "₹1,800"],
+          ["ESIC wages ₹48,200 are over the ₹21,000 ceiling, so employer ESIC", "₹0"],
+          ["Special allowance (balance) = 50,000 − 25,000 − 10,000 − 1,800", "₹13,200"],
+          ["Gross pay = 25,000 + 10,000 + 13,200", "₹48,200"],
+          ["Employee PF = 12% of ₹15,000", "₹1,800"],
+          ["Net before tax = 48,200 − 1,800", "₹46,400"],
+        ],
+      },
+    ],
+  },
+  "payroll-structures": {
+    title: "Understand salary structures",
+    introduction: "A salary structure is the recipe that turns one number, the annual CTC, into the monthly components on a payslip.",
+    steps: [
+      { title: "Start from the standard structure", description: "It has Basic at 50% of CTC, House rent allowance at 40% of Basic, Special allowance as the balance, and the PF and ESIC lines. Adjust it to match how you pay." },
+      { title: "Choose how each component is worked out", description: "Fixed amount: the same rupees every month. Percentage: a share of the CTC or of a component listed above it. Balance of CTC: whatever is left, and exactly one earning must take it. By law: PF and ESIC, taken from the Statutory values tab." },
+      { title: "Mind the order", description: "A percentage can only be of a component that is listed above it. You can also set a minimum and a maximum on a fixed or percentage line, and the result is held between them." },
+      { title: "Try a CTC", description: "Enter any annual CTC to see the breakup. It appears once every component is filled in and one takes the balance. If the CTC is too low for the fixed parts, the message says so." },
+      { title: "Saving makes a new version", description: "People already on the structure keep their version until their salary is revised, so a change never alters pay that was already set." },
+    ],
+    note: "The examples use the standard structure and the India default values. Your structure and verified values may differ, so use Try a CTC to see your own numbers.",
+    calculation: {
+      title: "How a CTC is split, in order",
+      items: [
+        { name: "1. Monthly CTC", text: "Annual CTC ÷ 12, rounded to the paisa." },
+        { name: "2. Fixed lines", text: "The amount you entered, held between the minimum and maximum if you set them." },
+        { name: "3. Percentage lines", text: "The percentage × the monthly CTC, or × the earlier component it is based on, then held between the minimum and maximum." },
+        { name: "4. Employer PF", text: "The PF employer rate (12%) × PF wages, rounded to the nearest rupee. PF wages are the earnings marked as counting towards PF wages, usually Basic. When the limit is on, PF wages stop at the PF wage ceiling (₹15,000)." },
+        { name: "5. Employer ESIC", text: "The ESIC employer rate (3.25%) × ESIC wages, rounded up to the next rupee, and only while ESIC wages are at or under the ESIC ceiling (₹21,000). Above it, ESIC does not apply at all." },
+        { name: "6. The balance", text: "Monthly CTC − fixed and percentage lines − employer PF − employer ESIC. Employer ESIC depends on the balance when the balance counts towards ESIC wages, so the system repeats the sum until the figures settle." },
+        { name: "7. Employee deductions", text: "Employee PF = PF employee rate (12%) × the same PF wages, rounded to the nearest rupee. Employee ESIC = the ESIC employee rate (0.75%) × ESIC wages, rounded up, when ESIC applies. Other deductions are added as set." },
+        { name: "8. Totals", text: "Gross pay = all earnings. Net before tax = gross pay − deductions. Professional tax and TDS are not included yet." },
+      ],
+    },
+    examples: [
+      {
+        title: "Example: annual CTC of ₹6,00,000 (ESIC does not apply)",
+        intro: "Standard structure, India default values. Monthly CTC = 6,00,000 ÷ 12.",
+        rows: [
+          ["Monthly CTC", "₹50,000"],
+          ["Basic = 50% of CTC", "₹25,000"],
+          ["House rent allowance = 40% of Basic", "₹10,000"],
+          ["PF wages = Basic ₹25,000, limited to the ₹15,000 ceiling", "₹15,000"],
+          ["Employer PF = 12% of ₹15,000", "₹1,800"],
+          ["ESIC wages ₹48,200 are over the ₹21,000 ceiling, so employer ESIC", "₹0"],
+          ["Special allowance (balance) = 50,000 − 25,000 − 10,000 − 1,800", "₹13,200"],
+          ["Gross pay = 25,000 + 10,000 + 13,200", "₹48,200"],
+          ["Employee PF = 12% of ₹15,000", "₹1,800"],
+          ["Net before tax = 48,200 − 1,800", "₹46,400"],
+        ],
+      },
+      {
+        title: "Example: annual CTC of ₹2,40,000 (ESIC applies)",
+        intro: "The same structure with a lower CTC. Monthly CTC = 2,40,000 ÷ 12.",
+        rows: [
+          ["Monthly CTC", "₹20,000"],
+          ["Basic = 50% of CTC", "₹10,000"],
+          ["House rent allowance = 40% of Basic", "₹4,000"],
+          ["Employer PF = 12% of ₹10,000 (under the ₹15,000 ceiling)", "₹1,200"],
+          ["Special allowance (balance), found so the total equals the CTC", "₹4,208"],
+          ["ESIC wages = 10,000 + 4,000 + 4,208 (under the ₹21,000 ceiling, so ESIC applies)", "₹18,208"],
+          ["Employer ESIC = 3.25% of 18,208 = 591.76, rounded up", "₹592"],
+          ["Check: 10,000 + 4,000 + 4,208 + 1,200 + 592", "₹20,000"],
+          ["Gross pay = 10,000 + 4,000 + 4,208", "₹18,208"],
+          ["Employee PF = 12% of ₹10,000", "₹1,200"],
+          ["Employee ESIC = 0.75% of 18,208 = 136.56, rounded up", "₹137"],
+          ["Net before tax = 18,208 − 1,200 − 137", "₹16,871"],
+        ],
+      },
+    ],
+  },
+  "payroll-components": {
+    title: "Understand pay components",
+    introduction: "A component is one line on a payslip, such as Basic, an allowance, a deduction or an employer contribution. Salary structures are built by choosing from these components.",
+    steps: [
+      { title: "Pick the kind", description: "Earning: part of the pay the employee receives. Deduction: taken from the employee's pay. Employer contribution: a cost to the company that sits inside the CTC but is not paid to the employee. Reimbursement: paid back against bills and also counted in the CTC. Information only: shown but never added up." },
+      { title: "Say what an earning counts towards", description: "Counts towards PF wages: usually only Basic (and DA). Counts towards ESIC wages: most earnings do, but reimbursements and annual bonus do not. Is taxable. Is reduced for unpaid days: turn it off for fixed monthly amounts." },
+      { title: "Code, name and payslip order", description: "The code cannot change after the component is created, and neither can its kind. You can rename it and change its payslip order. Changes apply to breakups worked out from then on." },
+      { title: "PF and ESIC are calculated by law", description: "Those components do not take an amount from the structure. They always use the PF and ESIC values on the Statutory values tab." },
+    ],
+    note: "A component does nothing until a salary structure uses it. Marking it for PF or ESIC wages only matters for earnings, and those marks decide what the PF and ESIC percentages are worked out on.",
+    calculation: {
+      title: "How the marks change the numbers",
+      items: [
+        { name: "PF wages", text: "The total of the earnings marked as counting towards PF wages. Employer and employee PF are percentages of this total, limited to the ceiling when the limit is on." },
+        { name: "ESIC wages", text: "The total of the earnings marked as counting towards ESIC wages. ESIC is a percentage of this total, and applies only while it is at or under the ESIC ceiling." },
+        { name: "Why it matters", text: "Marking House rent allowance as PF wages would raise PF; leaving it unmarked means PF is worked out on Basic alone. Marking a reimbursement as ESIC wages could push someone over the ESIC ceiling and switch ESIC off." },
+      ],
+    },
+    examples: [
+      {
+        title: "Example: what a mark changes",
+        intro: "Monthly Basic ₹10,000, House rent allowance ₹4,000, India default PF values (12%, ceiling ₹15,000).",
+        rows: [
+          ["Only Basic counts towards PF wages: PF wages", "₹10,000"],
+          ["Employee PF = 12% of ₹10,000", "₹1,200"],
+          ["Basic and House rent allowance both count: PF wages", "₹14,000"],
+          ["Employee PF = 12% of ₹14,000", "₹1,680"],
+        ],
+      },
+    ],
+  },
+  "payroll-statutory": {
+    title: "Understand the PF and ESIC values",
+    introduction: "These are the legal rates and wage limits payroll uses for Provident Fund (PF) and Employees' State Insurance (ESIC). Each value has a start date, a source, and a verification.",
+    steps: [
+      { title: "Load the India defaults", description: "Choose Load India defaults to fill in the PF and ESIC rates and wage ceilings, each with the date it took effect. They load unverified, because the law changes and a person must check them." },
+      { title: "Have each value verified", description: "The payroll reviewer checks each value against the current official EPFO and ESIC notification and verifies it. It must be someone other than whoever entered the value. Until then, any breakup that uses it is marked provisional." },
+      { title: "Read the three lists", description: "In force today are the values being used now. Coming up are values that start on a later date. Earlier values are history. Calculations use the value that is in force on the day." },
+      { title: "When the law changes", description: "Add a new value with its start date instead of editing the old one. The current value ends the day before the new one starts, and the new value needs verifying." },
+    ],
+    note: "A missing value stops the breakup, and the message names the one that is missing. Loading the defaults first avoids that.",
+    calculation: {
+      title: "What each value does (India default shown)",
+      items: [
+        { name: "PF wage ceiling · ₹15,000", text: "The most monthly wages PF is worked out on, when the limit below is on." },
+        { name: "Limit PF to the ceiling · 1", text: "1 means PF stops at the ceiling. 0 means PF is worked out on the actual PF wages, however high." },
+        { name: "PF employee · 12%", text: "Deducted from the employee: 12% of PF wages (up to the ceiling), rounded to the nearest rupee." },
+        { name: "PF employer · 12%", text: "Paid by the company: 12% of PF wages, rounded to the nearest rupee. It covers both EPF and the pension (EPS)." },
+        { name: "EPS rate · 8.33% and EPS ceiling · ₹15,000", text: "The pension part of the employer's 12%, worked out on wages up to ₹15,000. The rest of the 12% goes to EPF." },
+        { name: "ESIC wage ceiling · ₹21,000", text: "ESIC applies only while monthly ESIC wages are at or under this. Above it, nobody pays ESIC on that salary." },
+        { name: "ESIC employee · 0.75%", text: "Deducted from the employee: 0.75% of ESIC wages, rounded up to the next rupee." },
+        { name: "ESIC employer · 3.25%", text: "Paid by the company: 3.25% of ESIC wages, rounded up to the next rupee." },
+      ],
+    },
+    examples: [
+      {
+        title: "Example: PF on Basic of ₹25,000 a month",
+        intro: "India defaults: 12% and a ₹15,000 ceiling, with the limit on.",
+        rows: [
+          ["Wages for PF, limited to the ceiling", "₹15,000"],
+          ["Employee PF = 12% × 15,000", "₹1,800"],
+          ["Employer PF = 12% × 15,000", "₹1,800"],
+        ],
+      },
+      {
+        title: "Example: ESIC for two salaries",
+        intro: "India defaults: ceiling ₹21,000, employee 0.75%, employer 3.25%.",
+        rows: [
+          ["ESIC wages ₹18,208: employee 0.75% = 136.56, rounded up", "₹137"],
+          ["ESIC wages ₹18,208: employer 3.25% = 591.76, rounded up", "₹592"],
+          ["ESIC wages ₹48,200: over the ceiling, so ESIC", "does not apply"],
+        ],
+      },
+    ],
   },
   approvals: {
     title: "Set up employee approval workflows",
