@@ -29,7 +29,7 @@ from hrms.core.authz import ScopeDep, authorize_employment, require_permission
 from hrms.core.change_audit import record_change
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import business_today
-from hrms.core.field_crypto import open_amount, seal_amount
+from hrms.core.field_crypto import FieldCryptoError, open_amount, seal_amount
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
@@ -1214,19 +1214,26 @@ async def list_salaries(
         .mappings()
         .all()
     )
-    return [
-        SalaryListItem(
-            employment_id=to_typed_id("employment", r["id"]),
-            employee_number=r["employee_number"],
-            name=r["name"],
-            legal_entity_id=to_typed_id("legal_entity", r["legal_entity_id"]),
-            company=r["company"],
-            department=r["department"],
-            designation=r["designation"],
-            employment_state=r["employment_state"],
-            annual_ctc=open_amount(r["annual_ctc"], "annual_ctc"),
-            structure_name=r["structure_name"],
-            effective_from=r["effective_from"],
+    items = []
+    for r in rows:
+        try:
+            ctc, error = open_amount(r["annual_ctc"], "annual_ctc"), None
+        except FieldCryptoError as exc:
+            ctc, error = None, f"Salary unreadable: {exc}"
+        items.append(
+            SalaryListItem(
+                employment_id=to_typed_id("employment", r["id"]),
+                employee_number=r["employee_number"],
+                name=r["name"],
+                legal_entity_id=to_typed_id("legal_entity", r["legal_entity_id"]),
+                company=r["company"],
+                department=r["department"],
+                designation=r["designation"],
+                employment_state=r["employment_state"],
+                annual_ctc=ctc,
+                structure_name=r["structure_name"],
+                effective_from=r["effective_from"],
+                error=error,
+            )
         )
-        for r in rows
-    ]
+    return items

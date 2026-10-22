@@ -36,6 +36,7 @@ from sqlalchemy.exc import IntegrityError
 
 from hrms.core.config import settings
 from hrms.core.errors import CodedHTTPException
+from hrms.core.field_crypto import FieldCryptoError
 from hrms.core.logging import get_current_request_id
 from hrms.core.security import PasswordTooLong
 
@@ -295,6 +296,18 @@ async def unhandled_exception_handler(
     )
 
 
+async def field_crypto_error_handler(request: Request, exc: FieldCryptoError) -> JSONResponse:
+    """Encrypted data whose key is not configured: say so, never a bare 500."""
+    return create_error_response(
+        status_code=409,
+        code="ENCRYPTION_KEY_UNAVAILABLE",
+        detail=(
+            "This record is encrypted with a key that is not configured on the server. "
+            f"{exc}"
+        ),
+    )
+
+
 def register_exception_handlers(app: FastAPI) -> None:
     """Register all unified exception handlers with the FastAPI application."""
     app.add_exception_handler(CodedHTTPException, cast(Any, coded_http_exception_handler))
@@ -302,4 +315,5 @@ def register_exception_handlers(app: FastAPI) -> None:
     app.add_exception_handler(RequestValidationError, cast(Any, validation_exception_handler))
     app.add_exception_handler(IntegrityError, cast(Any, integrity_error_handler))
     app.add_exception_handler(PasswordTooLong, cast(Any, password_too_long_handler))
+    app.add_exception_handler(FieldCryptoError, cast(Any, field_crypto_error_handler))
     app.add_exception_handler(Exception, cast(Any, unhandled_exception_handler))

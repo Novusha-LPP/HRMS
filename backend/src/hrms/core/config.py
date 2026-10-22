@@ -90,6 +90,9 @@ class Settings(BaseSettings):
     # Salaries (core/field_crypto.py, "Payroll"): keys of their own, never the identifier
     # keys, plus a pepper (32+ random characters) kept in a separate secret from the keys and
     # the database. Both are required outside local development. Same key format as above.
+    # Several keys: "<new>,<old>". Several peppers: "<key id>:<pepper>,<key id>:<pepper>" (a
+    # single bare pepper is used for every key). Old data stays readable while its key and
+    # pepper are listed; if they are gone it shows an error and the rest keeps working.
     payroll_encryption_keys: str | None = None
     payroll_pepper: str | None = None
 
@@ -222,7 +225,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "HRMS_FIELD_ENCRYPTION_KEYS uses the published development key id 'dev'"
                 )
-            from hrms.core.field_crypto import MIN_PEPPER_LENGTH
+            from hrms.core.field_crypto import MIN_PEPPER_LENGTH, parse_peppers
 
             if not self.payroll_encryption_keys or not self.payroll_pepper:
                 raise ValueError(
@@ -244,7 +247,11 @@ class Settings(BaseSettings):
                     "HRMS_PAYROLL_ENCRYPTION_KEYS must not reuse an identifier key: payroll "
                     "keys are held by fewer people"
                 )
-            if len(self.payroll_pepper) < MIN_PEPPER_LENGTH:
+            try:
+                peppers = parse_peppers(self.payroll_pepper, frozenset(payroll_ids))
+            except FieldCryptoError as exc:
+                raise ValueError(f"HRMS_PAYROLL_PEPPER: {exc}") from exc
+            if any(len(v) < MIN_PEPPER_LENGTH for v in peppers.values()):
                 raise ValueError(
                     f"HRMS_PAYROLL_PEPPER must be at least {MIN_PEPPER_LENGTH} characters"
                 )

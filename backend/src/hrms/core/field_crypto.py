@@ -42,7 +42,10 @@ DEV_KEYS = DEV_KEY_ID + ":" + base64.urlsafe_b64encode(b"hrms-local-development-
 
 
 class FieldCryptoError(ValueError):
-    pass
+    """A stored value cannot be opened (key missing or wrong, pepper wrong, or tampered)."""
+
+
+UNREADABLE_PREFIX = "[unreadable:"
 
 
 def parse_keys(spec: str) -> dict[str, bytes]:
@@ -67,6 +70,28 @@ def parse_keys(spec: str) -> dict[str, bytes]:
     return keys
 
 
+def parse_peppers(spec: str, key_ids: set[str] | frozenset[str]) -> dict[str | None, str]:
+    """
+    "<pepper>" (used for every key) and/or "<key id>:<pepper>" entries, comma-separated, so a
+    retired key keeps the pepper it was written with. A "<x>:<pepper>" entry counts as keyed
+    only when x is a configured key id; anything else is a plain pepper. Key None = default.
+    """
+    peppers: dict[str | None, str] = {}
+    for part in (p.strip() for p in spec.split(",") if p.strip()):
+        key_id, sep, rest = part.partition(":")
+        target: str | None = key_id if sep and key_id in key_ids else None
+        value = rest if target is not None else part
+        if target in peppers:
+            raise FieldCryptoError("pepper listed twice for the same key")
+        peppers[target] = value
+    if not peppers:
+        raise FieldCryptoError("no payroll pepper configured")
+    missing = [k for k in key_ids if k not in peppers and None not in peppers]
+    if missing:
+        raise FieldCryptoError(f"no pepper for key id(s): {', '.join(sorted(missing))}")
+    return peppers
+
+
 class FieldCipher:
     """
     With `pepper` (payroll), the AES key is not the configured key itself but
@@ -76,12 +101,17 @@ class FieldCipher:
     """
 
     def __init__(
-        self, spec: str, *, prefix: str = PREFIX, pepper: str | None = None, purpose: str = ""
+        self,
+        spec: str,
+        *,
+        prefix: str = PREFIX,
+        pepper: str | None = None,
+        purpose: str = "",
     ):
         self._keys = parse_keys(spec)
         self.active_id = next(iter(self._keys))
         self.prefix = prefix
-        self._pepper = pepper.encode() if pepper else None
+        self._peppers = parse_peppers(pepper, set(self._keys)) if pepper else None
         self._purpose = purpose
         self._aeads: dict[tuple[str, str], AESGCM] = {}
 
@@ -89,12 +119,15 @@ class FieldCipher:
         raw = self._keys.get(key_id)
         if raw is None:
             return None
-        if self._pepper is None:
+        if self._peppers is None:
             return AESGCM(raw)
         cached = self._aeads.get((key_id, column))
         if cached is None:
             info = f"{self._purpose}|{key_id}|{column}".encode()
-            derived = HKDF(hashes.SHA256(), 32, salt=self._pepper, info=info).derive(raw)
+            pepper = self._peppers.get(key_id, self._peppers.get(None))
+            if pepper is None:
+                return None
+            derived = HKDF(hashes.SHA256(), 32, salt=pepper.encode(), info=info).derive(raw)
             cached = self._aeads[(key_id, column)] = AESGCM(derived)
         return cached
 
@@ -115,7 +148,10 @@ class FieldCipher:
         key_id, _, token = stored[len(self.prefix) :].partition(":")
         aead = self._aead_for(key_id, column)
         if aead is None:
-            raise FieldCryptoError(f"value was encrypted with key {key_id!r}: not configured")
+            raise FieldCryptoError(
+                f"value was encrypted with key {key_id!r}, which is not configured "
+                "(or has no pepper): add it back"
+            )
         try:
             raw = base64.b64decode(token + "=" * (-len(token) % 4), altchars=b"-_", validate=True)
             if len(raw) < 28:
@@ -163,6 +199,13 @@ class EncryptedString(TypeDecorator):
     def process_bind_param(self, value, dialect):
         if value is None or value == "":
             return value
+        if isinstance(value, str) and value.startswith(UNREADABLE_PREFIX):
+            # The placeholder shown for a value whose key is missing: never store it over
+            # the real ciphertext.
+            raise FieldCryptoError(
+                f"{self.column} cannot be saved: the stored value is unreadable because its "
+                "encryption key is not configured"
+            )
         if isinstance(value, str) and value.startswith(PREFIX):
             return value  # already encrypted (e.g. copied row to row by encrypt-pii)
         c = write_cipher()
@@ -171,7 +214,12 @@ class EncryptedString(TypeDecorator):
     def process_result_value(self, value, dialect):
         if value is None or value == "":
             return value
-        return cipher().decrypt(value, self.column)
+        try:
+            return cipher().decrypt(value, self.column)
+        except FieldCryptoError:
+            # The key that wrote it is not configured: show that instead of failing every
+            # page that lists this person. Putting the key back makes it readable again.
+            return f"{UNREADABLE_PREFIX} encryption key not available]"
 
 
 # --- Payroll -------------------------------------------------------------------------------
@@ -211,7 +259,9 @@ def payroll_write_cipher() -> FieldCipher | None:
 
     if not settings.payroll_encryption_keys:
         return None
-    return _payroll_cipher_for(settings.payroll_encryption_keys, settings.payroll_pepper or "")
+    if not settings.payroll_pepper:
+        raise FieldCryptoError("HRMS_PAYROLL_PEPPER is not set")
+    return _payroll_cipher_for(settings.payroll_encryption_keys, settings.payroll_pepper)
 
 
 def seal_amount(value: Decimal | str | None, column: str) -> str | None:

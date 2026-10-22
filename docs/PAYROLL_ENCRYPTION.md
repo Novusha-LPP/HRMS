@@ -40,6 +40,22 @@ python -m hrms.deploy decrypt-payroll             # only to downgrade migration 
 - **Losing the key or the pepper loses every salary.** Keep both with the backups' owner, offline.
 - Local development uses published dev keys (never accepted outside `local`).
 
+## Several keys, several peppers, and a lost key
+
+- **Keys:** `HRMS_PAYROLL_ENCRYPTION_KEYS=p2:<new>,p1:<old>`. First is active; the rest only read.
+- **Peppers:** `HRMS_PAYROLL_PEPPER` is either one pepper (used for every key) or one per key:
+  `p2:<new pepper>,p1:<old pepper>`. A retired key keeps the pepper it was written with, so
+  you can rotate both without decrypting anything first. Every key id must have a pepper.
+- **If an old key (or its pepper) is gone:** the deploy no longer stops. It rewrites what it can
+  open, lists what it cannot as a `::warning::` (ids only), and carries on. In the app, that
+  salary shows an error ("Salary unreadable: …key 'p1', which is not configured") in the salary
+  list, the single-employee salary returns `409 ENCRYPTION_KEY_UNAVAILABLE`, and an unreadable
+  identifier shows `[unreadable: encryption key not available]` and cannot be saved over.
+  Everything under the new key works normally. Adding the old key and pepper back makes the old
+  data readable again; nothing is deleted or overwritten.
+- `python -m hrms.deploy encrypt-payroll --check` (and `encrypt-pii --check`) still exit 1 while
+  unreadable values exist, so you can see what is left.
+
 ## Limits to be honest about
 
 - Anyone who can run the application with production secrets, read its environment, or hold both the key

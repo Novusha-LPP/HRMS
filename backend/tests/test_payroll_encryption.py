@@ -180,3 +180,79 @@ async def test_salary_is_sealed_in_the_database_and_the_change_log(api, monkeypa
 
     with pytest.raises(UnreadableValues):
         await _rewrite_payroll(check=True)
+
+
+def test_several_keys_and_peppers_each_open_what_they_wrote():
+    from hrms.core.field_crypto import parse_peppers
+
+    k1, k2 = _key("p1"), _key("p2")
+    old = _cipher(k1, "a" * 40).encrypt("500.00", "annual_ctc")
+    both = f"{k2},{k1}"
+    spec = "p2:" + "b" * 40 + ",p1:" + "a" * 40
+    c = _cipher(both, spec)
+    assert c.active_id == "p2" and c.needs_rewrite(old)
+    assert c.decrypt(old, "annual_ctc") == "500.00"
+    assert c.encrypt("1.00", "annual_ctc").startswith("pay:v1:p2:")
+    # One bare pepper still covers every key; a keyed list must cover every key id.
+    assert parse_peppers("x" * 40, {"p1", "p2"}) == {None: "x" * 40}
+    with pytest.raises(FieldCryptoError, match="no pepper for key id"):
+        parse_peppers("p2:" + "b" * 40, {"p1", "p2"})
+
+
+def test_a_missing_old_key_or_pepper_is_reported_not_guessed():
+    old = _cipher(_key("p1"), "a" * 40).encrypt("500.00", "annual_ctc")
+    new_only = _cipher(_key("p2"), "b" * 40)
+    with pytest.raises(FieldCryptoError, match="p1"):
+        new_only.decrypt(old, "annual_ctc")
+    # Right key id, wrong key material (or pepper): refuses rather than returning garbage.
+    spec = _key("p1")
+    sealed = _cipher(spec, "a" * 40).encrypt("500.00", "annual_ctc")
+    with pytest.raises(FieldCryptoError):
+        _cipher(_key("p1"), "a" * 40).decrypt(sealed, "annual_ctc")
+
+
+def test_an_unreadable_identifier_shows_a_placeholder_and_is_never_saved_over():
+    from hrms.core.field_crypto import UNREADABLE_PREFIX, EncryptedString
+
+    t = EncryptedString("pan_number")
+    other = FieldCipher(_key("zz")).encrypt("ABCDE1234F", "pan_number")
+    shown = t.process_result_value(other, None)
+    assert shown.startswith(UNREADABLE_PREFIX)
+    with pytest.raises(FieldCryptoError, match="cannot be saved"):
+        t.process_bind_param(shown, None)
+
+
+@pytest.mark.database
+async def test_a_lost_key_blocks_neither_the_list_nor_new_salaries(api, monkeypatch):
+    monkeypatch.setattr(settings, "payroll_encryption_keys", _key("pay-1"))
+    monkeypatch.setattr(settings, "payroll_pepper", PEPPER)
+    client, engine = api
+    await tenant(client)
+    le, structure = await _setup(client)
+    first = await person_and_employment(client, le)
+    second = await person_and_employment(client, le)
+    body = {"structure_id": structure["id"], "annual_ctc": "600000", "effective_from": "2020-01-01"}
+    await ok(client, "POST", f"/v1/payroll/employees/{first['id']}/compensation", json=body)
+
+    # The old key and pepper are gone; only a new pair is configured.
+    monkeypatch.setattr(settings, "payroll_encryption_keys", _key("pay-2"))
+    monkeypatch.setattr(settings, "payroll_pepper", "n" * 40)
+    await ok(
+        client,
+        "POST",
+        f"/v1/payroll/employees/{second['id']}/compensation",
+        json={**body, "annual_ctc": "900000"},
+    )
+
+    listed = {r["employment_id"]: r for r in await ok(client, "GET", "/v1/payroll/salaries")}
+    assert listed[second["id"]]["annual_ctc"] == "900000.00" and not listed[second["id"]]["error"]
+    assert listed[first["id"]]["annual_ctc"] is None
+    assert "pay-1" in listed[first["id"]]["error"]
+    # The single record says why, with a code the screen can act on.
+    r = await client.get(f"/v1/payroll/employees/{first['id']}/compensation")
+    assert r.status_code == 409 and r.json()["code"] == "ENCRYPTION_KEY_UNAVAILABLE"
+    assert "pay-1" in r.json()["detail"]
+    # The new employee is unaffected.
+    assert (await ok(client, "GET", f"/v1/payroll/employees/{second['id']}/compensation"))[
+        "current"
+    ]["annual_ctc"] == "900000.00"

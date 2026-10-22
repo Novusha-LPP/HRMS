@@ -107,10 +107,19 @@ def migrate() -> None:
         print("hrms_platform password set from HRMS_PLATFORM_ROLE_PASSWORD")
     print("hrms_app limits: " + ", ".join(f"{k}={v}" for k, v in APP_ROLE_SETTINGS.items()))
     # Every deploy leaves no identifier in plain text or under a retired key (idempotent).
-    rewritten = asyncio.run(_rewrite_pii(check=False))
-    print(f"encrypt-pii: {rewritten} identifier value(s) encrypted with the active key")
-    sealed = asyncio.run(_rewrite_payroll(check=False))
-    print(f"encrypt-payroll: {sealed} salary value(s) encrypted with the active key")
+    # A value whose key is no longer configured does not stop the deploy: everything readable
+    # is still rewritten, the rest is left untouched and reported (the app shows an error for
+    # it, and putting the key back makes it readable). `encrypt-pii --check` still fails on it.
+    for name, rewrite, noun in (
+        ("encrypt-pii", _rewrite_pii, "identifier"),
+        ("encrypt-payroll", _rewrite_payroll, "salary"),
+    ):
+        try:
+            count = asyncio.run(rewrite(check=False))
+            print(f"{name}: {count} {noun} value(s) encrypted with the active key")
+        except UnreadableValues as exc:
+            print(f"::warning::{name}: {exc}", file=sys.stderr)
+            print(f"{name}: continuing; the values above stay unreadable until their key returns")
 
 
 # Table -> encrypted columns. Must match the EncryptedString columns of the models
