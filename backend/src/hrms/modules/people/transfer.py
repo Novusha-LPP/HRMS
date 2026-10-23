@@ -136,6 +136,7 @@ async def execute_transfer(
             "skip_leave_settlement": leave_mode == TransferLeaveMode.CARRY,
         },
         status=PersonnelActionStatus.PENDING_APPROVAL,
+        recorded_by=actor_user,
     )
     session.add(separation)
     await session.flush()
@@ -175,6 +176,7 @@ async def execute_transfer(
         effective_date=effective_date,
         changes=placement,
         status=PersonnelActionStatus.PENDING_APPROVAL,
+        recorded_by=actor_user,
     )
     session.add(hire)
     await session.flush()

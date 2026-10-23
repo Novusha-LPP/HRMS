@@ -89,6 +89,7 @@ class LeaveType(SQLModel, table=True):
     # Imported types require a matching assigned bucket policy; never use the
     # tenant-wide fallback to grant access to a legacy entitlement.
     legacy_managed: bool = Field(default=False)
+    apply_sandwich_rule: bool = Field(default=False)
 
 
 class LeaveBalance(SQLModel, table=True):
@@ -279,6 +280,7 @@ class LeaveBucketPolicy(SQLModel, table=True):
     probation_eligible: bool = Field(default=False)
     min_service_months: int = Field(default=0, ge=0)
     pro_rate_first_year: bool = Field(default=True)
+    apply_sandwich_rule: bool = Field(default=False)
     # Complete source definition, including restrictions absent from flat type
     # fields. The import and application validator share this representation.
     source_policy: dict | None = Field(default=None, sa_column=Column(JSONB))

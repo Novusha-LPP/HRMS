@@ -822,6 +822,7 @@ async def create_personnel_action(
         status=PersonnelActionStatus.PENDING_APPROVAL,
         idempotency_key=body.idempotency_key,
         submitted_at=datetime.now(UTC),
+        recorded_by=principal.user_account_id,
     )
     session.add(pa)
     await session.flush()
@@ -1266,6 +1267,40 @@ async def _apply_personnel_action(
     await integration_hooks.personnel_action_applied(session, tenant_id, pa, emp, before)
 
 
+async def _resolve_actor_user_id(
+    session, tenant_id: UUID, pa: PersonnelAction, emp: Employment
+) -> UUID:
+    if pa.recorded_by:
+        exists = (
+            await session.execute(
+                select(UserAccount.id)
+                .where(UserAccount.tenant_id == tenant_id)
+                .where(UserAccount.id == pa.recorded_by)
+            )
+        ).scalar()
+        if exists:
+            return pa.recorded_by
+
+    emp_account = (
+        await session.execute(
+            select(UserAccount.id)
+            .where(UserAccount.tenant_id == tenant_id)
+            .where(UserAccount.employment_id == emp.id)
+        )
+    ).scalar()
+    if emp_account:
+        return emp_account
+
+    any_account = (
+        await session.execute(
+            select(UserAccount.id)
+            .where(UserAccount.tenant_id == tenant_id)
+            .order_by(UserAccount.created_at)
+        )
+    ).scalar()
+    return any_account or emp.id
+
+
 async def _apply_personnel_action_change(
     session, tenant_id: UUID, pa: PersonnelAction, emp: Employment
 ) -> None:
@@ -1295,6 +1330,13 @@ async def _apply_personnel_action_change(
         await _place_assignment(
             session, tenant_id, pa.employment_id, pa.effective_date, changes, current
         )
+        if action_type in _INITIAL_PLACEMENT:
+            from hrms.modules.leave.router import deposit_initial_balances_for_employee
+
+            actor_user = await _resolve_actor_user_id(session, tenant_id, pa, emp)
+            await deposit_initial_balances_for_employee(
+                session, tenant_id, pa.employment_id, actor_user
+            )
 
     if action_type == PersonnelActionType.REHIRE:
         left_on = emp.separation_date
@@ -1323,6 +1365,12 @@ async def _apply_personnel_action_change(
         )
     elif action_type == PersonnelActionType.CONFIRM:
         emp.employment_state = EmploymentState.ACTIVE
+        from hrms.modules.leave.router import deposit_initial_balances_for_employee
+
+        actor_user = await _resolve_actor_user_id(session, tenant_id, pa, emp)
+        await deposit_initial_balances_for_employee(
+            session, tenant_id, emp.id, actor_user
+        )
     elif action_type == PersonnelActionType.PLACE_ON_NOTICE:
         emp.employment_state = EmploymentState.NOTICE
     elif action_type == PersonnelActionType.SEPARATION:

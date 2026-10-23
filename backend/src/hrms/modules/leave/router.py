@@ -133,8 +133,12 @@ from hrms.modules.leave.schemas import (
     LeaveTypeDays,
     LeaveTypeResponse,
     LeaveTypeUpdate,
+    UnifiedLeavePolicyRequest,
+    UnifiedLeavePolicyResponse,
     YearEndCloseResponse,
 )
+from hrms.modules.org.models import OrgUnit
+from hrms.modules.people.models import Assignment, Employment, EmploymentState
 from hrms.modules.policy.engine import resolve_policy
 from hrms.modules.time.holidays import holiday_scope_sql
 
@@ -291,6 +295,10 @@ async def list_balances(
         today = now_utc().date()
         year = compute_fy_year(today.year, today.month, fy_start_month)
 
+    emp = await session.get(Employment, (tenant_id, emp_uuid))
+    is_probation = emp is not None and emp.employment_state == "PROBATION"
+    today_date = now_utc().date()
+
     lt_rows = await session.execute(
         select(LeaveType)
         .where(LeaveType.tenant_id == tenant_id)
@@ -303,6 +311,16 @@ async def list_balances(
         if resolved is None:
             continue
         bucket_id, _ = resolved
+        bp = await resolve_employee_bucket_policy(session, tenant_id, emp_uuid, bucket_id, today_date)
+        prob_eligible = bp.probation_eligible if bp else True
+        is_locked = is_probation and not prob_eligible
+        unlock_d = None
+        unlock_msg = None
+        if is_locked and emp:
+            prob_months = bp.min_service_months if bp and bp.min_service_months > 0 else 3
+            unlock_d = emp.hire_date + timedelta(days=prob_months * 30)
+            unlock_msg = f"Leaves unlock on {unlock_d.strftime('%d %b %Y')} after probation"
+
         ledger_rows = (
             (
                 await session.execute(
@@ -321,6 +339,47 @@ async def list_balances(
             .all()
         )
         if not ledger_rows:
+            if is_locked and emp:
+                results.append(
+                    LeaveBalanceResponse(
+                        id=f"probation-{lt.id}",
+                        employment_id=to_typed_id("employment", emp_uuid),
+                        leave_type_id=to_typed_id("leave_type", lt.id),
+                        leave_type_name=lt.name,
+                        leave_type_code=lt.code,
+                        year=year,
+                        allocated_days=bp.days_per_year if bp else lt.days_per_year,
+                        carry_forward_days=0.0,
+                        used_days=0.0,
+                        pending_days=0.0,
+                        available_days=0.0,
+                        color=lt.color,
+                        probation_locked=True,
+                        unlock_date=unlock_d,
+                        unlock_message=unlock_msg,
+                    )
+                )
+            elif bp and bp.days_per_year > 0:
+                allocated = bp.days_per_year if bp.accrual_type == "ANNUAL_UPFRONT" else round(bp.days_per_year / 12, 1)
+                results.append(
+                    LeaveBalanceResponse(
+                        id=f"active-{lt.id}",
+                        employment_id=to_typed_id("employment", emp_uuid),
+                        leave_type_id=to_typed_id("leave_type", lt.id),
+                        leave_type_name=lt.name,
+                        leave_type_code=lt.code,
+                        year=year,
+                        allocated_days=allocated,
+                        carry_forward_days=0.0,
+                        used_days=0.0,
+                        pending_days=0.0,
+                        available_days=allocated,
+                        color=lt.color,
+                        probation_locked=False,
+                        unlock_date=None,
+                        unlock_message=None,
+                    )
+                )
             continue
         carry_forward_days = ledger_rows[0].opening
         allocated_days = sum(r.accrued + r.granted for r in ledger_rows)
@@ -341,6 +400,9 @@ async def list_balances(
                 pending_days=round(pending_days, 4),
                 available_days=round(available_days, 4),
                 color=lt.color,
+                probation_locked=is_locked,
+                unlock_date=unlock_d,
+                unlock_message=unlock_msg,
             )
         )
     return results
@@ -1065,8 +1127,16 @@ async def create_application(
     await authorize_write(
         session, tenant_id, scope, principal, emp_uuid, "leave.write", "leave.apply"
     )
+    resolved = await _resolve_bucket_for_type(session, tenant_id, lt, create_if_missing=False)
+    bucket_id = resolved[0] if resolved else None
+    bp = (
+        await resolve_employee_bucket_policy(session, tenant_id, emp_uuid, bucket_id, body.from_date)
+        if bucket_id
+        else None
+    )
+    apply_sandwich = getattr(lt, "apply_sandwich_rule", False) or (getattr(bp, "apply_sandwich_rule", False) if bp else False)
     allocation = await _allocate_days(
-        session, tenant_id, emp_uuid, body.from_date, body.to_date, body.half_day_option
+        session, tenant_id, emp_uuid, body.from_date, body.to_date, body.half_day_option, apply_sandwich=apply_sandwich
     )
     days = sum(allocation.values())
     await _validate_application(session, tenant_id, emp_uuid, lt, body, days)
@@ -1109,8 +1179,16 @@ async def submit_application(
 
     await _validate_application(session, tenant_id, app.employment_id, lt, app, app.days_requested)
     await _check_overlap(session, tenant_id, app)
+    resolved = await _resolve_bucket_for_type(session, tenant_id, lt, create_if_missing=False)
+    bucket_id = resolved[0] if resolved else None
+    bp = (
+        await resolve_employee_bucket_policy(session, tenant_id, app.employment_id, bucket_id, app.from_date)
+        if bucket_id
+        else None
+    )
+    apply_sandwich = getattr(lt, "apply_sandwich_rule", False) or (getattr(bp, "apply_sandwich_rule", False) if bp else False)
     app.days_by_month = await _allocate_days(
-        session, tenant_id, app.employment_id, app.from_date, app.to_date, app.half_day_option
+        session, tenant_id, app.employment_id, app.from_date, app.to_date, app.half_day_option, apply_sandwich=apply_sandwich
     )
     app.days_requested = sum(app.days_by_month.values())
     await _hold_leave_balance(session, tenant_id, principal, app, lt)
@@ -1419,6 +1497,7 @@ def _lt_resp(lt: LeaveType) -> LeaveTypeResponse:
         is_comp_off=lt.is_comp_off,
         encashable=lt.encashable,
         accrual_enabled=lt.accrual_enabled,
+        apply_sandwich_rule=getattr(lt, "apply_sandwich_rule", False),
     )
 
 
@@ -1733,12 +1812,22 @@ def _assert_cancel_pending(app: LeaveApplication) -> None:
         raise HTTPException(400, f"Application cancellation not pending (status: {app.status})")
 
 
-async def _allocate_days(session, tenant_id, employment_id, start, end, half_day):
+async def _allocate_days(
+    session,
+    tenant_id,
+    employment_id,
+    start: date,
+    end: date,
+    half_day: str,
+    apply_sandwich: bool = False,
+) -> dict[str, float]:
     """
     Split [start, end] into working days, keyed "YYYY-MM" — one entry per
     calendar month touched, matching leave_monthly_ledger's grain. A leave
     spanning a month (or financial-year) boundary posts one engine
     transaction per key; see _post_leave_transaction / _hold_leave_balance.
+    When apply_sandwich is True, weekends and public holidays between leave
+    days are also counted as leave days.
     """
     from hrms.core.datetime_utils import is_working_day
 
@@ -1753,20 +1842,58 @@ async def _allocate_days(session, tenant_id, employment_id, start, end, half_day
         )
     ).all()
     holidays = {r[0] for r in holidays}
-    allocation: dict[str, float] = {}
+
+    day_status: list[tuple[date, bool]] = []
     day = start
     while day <= end:
         policy = await resolve_policy(employment_id, day, session, tenant_id)
-        if day not in holidays and is_working_day(day, policy.work_days, policy.saturday_pattern):
-            key = f"{day.year:04d}-{day.month:02d}"
-            allocation[key] = allocation.get(key, 0.0) + (0.5 if half_day != "NONE" else 1.0)
+        is_work = (day not in holidays) and is_working_day(day, policy.work_days, policy.saturday_pattern)
+        day_status.append((day, is_work))
         day += timedelta(days=1)
+
+    work_indices = [i for i, (_, is_work) in enumerate(day_status) if is_work]
+    first_work_idx = work_indices[0] if work_indices else -1
+    last_work_idx = work_indices[-1] if work_indices else -1
+
+    allocation: dict[str, float] = {}
+    for idx, (curr_day, is_work) in enumerate(day_status):
+        should_count = False
+        if is_work:
+            should_count = True
+        elif apply_sandwich and first_work_idx != -1 and last_work_idx != -1 and first_work_idx < idx < last_work_idx:
+            should_count = True
+
+        if should_count:
+            key = f"{curr_day.year:04d}-{curr_day.month:02d}"
+            qty = 0.5 if (half_day != "NONE" and is_work and len(day_status) == 1) else 1.0
+            allocation[key] = allocation.get(key, 0.0) + qty
+
     return allocation
 
 
 async def _validate_application(session, tenant_id, employment_id, lt, body, days):
     if not lt.is_active or lt.archived_at:
         raise HTTPException(422, "This leave type is inactive")
+
+    # Clear probation validation
+    emp = await session.get(Employment, (tenant_id, employment_id))
+    if emp and emp.employment_state == "PROBATION":
+        resolved = await _resolve_bucket_for_type(session, tenant_id, lt, create_if_missing=False)
+        bucket_id = resolved[0] if resolved else None
+        bp = (
+            await resolve_employee_bucket_policy(
+                session, tenant_id, employment_id, bucket_id, getattr(body, "from_date", now_utc().date())
+            )
+            if bucket_id
+            else None
+        )
+        prob_eligible = bp.probation_eligible if bp else False
+        if not prob_eligible:
+            prob_months = bp.min_service_months if bp and bp.min_service_months > 0 else 3
+            unlock_date = emp.hire_date + timedelta(days=prob_months * 30)
+            unlock_str = unlock_date.strftime("%d %b %Y")
+            raise HTTPException(400, f"Leaves unlock on {unlock_str} after probation.")
+
     legacy_document = await validate_legacy_application(
         session, tenant_id, employment_id, lt, body, days
     )
@@ -2324,6 +2451,7 @@ async def list_bucket_policies_for_set(
             probation_eligible=bp.probation_eligible,
             min_service_months=bp.min_service_months,
             pro_rate_first_year=bp.pro_rate_first_year,
+            apply_sandwich_rule=getattr(bp, "apply_sandwich_rule", False),
         )
         for bp, b in rows
     ]
@@ -2382,6 +2510,7 @@ async def create_bucket_policy(
         probation_eligible=body.probation_eligible,
         min_service_months=body.min_service_months,
         pro_rate_first_year=body.pro_rate_first_year,
+        apply_sandwich_rule=body.apply_sandwich_rule,
         recorded_at=now_utc(),
         recorded_by=principal.user_account_id,
     )
@@ -2404,6 +2533,7 @@ async def create_bucket_policy(
         probation_eligible=bp.probation_eligible,
         min_service_months=bp.min_service_months,
         pro_rate_first_year=bp.pro_rate_first_year,
+        apply_sandwich_rule=getattr(bp, "apply_sandwich_rule", False),
     )
 
 
@@ -2448,6 +2578,7 @@ async def update_bucket_policy(
         probation_eligible=bp.probation_eligible,
         min_service_months=bp.min_service_months,
         pro_rate_first_year=bp.pro_rate_first_year,
+        apply_sandwich_rule=getattr(bp, "apply_sandwich_rule", False),
     )
 
 
@@ -2540,6 +2671,10 @@ async def create_policy_assignment(
     )
     session.add(assignment)
     await session.flush()
+    await deposit_initial_balances_for_assignment(
+        session, tenant_id, assignment, principal.user_account_id
+    )
+    await session.flush()
 
     return LeavePolicyAssignmentResponse(
         id=to_typed_id("leave_policy_assignment", assignment.id),
@@ -2569,6 +2704,526 @@ async def delete_policy_assignment(
         raise HTTPException(404, "Leave policy assignment not found")
     a.archived_at = now_utc()
     session.add(a)
+    await session.flush()
+
+
+# ─── Instant Balance Deposit Helper ──────────────────────────────────────────
+
+
+async def deposit_initial_balances_for_assignment(
+    session: AsyncSession,
+    tenant_id: UUID,
+    assignment: LeavePolicyAssignment,
+    recorded_by: UUID,
+) -> int:
+    """
+    Deposit full quota (ANNUAL_UPFRONT) or current month accrual (MONTHLY_PRORATE)
+    immediately to active employees in the assigned department / legal entity.
+    """
+    today = business_today()
+
+    from hrms.modules.kernel.models import UserAccount
+
+    valid_ua = (
+        await session.execute(
+            select(UserAccount.id)
+            .where(UserAccount.tenant_id == tenant_id)
+            .where(UserAccount.id == recorded_by)
+        )
+    ).scalar()
+    if not valid_ua:
+        valid_ua = (
+            await session.execute(
+                select(UserAccount.id)
+                .where(UserAccount.tenant_id == tenant_id)
+                .order_by(col(UserAccount.created_at))
+            )
+        ).scalar()
+        if valid_ua:
+            recorded_by = valid_ua
+
+    bps = (
+        await session.execute(
+            select(LeaveBucketPolicy)
+            .where(LeaveBucketPolicy.tenant_id == tenant_id)
+            .where(LeaveBucketPolicy.policy_set_id == assignment.leave_policy_set_id)
+        )
+    ).scalars().all()
+    if not bps:
+        return 0
+
+    q = (
+        select(Employment)
+        .where(Employment.tenant_id == tenant_id)
+        .where(Employment.archived_at == None)
+        .where(Employment.separation_date == None)
+    )
+    if assignment.employment_id:
+        q = q.where(Employment.id == assignment.employment_id)
+    elif assignment.org_unit_id:
+        q = q.join(
+            Assignment,
+            and_(
+                col(Assignment.employment_id) == col(Employment.id),
+                col(Assignment.tenant_id) == tenant_id,
+            ),
+        ).where(
+            Assignment.org_unit_id == assignment.org_unit_id,
+            or_(col(Assignment.effective_to).is_(None), col(Assignment.effective_to) >= today),
+        )
+    elif assignment.legal_entity_id:
+        q = q.where(Employment.legal_entity_id == assignment.legal_entity_id)
+
+    employees = (await session.execute(q)).scalars().unique().all()
+    if not employees:
+        return 0
+
+    deposited_count = 0
+    for bp in bps:
+        mapped_type = (
+            await session.execute(
+                select(LeaveType)
+                .join(
+                    LeaveTypeBucketMapping,
+                    col(LeaveTypeBucketMapping.leave_type_id) == col(LeaveType.id),
+                )
+                .where(LeaveTypeBucketMapping.tenant_id == tenant_id)
+                .where(LeaveTypeBucketMapping.bucket_id == bp.bucket_id)
+            )
+        ).scalars().first()
+        lt_id = mapped_type.id if mapped_type else None
+        lt_name = mapped_type.name if mapped_type else "Leave"
+
+        for emp in employees:
+            if emp.employment_state == "PROBATION" and not bp.probation_eligible:
+                continue
+
+            fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, emp.id)
+
+            if bp.accrual_type == "ANNUAL_UPFRONT" and bp.days_per_year > 0:
+                already = (
+                    await session.execute(
+                        select(LeaveBalanceTransaction.id)
+                        .where(LeaveBalanceTransaction.tenant_id == tenant_id)
+                        .where(LeaveBalanceTransaction.employment_id == emp.id)
+                        .where(LeaveBalanceTransaction.bucket_id == bp.bucket_id)
+                        .where(
+                            col(LeaveBalanceTransaction.transaction_type).in_(
+                                [LeaveTransactionType.GRANT.value, LeaveTransactionType.OPENING.value]
+                            )
+                        )
+                        .where(
+                            LeaveBalanceTransaction.effective_date
+                            >= date(today.year if today.month >= fy_start_month else today.year - 1, fy_start_month, 1)
+                        )
+                    )
+                ).scalar()
+                if not already:
+                    await record_transaction(
+                        session,
+                        tenant_id,
+                        employment_id=emp.id,
+                        bucket_id=bp.bucket_id,
+                        leave_type_id=lt_id,
+                        transaction_type=LeaveTransactionType.GRANT,
+                        quantity=bp.days_per_year,
+                        effective_date=today,
+                        reference_type="MANUAL",
+                        recorded_by=recorded_by,
+                        reason=f"Annual upfront grant on policy assignment ({lt_name})",
+                        fy_start_month=fy_start_month,
+                    )
+                    deposited_count += 1
+
+            elif bp.accrual_type == "MONTHLY_PRORATE" and bp.days_per_year > 0:
+                first_of_month = date(today.year, today.month, 1)
+                already = (
+                    await session.execute(
+                        select(LeaveBalanceTransaction.id)
+                        .where(LeaveBalanceTransaction.tenant_id == tenant_id)
+                        .where(LeaveBalanceTransaction.employment_id == emp.id)
+                        .where(LeaveBalanceTransaction.bucket_id == bp.bucket_id)
+                        .where(LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value)
+                        .where(LeaveBalanceTransaction.effective_date == first_of_month)
+                    )
+                ).scalar()
+                if not already:
+                    credit = monthly_credit(bp.days_per_year, 0)
+                    if credit <= 0:
+                        credit = round(bp.days_per_year / 12, 1)
+                    await record_transaction(
+                        session,
+                        tenant_id,
+                        employment_id=emp.id,
+                        bucket_id=bp.bucket_id,
+                        leave_type_id=lt_id,
+                        transaction_type=LeaveTransactionType.ACCRUAL,
+                        quantity=credit,
+                        effective_date=first_of_month,
+                        reference_type="ACCRUAL_RUN",
+                        recorded_by=recorded_by,
+                        reason=f"Current month accrual on policy assignment ({lt_name})",
+                        fy_start_month=fy_start_month,
+                    )
+                    deposited_count += 1
+
+    return deposited_count
+
+
+async def deposit_initial_balances_for_employee(
+    session: AsyncSession,
+    tenant_id: UUID,
+    employment_id: UUID,
+    recorded_by: UUID,
+) -> int:
+    today = business_today()
+    emp = await session.get(Employment, (tenant_id, employment_id))
+    if not emp or emp.archived_at or emp.separation_date:
+        return 0
+
+    psets = await resolve_leave_policy_sets_bulk(session, tenant_id, [employment_id], today)
+    pset = psets.get(employment_id)
+    if not pset:
+        return 0
+
+    dummy_asgn = LeavePolicyAssignment(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        leave_policy_set_id=pset.id,
+        employment_id=employment_id,
+        effective_from=today,
+    )
+    return await deposit_initial_balances_for_assignment(session, tenant_id, dummy_asgn, recorded_by)
+
+
+# ─── Unified 1-Screen Policy Endpoints ────────────────────────────────────────
+
+
+@router.get(
+    "/unified-policies",
+    response_model=list[UnifiedLeavePolicyResponse],
+    dependencies=[require_permission("leave.read")],
+)
+async def list_unified_policies(
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> list[UnifiedLeavePolicyResponse]:
+    """
+    List leave policies formatted for the 1-screen unified policy view.
+    Combines LeaveType, LeaveBucketPolicy, and LeavePolicyAssignment using batch queries.
+    """
+    types = (
+        await session.execute(
+            select(LeaveType)
+            .where(LeaveType.tenant_id == tenant_id)
+            .where(LeaveType.is_comp_off == False)
+            .where(LeaveType.archived_at == None)
+            .order_by(LeaveType.name)
+        )
+    ).scalars().all()
+
+    if not types:
+        return []
+
+    # Batch query bucket mappings
+    mappings = (
+        await session.execute(
+            select(LeaveTypeBucketMapping)
+            .where(LeaveTypeBucketMapping.tenant_id == tenant_id)
+        )
+    ).scalars().all()
+    bucket_by_type: dict[UUID, UUID] = {m.leave_type_id: m.bucket_id for m in mappings}
+
+    # Batch query bucket policies
+    all_bp = (
+        await session.execute(
+            select(LeaveBucketPolicy)
+            .where(LeaveBucketPolicy.tenant_id == tenant_id)
+            .order_by(col(LeaveBucketPolicy.recorded_at).desc().nulls_last())
+        )
+    ).scalars().all()
+    bp_by_bucket: dict[UUID, LeaveBucketPolicy] = {}
+    for bp in all_bp:
+        if bp.bucket_id not in bp_by_bucket:
+            bp_by_bucket[bp.bucket_id] = bp
+
+    # Batch query policy assignments
+    assignments = (
+        await session.execute(
+            select(LeavePolicyAssignment)
+            .where(LeavePolicyAssignment.tenant_id == tenant_id)
+            .where(LeavePolicyAssignment.archived_at == None)
+        )
+    ).scalars().all()
+    asgn_by_pset: dict[UUID, LeavePolicyAssignment] = {a.leave_policy_set_id: a for a in assignments}
+
+    # Org units lookup
+    org_units = {
+        ou.id: ou.name
+        for ou in (
+            await session.execute(
+                select(OrgUnit).where(OrgUnit.tenant_id == tenant_id).where(OrgUnit.archived_at == None)
+            )
+        ).scalars().all()
+    }
+
+    results: list[UnifiedLeavePolicyResponse] = []
+    for lt in types:
+        bucket_id = bucket_by_type.get(lt.id)
+        bp = bp_by_bucket.get(bucket_id) if bucket_id else None
+        asgn = asgn_by_pset.get(bp.policy_set_id) if bp else None
+
+        ou_name = None
+        ou_id_str = None
+        if asgn and asgn.org_unit_id:
+            ou_id_str = to_typed_id("org_unit", asgn.org_unit_id)
+            ou_name = org_units.get(asgn.org_unit_id)
+        elif asgn and asgn.legal_entity_id:
+            ou_name = "Company-wide"
+        else:
+            ou_name = "All Departments"
+
+        results.append(
+            UnifiedLeavePolicyResponse(
+                id=to_typed_id("leave_type", lt.id),
+                leave_type_id=to_typed_id("leave_type", lt.id),
+                name=lt.name,
+                code=lt.code,
+                days_per_year=bp.days_per_year if bp else lt.days_per_year,
+                accrual_type=bp.accrual_type if bp else ("MONTHLY_PRORATE" if lt.accrual_enabled else "ANNUAL_UPFRONT"),
+                org_unit_id=ou_id_str,
+                org_unit_name=ou_name,
+                apply_sandwich_rule=bool(getattr(lt, "apply_sandwich_rule", False) or (getattr(bp, "apply_sandwich_rule", False) if bp else False)),
+                probation_eligible=bp.probation_eligible if bp else False,
+                carry_forward=lt.carry_forward,
+                max_carry_forward_days=lt.max_carry_forward_days,
+                encashable=lt.encashable,
+                color=lt.color,
+                employees_covered=0,
+            )
+        )
+    return results
+
+
+@router.post(
+    "/unified-policies",
+    response_model=UnifiedLeavePolicyResponse,
+    status_code=201,
+    dependencies=[require_permission("leave.write")],
+)
+async def create_or_update_unified_policy(
+    body: UnifiedLeavePolicyRequest,
+    tenant_id: TenantDep,
+    session: SessionDep,
+    principal: CurrentUser,
+) -> UnifiedLeavePolicyResponse:
+    """
+    1-screen policy setup: saves leave type, bucket, bucket policy, department
+    assignment, and instantly deposits initial balances for all department employees!
+    """
+    today = business_today()
+    code = (body.code or body.name[:4]).strip().upper()
+    name = body.name.strip()
+
+    # 1. Leave Type
+    lt = (
+        await session.execute(
+            select(LeaveType)
+            .where(LeaveType.tenant_id == tenant_id)
+            .where(
+                or_(
+                    func.lower(LeaveType.code) == code.lower(),
+                    func.lower(LeaveType.name) == name.lower(),
+                )
+            )
+            .where(LeaveType.archived_at == None)
+        )
+    ).scalars().first()
+
+    if lt is None:
+        lt = LeaveType(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            name=name,
+            code=code,
+            days_per_year=body.days_per_year,
+            carry_forward=body.carry_forward,
+            max_carry_forward_days=body.max_carry_forward_days,
+            apply_sandwich_rule=body.apply_sandwich_rule,
+            encashable=body.encashable,
+            accrual_enabled=(body.accrual_type == "MONTHLY_PRORATE"),
+            color=body.color,
+            recorded_at=now_utc(),
+            recorded_by=principal.user_account_id,
+        )
+        session.add(lt)
+    else:
+        lt.name = name
+        lt.days_per_year = body.days_per_year
+        lt.carry_forward = body.carry_forward
+        lt.max_carry_forward_days = body.max_carry_forward_days
+        lt.apply_sandwich_rule = body.apply_sandwich_rule
+        lt.encashable = body.encashable
+        lt.accrual_enabled = (body.accrual_type == "MONTHLY_PRORATE")
+        lt.color = body.color
+        lt.is_active = True
+        session.add(lt)
+    await session.flush()
+
+    # 2. Bucket & Mapping
+    resolved = await _resolve_bucket_for_type(session, tenant_id, lt, create_if_missing=True)
+    assert resolved is not None
+    bucket_id, _ = resolved
+
+    # 3. Policy Set
+    ou_uuid = to_uuid(body.org_unit_id) if body.org_unit_id else None
+    ou_name = None
+    if ou_uuid:
+        ou = await session.get(OrgUnit, (tenant_id, ou_uuid))
+        ou_name = ou.name if ou else None
+
+    set_name = f"{name} ({ou_name or 'All Departments'})"
+    pset = (
+        await session.execute(
+            select(LeavePolicySet)
+            .where(LeavePolicySet.tenant_id == tenant_id)
+            .where(LeavePolicySet.name == set_name)
+            .where(LeavePolicySet.archived_at == None)
+        )
+    ).scalars().first()
+
+    if not pset:
+        pset = LeavePolicySet(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            name=set_name,
+            is_default=(ou_uuid is None),
+            recorded_at=now_utc(),
+            recorded_by=principal.user_account_id,
+        )
+        session.add(pset)
+        await session.flush()
+
+    # 4. Bucket Policy
+    bp = (
+        await session.execute(
+            select(LeaveBucketPolicy)
+            .where(LeaveBucketPolicy.tenant_id == tenant_id)
+            .where(LeaveBucketPolicy.policy_set_id == pset.id)
+            .where(LeaveBucketPolicy.bucket_id == bucket_id)
+        )
+    ).scalars().first()
+
+    if not bp:
+        bp = LeaveBucketPolicy(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            policy_set_id=pset.id,
+            bucket_id=bucket_id,
+            accrual_type=body.accrual_type,
+            days_per_year=body.days_per_year,
+            carry_forward_enabled=body.carry_forward,
+            max_carry_forward_days=body.max_carry_forward_days,
+            apply_sandwich_rule=body.apply_sandwich_rule,
+            encashment_enabled=body.encashable,
+            probation_eligible=body.probation_eligible,
+            recorded_at=now_utc(),
+            recorded_by=principal.user_account_id,
+        )
+        session.add(bp)
+    else:
+        bp.accrual_type = body.accrual_type
+        bp.days_per_year = body.days_per_year
+        bp.carry_forward_enabled = body.carry_forward
+        bp.max_carry_forward_days = body.max_carry_forward_days
+        bp.apply_sandwich_rule = body.apply_sandwich_rule
+        bp.encashment_enabled = body.encashable
+        bp.probation_eligible = body.probation_eligible
+        session.add(bp)
+    await session.flush()
+
+    # 5. Policy Assignment
+    asgn: LeavePolicyAssignment
+    if ou_uuid:
+        existing_asgn = (
+            await session.execute(
+                select(LeavePolicyAssignment)
+                .where(LeavePolicyAssignment.tenant_id == tenant_id)
+                .where(LeavePolicyAssignment.org_unit_id == ou_uuid)
+                .where(LeavePolicyAssignment.archived_at == None)
+            )
+        ).scalars().first()
+
+        if not existing_asgn:
+            asgn = LeavePolicyAssignment(
+                tenant_id=tenant_id,
+                id=uuid4(),
+                leave_policy_set_id=pset.id,
+                org_unit_id=ou_uuid,
+                effective_from=date(today.year, 1, 1),
+                recorded_at=now_utc(),
+                recorded_by=principal.user_account_id,
+            )
+            session.add(asgn)
+            await session.flush()
+        else:
+            existing_asgn.leave_policy_set_id = pset.id
+            session.add(existing_asgn)
+            await session.flush()
+            asgn = existing_asgn
+    else:
+        # "All Departments": pset is marked is_default=True so resolver applies it tenant-wide.
+        # LeavePolicyAssignment requires exactly one target (ck_lpa_exactly_one_target),
+        # so we do not store an unassigned row. We use an in-memory assignment for deposit.
+        asgn = LeavePolicyAssignment(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            leave_policy_set_id=pset.id,
+            effective_from=date(today.year, 1, 1),
+        )
+
+    # 6. Instant balance deposit
+    deposited = await deposit_initial_balances_for_assignment(
+        session, tenant_id, asgn, principal.user_account_id
+    )
+    await session.flush()
+
+    return UnifiedLeavePolicyResponse(
+        id=to_typed_id("leave_type", lt.id),
+        leave_type_id=to_typed_id("leave_type", lt.id),
+        name=lt.name,
+        code=lt.code,
+        days_per_year=body.days_per_year,
+        accrual_type=body.accrual_type,
+        org_unit_id=to_typed_id("org_unit", ou_uuid) if ou_uuid else None,
+        org_unit_name=ou_name or "All Departments",
+        apply_sandwich_rule=body.apply_sandwich_rule,
+        probation_eligible=body.probation_eligible,
+        carry_forward=body.carry_forward,
+        max_carry_forward_days=body.max_carry_forward_days,
+        encashable=body.encashable,
+        color=body.color,
+        employees_covered=deposited,
+    )
+
+
+@router.delete(
+    "/unified-policies/{type_id}",
+    status_code=204,
+    dependencies=[require_permission("leave.write")],
+)
+async def delete_unified_policy(
+    type_id: str,
+    tenant_id: TenantDep,
+    session: SessionDep,
+) -> None:
+    uid = to_uuid(type_id)
+    lt = await session.get(LeaveType, (tenant_id, uid))
+    if not lt or lt.archived_at:
+        raise HTTPException(404, "Leave policy not found")
+    lt.is_active = False
+    lt.archived_at = now_utc()
+    session.add(lt)
     await session.flush()
 
 

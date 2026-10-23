@@ -268,14 +268,22 @@ function BalanceCard({ bal }: { bal: LeaveBalance }) {
         {bal.available_days}
         <span className="ml-1.5 text-[13px] font-normal tracking-normal text-fg-subtle">of {total} days left</span>
       </p>
-      <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-muted">
-        <div className="h-full" style={{ width: `${usedPct}%`, background: bal.color }} />
-        <div className="h-full opacity-40" style={{ width: `${pendingPct}%`, background: bal.color }} />
-      </div>
-      <p className="mt-2 text-xs text-fg-subtle tabular-nums">
-        {bal.used_days} used{bal.pending_days > 0 && ` · ${bal.pending_days} pending`}
-        {bal.carry_forward_days > 0 && ` · ${bal.carry_forward_days} carried over`}
-      </p>
+      {bal.probation_locked ? (
+        <div className="mt-3 rounded-lg border border-amber-500/20 bg-amber-500/10 px-2.5 py-1.5 text-xs text-amber-700 dark:text-amber-300">
+          🔒 {bal.unlock_message || "Leaves unlock after probation"}
+        </div>
+      ) : (
+        <>
+          <div className="mt-4 flex h-1.5 overflow-hidden rounded-full bg-muted">
+            <div className="h-full" style={{ width: `${usedPct}%`, background: bal.color }} />
+            <div className="h-full opacity-40" style={{ width: `${pendingPct}%`, background: bal.color }} />
+          </div>
+          <p className="mt-2 text-xs text-fg-subtle tabular-nums">
+            {bal.used_days} used{bal.pending_days > 0 && ` · ${bal.pending_days} pending`}
+            {bal.carry_forward_days > 0 && ` · ${bal.carry_forward_days} carried over`}
+          </p>
+        </>
+      )}
     </div>
   );
 }
@@ -325,7 +333,8 @@ function ApplyLeaveSheet({ open, onClose, leaveTypes, typesError, balances, empl
     onError: (e) => toast.error("Couldn’t submit leave request", errorMessage(e)),
   });
 
-  const valid = !!ltId && !!from && span > 0 && (!type?.requires_document || !!documentId);
+  const isProbationLocked = balance?.probation_locked;
+  const valid = !isProbationLocked && !!ltId && !!from && span > 0 && (!type?.requires_document || !!documentId);
   const submit = (e: FormEvent) => { e.preventDefault(); if (valid) apply.mutate(); };
 
   return (
@@ -359,6 +368,16 @@ function ApplyLeaveSheet({ open, onClose, leaveTypes, typesError, balances, empl
                 <b className="font-medium text-fg">{balance.available_days} days</b> available
                 {type && type.advance_notice_days > 0 && ` · ${type.advance_notice_days} days’ notice required`}
               </p>
+            )}
+            {type?.apply_sandwich_rule && (
+              <div className="mt-2 rounded-lg border border-indigo-500/20 bg-indigo-500/10 px-3 py-2 text-xs text-indigo-700 dark:text-indigo-300">
+                🥪 <b>Sandwich rule applies:</b> Weekends and public holidays between leave days are also deducted.
+              </div>
+            )}
+            {isProbationLocked && (
+              <div className="mt-2 rounded-lg border border-amber-500/20 bg-amber-500/10 px-3 py-2 text-xs text-amber-700 dark:text-amber-300">
+                🔒 <b>Probation Restriction:</b> {balance?.unlock_message || "Leaves unlock after probation."} You cannot apply for this leave type yet.
+              </div>
             )}
           </div>
           <div className="grid grid-cols-2 gap-3">

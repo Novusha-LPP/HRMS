@@ -186,6 +186,8 @@ CONSTRAINT_MESSAGES: dict[str, str] = {
     "ck_assignments_fte": "Working time (FTE) must be above 0 and at most 1",
     "ck_employments_separation": "An employee can't leave before they join",
     "ck_leave_balances_not_negative": "A leave balance can't go below zero",
+    "ck_lpa_exactly_one_target": "A policy assignment must specify exactly one target",
+    "ck_leave_balance_transactions_reference_type": "Invalid transaction reference type",
     **{
         f"ck_{table}_{column}_half_day": "Leave is counted in whole or half days"
         for table, column in (
@@ -233,13 +235,17 @@ async def integrity_error_handler(
         constraint,
         extra={"constraint": str(constraint), "db_cause": str(exc.orig)},
     )
+    detail_msg = CONSTRAINT_MESSAGES.get(str(constraint))
+    if not detail_msg:
+        detail_msg = (
+            f"Database conflict on constraint '{constraint}': {getattr(cause, 'detail', str(exc.orig))}"
+            if not settings.is_deployed
+            else "This change conflicts with an existing record or references a missing record"
+        )
     return create_error_response(
         status_code=409,
         code="RESOURCE_CONFLICT",
-        detail=CONSTRAINT_MESSAGES.get(
-            str(constraint),
-            "This change conflicts with an existing record or references a missing record",
-        ),
+        detail=detail_msg,
     )
 
 

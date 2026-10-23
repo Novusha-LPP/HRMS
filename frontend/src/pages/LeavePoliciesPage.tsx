@@ -17,7 +17,7 @@ import {
   PenLine,
   LogOut,
 } from "lucide-react";
-import type { LeaveType } from "../api/leave";
+import type { LeaveType, UnifiedLeavePolicy } from "../api/leave";
 import { leaveApi } from "../api/leave";
 import { peopleApi } from "../api/people";
 import { useAuth } from "../context/AuthContext";
@@ -26,11 +26,12 @@ import { Segmented } from "../components/ui/Tabs";
 import { Skeleton, Notice } from "../components/ui/Feedback";
 import { useToast, errorMessage } from "../components/ui/Toast";
 import { usePeopleDirectory } from "../lib/usePeopleDirectory";
+import { UnifiedLeavePoliciesTab } from "../components/leave/UnifiedLeavePoliciesTab";
 import { LeavePolicySetsTab } from "../components/leave/LeavePolicySetsTab";
 import { HolidayCalendars } from "../components/policy/HolidayCalendars";
 import { LeaversSettings } from "../components/leave/LeaversSettings";
 
-export type LeavePolicySection = "policy-sets" | "types" | "holidays" | "operations" | "leavers";
+export type LeavePolicySection = "policies" | "policy-sets" | "types" | "holidays" | "operations" | "leavers";
 
 export interface LeavePoliciesViewProps {
   standaloneHeader?: boolean;
@@ -56,21 +57,21 @@ export function LeavePoliciesView({
   ) as LeavePolicySection | null;
 
   const section: LeavePolicySection =
-    rawSection && ["policy-sets", "types", "holidays", "operations", "leavers"].includes(rawSection)
+    rawSection && ["policies", "policy-sets", "types", "holidays", "operations", "leavers"].includes(rawSection)
       ? rawSection
-      : "types";
+      : "policies";
 
   const setSection = (next: LeavePolicySection) => {
     const nextParams = new URLSearchParams(params);
     if (!standaloneHeader) {
       nextParams.set("tab", "leave");
-      if (next === "types") {
+      if (next === "policies") {
         nextParams.delete("section");
       } else {
         nextParams.set("section", next);
       }
     } else {
-      if (next === "types") {
+      if (next === "policies") {
         nextParams.delete("tab");
       } else {
         nextParams.set("tab", next);
@@ -79,9 +80,23 @@ export function LeavePoliciesView({
     setParams(nextParams, { replace: true });
   };
 
-  const types = useQuery<LeaveType[]>({ queryKey: ["leave-types"], queryFn: () => leaveApi.listTypes() });
-  const employees = useQuery({ queryKey: ["employees-picker"], queryFn: () => peopleApi.listAllEmployees() });
-  const directory = usePeopleDirectory(true);
+  const isOperations = section === "operations";
+  const unified = useQuery<UnifiedLeavePolicy[]>({
+    queryKey: ["unified-leave-policies"],
+    queryFn: () => leaveApi.listUnifiedPolicies(),
+    staleTime: 5 * 60 * 1000,
+  });
+  const types = useQuery<LeaveType[]>({
+    queryKey: ["leave-types"],
+    queryFn: () => leaveApi.listTypes(),
+    enabled: isOperations || section === "types",
+  });
+  const employees = useQuery({
+    queryKey: ["employees-picker"],
+    queryFn: () => peopleApi.listAllEmployees(),
+    enabled: isOperations,
+  });
+  const directory = usePeopleDirectory(isOperations);
   const employeeOptions = (employees.data ?? []).map((e) => ({
     id: e.id,
     label: directory.get(e.id) ?? e.employee_number,
@@ -121,14 +136,22 @@ export function LeavePoliciesView({
           value={section}
           onChange={(s) => setSection(s as LeavePolicySection)}
           items={[
-            { value: "types", label: "Leave Types", icon: FileText },
-            { value: "policy-sets", label: "Policy Sets & Rules", icon: Shield },
+            { value: "policies", label: "Leave Policies", icon: Shield },
             { value: "operations", label: "Grants & Operations", icon: Wallet },
             { value: "holidays", label: "Holiday Calendar", icon: CalendarDays },
             { value: "leavers", label: "Leavers & Rejoining", icon: LogOut },
+            ...(["policy-sets", "types"].includes(section)
+              ? [{ value: section, label: section === "types" ? "Leave Types (Advanced)" : "Policy Sets (Advanced)", icon: FileText }]
+              : []),
           ]}
         />
 
+        {section === "policies" && (
+          <UnifiedLeavePoliciesTab
+            policies={unified.data ?? []}
+            loading={unified.isPending}
+          />
+        )}
         {section === "policy-sets" && (
           <LeavePolicySetsTab
             createSetOpen={createSetOpen}

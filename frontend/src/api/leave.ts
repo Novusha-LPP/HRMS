@@ -23,6 +23,7 @@ export interface LeaveType {
   is_comp_off: boolean;
   encashable: boolean;
   accrual_enabled: boolean;
+  apply_sandwich_rule?: boolean;
 }
 
 export interface Holiday {
@@ -94,6 +95,9 @@ export interface LeaveBalance {
   pending_days: number;
   available_days: number;
   color: string;
+  probation_locked?: boolean;
+  unlock_date?: string | null;
+  unlock_message?: string | null;
 }
 
 export interface LeaveApprovalAction {
@@ -285,6 +289,23 @@ export const leaveApi = {
   }) => api.post<LeavePolicyAssignment>("/v1/leave/policy-assignments", body),
   deletePolicyAssignment: (id: string) => api.delete(`/v1/leave/policy-assignments/${id}`),
 
+  // ─── Unified 1-Screen Leave Policies ─────────────────────────────────────
+  listUnifiedPolicies: () => api.get<UnifiedLeavePolicy[]>("/v1/leave/unified-policies"),
+  createUnifiedPolicy: (body: {
+    name: string;
+    code?: string;
+    days_per_year: number;
+    accrual_type: "ANNUAL_UPFRONT" | "MONTHLY_PRORATE";
+    org_unit_id?: string | null;
+    apply_sandwich_rule?: boolean;
+    probation_eligible?: boolean;
+    carry_forward?: boolean;
+    max_carry_forward_days?: number | null;
+    encashable?: boolean;
+    color?: string;
+  }) => api.post<UnifiedLeavePolicy>("/v1/leave/unified-policies", body),
+  deleteUnifiedPolicy: (typeId: string) => api.delete(`/v1/leave/unified-policies/${typeId}`),
+
   // ─── Monthly Ledger & Transaction History ────────────────────────────────
   getLedger: (employmentId: string, params?: { bucket_id?: string; fy_year?: number; calendar_year?: number }) => {
     const q = new URLSearchParams({ employment_id: employmentId });
@@ -350,6 +371,25 @@ export interface LeaveBucketPolicy {
   probation_eligible: boolean;
   min_service_months: number;
   pro_rate_first_year: boolean;
+  apply_sandwich_rule?: boolean;
+}
+
+export interface UnifiedLeavePolicy {
+  id: string;
+  leave_type_id: string;
+  name: string;
+  code: string;
+  days_per_year: number;
+  accrual_type: "ANNUAL_UPFRONT" | "MONTHLY_PRORATE" | "NONE";
+  org_unit_id: string | null;
+  org_unit_name: string | null;
+  apply_sandwich_rule: boolean;
+  probation_eligible: boolean;
+  carry_forward: boolean;
+  max_carry_forward_days: number | null;
+  encashable: boolean;
+  color: string;
+  employees_covered: number;
 }
 
 export interface LeavePolicyAssignment {

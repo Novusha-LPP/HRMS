@@ -29,6 +29,7 @@ class LeaveTypeCreate(BaseModel):
     is_comp_off: bool = False
     encashable: bool = False
     accrual_enabled: bool = False
+    apply_sandwich_rule: bool = False
 
 
 class LeaveTypeUpdate(BaseModel):
@@ -51,6 +52,7 @@ class LeaveTypeUpdate(BaseModel):
     is_comp_off: bool | None = None
     encashable: bool | None = None
     accrual_enabled: bool | None = None
+    apply_sandwich_rule: bool | None = None
     version: int | None = version_field()
 
 
@@ -73,6 +75,9 @@ class LeaveBalanceResponse(BaseModel):
     pending_days: float
     available_days: float
     color: str
+    probation_locked: bool = False
+    unlock_date: date | None = None
+    unlock_message: str | None = None
 
 
 class LeaveApplyRequest(BaseModel):
@@ -311,6 +316,7 @@ class LeaveBucketPolicyCreate(BaseModel):
     probation_eligible: bool = False
     min_service_months: int = Field(default=0, ge=0)
     pro_rate_first_year: bool = True
+    apply_sandwich_rule: bool = False
 
 
 class LeaveBucketPolicyUpdate(BaseModel):
@@ -324,6 +330,7 @@ class LeaveBucketPolicyUpdate(BaseModel):
     probation_eligible: bool | None = None
     min_service_months: int | None = Field(default=None, ge=0)
     pro_rate_first_year: bool | None = None
+    apply_sandwich_rule: bool | None = None
     version: int | None = version_field()
 
 
@@ -343,6 +350,7 @@ class LeaveBucketPolicyResponse(BaseModel):
     probation_eligible: bool
     min_service_months: int
     pro_rate_first_year: bool
+    apply_sandwich_rule: bool = False
     version: int = 0
 
 
@@ -425,3 +433,38 @@ class LeaveBalanceTransactionResponse(BaseModel):
     recorded_by: str
     approved_by: str | None
     recorded_at: datetime
+
+
+# ─── Unified 1-Screen Policy Schemas ──────────────────────────────────────────
+
+
+class UnifiedLeavePolicyRequest(BaseModel):
+    name: str = Field(max_length=100)
+    code: str | None = Field(default=None, max_length=10)
+    days_per_year: float = Field(ge=0)
+    accrual_type: AccrualType = "ANNUAL_UPFRONT"
+    org_unit_id: str | None = None
+    apply_sandwich_rule: bool = False
+    probation_eligible: bool = False
+    carry_forward: bool = False
+    max_carry_forward_days: float | None = Field(default=None, ge=0)
+    encashable: bool = False
+    color: str = "#3B82F6"
+
+
+class UnifiedLeavePolicyResponse(BaseModel):
+    id: str
+    leave_type_id: str
+    name: str
+    code: str
+    days_per_year: float
+    accrual_type: str
+    org_unit_id: str | None = None
+    org_unit_name: str | None = None
+    apply_sandwich_rule: bool = False
+    probation_eligible: bool = False
+    carry_forward: bool = False
+    max_carry_forward_days: float | None = None
+    encashable: bool = False
+    color: str = "#3B82F6"
+    employees_covered: int = 0

@@ -91,7 +91,7 @@ export function PolicyPage() {
   const rawTab = params.get("tab");
   const isLeave =
     rawTab === "leave" ||
-    ["policy-sets", "types", "holidays", "operations"].includes(rawTab ?? "");
+    ["policies", "policy-sets", "types", "holidays", "operations", "leavers"].includes(rawTab ?? "");
   const activeTab: "attendance" | "leave" = isLeave ? "leave" : "attendance";
 
   const setActiveTab = (tab: "attendance" | "leave") => {
