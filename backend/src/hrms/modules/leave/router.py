@@ -1887,7 +1887,7 @@ async def _validate_application(session, tenant_id, employment_id, lt, body, day
             if bucket_id
             else None
         )
-        prob_eligible = bp.probation_eligible if bp else False
+        prob_eligible = bp.probation_eligible if bp else True
         if not prob_eligible:
             prob_months = bp.min_service_months if bp and bp.min_service_months > 0 else 3
             unlock_date = emp.hire_date + timedelta(days=prob_months * 30)
@@ -3082,35 +3082,56 @@ async def create_or_update_unified_policy(
         ou = await session.get(OrgUnit, (tenant_id, ou_uuid))
         ou_name = ou.name if ou else None
 
-    set_name = f"{name} ({ou_name or 'All Departments'})"
-    pset = (
-        await session.execute(
-            select(LeavePolicySet)
-            .where(LeavePolicySet.tenant_id == tenant_id)
-            .where(LeavePolicySet.name == set_name)
-            .where(LeavePolicySet.archived_at == None)
-        )
-    ).scalars().first()
-
-    if not pset:
-        pset = LeavePolicySet(
-            tenant_id=tenant_id,
-            id=uuid4(),
-            name=set_name,
-            is_default=(ou_uuid is None),
-            recorded_at=now_utc(),
-            recorded_by=principal.user_account_id,
-        )
-        session.add(pset)
-        await session.flush()
+    if ou_uuid:
+        set_name = f"Department Policy ({ou_name})"
+        pset = (
+            await session.execute(
+                select(LeavePolicySet)
+                .where(col(LeavePolicySet.tenant_id) == tenant_id)
+                .where(col(LeavePolicySet.name) == set_name)
+                .where(col(LeavePolicySet.archived_at).is_(None))
+            )
+        ).scalars().first()
+        if not pset:
+            pset = LeavePolicySet(
+                tenant_id=tenant_id,
+                id=uuid4(),
+                name=set_name,
+                is_default=False,
+                recorded_at=now_utc(),
+                recorded_by=principal.user_account_id,
+            )
+            session.add(pset)
+            await session.flush()
+    else:
+        # "All Departments": find existing default policy set or create one
+        pset = (
+            await session.execute(
+                select(LeavePolicySet)
+                .where(col(LeavePolicySet.tenant_id) == tenant_id)
+                .where(col(LeavePolicySet.is_default).is_(True))
+                .where(col(LeavePolicySet.archived_at).is_(None))
+                .order_by(col(LeavePolicySet.recorded_at).asc().nulls_last())
+            )
+        ).scalars().first()
+        if not pset:
+            pset = LeavePolicySet(
+                tenant_id=tenant_id,
+                id=uuid4(),
+                name="Tenant Default Policy",
+                is_default=True,
+                recorded_at=now_utc(),
+                recorded_by=principal.user_account_id,
+            )
+            session.add(pset)
+            await session.flush()
 
     # 4. Bucket Policy
     bp = (
         await session.execute(
             select(LeaveBucketPolicy)
-            .where(LeaveBucketPolicy.tenant_id == tenant_id)
-            .where(LeaveBucketPolicy.policy_set_id == pset.id)
-            .where(LeaveBucketPolicy.bucket_id == bucket_id)
+            .where(col(LeaveBucketPolicy.tenant_id) == tenant_id)
+            .where(col(LeaveBucketPolicy.bucket_id) == bucket_id)
         )
     ).scalars().first()
 
@@ -3132,6 +3153,7 @@ async def create_or_update_unified_policy(
         )
         session.add(bp)
     else:
+        bp.policy_set_id = pset.id
         bp.accrual_type = body.accrual_type
         bp.days_per_year = body.days_per_year
         bp.carry_forward_enabled = body.carry_forward

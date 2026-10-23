@@ -262,9 +262,49 @@ async def resolve_employee_bucket_policy(
 ) -> LeaveBucketPolicy | None:
     """Resolve the active bucket policy for an employee by walking the policy set cascade."""
     pset = await resolve_leave_policy_set(session, tenant_id, employment_id, as_of_date)
-    if pset is None:
-        return None
-    return await resolve_bucket_policy(session, tenant_id, pset.id, bucket_id)
+    if pset is not None:
+        bp = await resolve_bucket_policy(session, tenant_id, pset.id, bucket_id)
+        if bp is not None:
+            return bp
+
+    # Fallback 1: check any default policy set for this bucket (tier 4 tenant default)
+    default_bp = (
+        await session.execute(
+            select(LeaveBucketPolicy)
+            .join(LeavePolicySet, col(LeavePolicySet.id) == col(LeaveBucketPolicy.policy_set_id))
+            .where(col(LeaveBucketPolicy.tenant_id) == tenant_id)
+            .where(col(LeaveBucketPolicy.bucket_id) == bucket_id)
+            .where(col(LeavePolicySet.is_default).is_(True))
+            .where(col(LeavePolicySet.archived_at).is_(None))
+            .order_by(col(LeaveBucketPolicy.recorded_at).desc().nulls_last())
+        )
+    ).scalars().first()
+    if default_bp is not None:
+        return default_bp
+
+    # Fallback 2: check any active policy set for this bucket in the tenant
+    any_bp = (
+        await session.execute(
+            select(LeaveBucketPolicy)
+            .join(LeavePolicySet, col(LeavePolicySet.id) == col(LeaveBucketPolicy.policy_set_id))
+            .where(col(LeaveBucketPolicy.tenant_id) == tenant_id)
+            .where(col(LeaveBucketPolicy.bucket_id) == bucket_id)
+            .where(col(LeavePolicySet.archived_at).is_(None))
+            .order_by(col(LeaveBucketPolicy.recorded_at).desc().nulls_last())
+        )
+    ).scalars().first()
+    if any_bp is not None:
+        return any_bp
+
+    # Fallback 3: check any recorded LeaveBucketPolicy for bucket_id
+    return (
+        await session.execute(
+            select(LeaveBucketPolicy)
+            .where(col(LeaveBucketPolicy.tenant_id) == tenant_id)
+            .where(col(LeaveBucketPolicy.bucket_id) == bucket_id)
+            .order_by(col(LeaveBucketPolicy.recorded_at).desc().nulls_last())
+        )
+    ).scalars().first()
 
 
 async def resolve_employee_fy_start_month(
