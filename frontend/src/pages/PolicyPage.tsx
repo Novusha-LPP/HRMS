@@ -109,6 +109,7 @@ export function PolicyPage() {
   const [deleting, setDeleting] = useState<PolicyTemplate | null>(null);
   const [assigning, setAssigning] = useState<PolicyTemplate | null>(null);
   const [createSetOpen, setCreateSetOpen] = useState(false);
+  const [createLeavePolicyOpen, setCreateLeavePolicyOpen] = useState(false);
   // Bumped on every "New policy" click so the sheet's key changes and React
   // remounts it — otherwise every open reused the same "new" key, so toggle
   // state (auto-deduct, overtime, etc.) leaked from whatever the previous
@@ -164,8 +165,8 @@ export function PolicyPage() {
                 <Plus size={15} /> New policy
               </button>
             ) : (
-              <button className="btn-primary btn-sm" onClick={() => setCreateSetOpen(true)}>
-                <Plus size={15} /> New policy set
+              <button className="btn-primary btn-sm" onClick={() => setCreateLeavePolicyOpen(true)}>
+                <Plus size={15} /> New leave policy
               </button>
             )}
           </div>
@@ -239,6 +240,9 @@ export function PolicyPage() {
           createSetOpen={createSetOpen}
           onOpenCreateSet={() => setCreateSetOpen(true)}
           onCloseCreateSet={() => setCreateSetOpen(false)}
+          createPolicyOpen={createLeavePolicyOpen}
+          onOpenCreatePolicy={() => setCreateLeavePolicyOpen(true)}
+          onCloseCreatePolicy={() => setCreateLeavePolicyOpen(false)}
         />
       )}
 

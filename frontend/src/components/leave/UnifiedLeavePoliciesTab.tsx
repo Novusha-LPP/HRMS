@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import {
   Shield,
@@ -28,9 +28,13 @@ const PRESET_COLORS = [
 export function UnifiedLeavePoliciesTab({
   policies: propPolicies,
   loading: propLoading,
+  createPolicyOpen,
+  onCloseCreatePolicy,
 }: {
   policies?: UnifiedLeavePolicy[];
   loading?: boolean;
+  createPolicyOpen?: boolean;
+  onCloseCreatePolicy?: () => void;
 } = {}) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -87,6 +91,13 @@ export function UnifiedLeavePoliciesTab({
     resetForm();
     setSheetOpen(true);
   };
+
+  useEffect(() => {
+    if (createPolicyOpen) {
+      openCreate();
+      onCloseCreatePolicy?.();
+    }
+  }, [createPolicyOpen]);
 
   const openEdit = (p: UnifiedLeavePolicy) => {
     setEditingId(p.leave_type_id);

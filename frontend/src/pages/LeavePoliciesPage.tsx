@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useState, useEffect } from "react";
 import { Link, useSearchParams } from "react-router-dom";
 import { useQuery, useMutation, useQueryClient } from "@tanstack/react-query";
 import { format } from "date-fns";
@@ -38,6 +38,9 @@ export interface LeavePoliciesViewProps {
   createSetOpen?: boolean;
   onOpenCreateSet?: () => void;
   onCloseCreateSet?: () => void;
+  createPolicyOpen?: boolean;
+  onOpenCreatePolicy?: () => void;
+  onCloseCreatePolicy?: () => void;
 }
 
 export function LeavePoliciesView({
@@ -45,6 +48,8 @@ export function LeavePoliciesView({
   createSetOpen,
   onOpenCreateSet,
   onCloseCreateSet,
+  createPolicyOpen,
+  onCloseCreatePolicy,
 }: LeavePoliciesViewProps) {
   const { user } = useAuth();
   const [params, setParams] = useSearchParams();
@@ -79,6 +84,12 @@ export function LeavePoliciesView({
     }
     setParams(nextParams, { replace: true });
   };
+
+  useEffect(() => {
+    if (createPolicyOpen && section !== "policies") {
+      setSection("policies");
+    }
+  }, [createPolicyOpen, section]);
 
   const isOperations = section === "operations";
   const unified = useQuery<UnifiedLeavePolicy[]>({
@@ -150,6 +161,8 @@ export function LeavePoliciesView({
           <UnifiedLeavePoliciesTab
             policies={unified.data ?? []}
             loading={unified.isPending}
+            createPolicyOpen={createPolicyOpen}
+            onCloseCreatePolicy={onCloseCreatePolicy}
           />
         )}
         {section === "policy-sets" && (
