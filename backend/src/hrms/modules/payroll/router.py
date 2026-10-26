@@ -1023,7 +1023,7 @@ async def get_employee_compensation(
         (
             await session.execute(
                 select(EmployeeCompensation)
-                .options(defer(EmployeeCompensation.annual_ctc))
+                .options(defer(EmployeeCompensation.annual_ctc))  # type: ignore[arg-type]
                 .where(EmployeeCompensation.tenant_id == tenant_id)
                 .where(EmployeeCompensation.employment_id == emp_uuid)
                 .order_by(col(EmployeeCompensation.effective_from).desc())
@@ -1032,18 +1032,20 @@ async def get_employee_compensation(
         .scalars()
         .all()
     )
-    stored = dict(
-        (
+    stored: dict[UUID, str | None] = {
+        row[0]: row[1]
+        for row in (
             await session.execute(
                 select(
-                    EmployeeCompensation.id, type_coerce(EmployeeCompensation.annual_ctc, Text)
+                    col(EmployeeCompensation.id),
+                    type_coerce(EmployeeCompensation.annual_ctc, Text),
                 ).where(
-                    EmployeeCompensation.tenant_id == tenant_id,
-                    EmployeeCompensation.employment_id == emp_uuid,
+                    col(EmployeeCompensation.tenant_id) == tenant_id,
+                    col(EmployeeCompensation.employment_id) == emp_uuid,
                 )
             )
         ).all()
-    )
+    }
     amounts: dict[UUID, tuple[Decimal | None, str | None]] = {}
     for r in rows:
         try:
@@ -1061,14 +1063,15 @@ async def get_employee_compensation(
     ) or next((r for r in reversed(rows) if r.effective_from > today), None)
     history = await _compensation_responses(session, tenant_id, rows, amounts)
     breakup = breakup_error = None
-    if current is not None and amounts[current.id][0] is None:
+    current_ctc = amounts[current.id][0] if current is not None else None
+    if current is not None and current_ctc is None:
         breakup_error = amounts[current.id][1]
-    elif current is not None:
+    elif current is not None and current_ctc is not None:
         try:
             on = max(current.effective_from, today) if current.effective_to is None else today
             breakup = _breakup_response(
-                amounts[current.id][0],
-                await _breakup_for(session, tenant_id, current, on, amounts[current.id][0]),
+                current_ctc,
+                await _breakup_for(session, tenant_id, current, on, current_ctc),
             )
         except calculator.BreakupError as exc:
             breakup_error = str(exc)
@@ -1134,9 +1137,9 @@ async def set_employee_compensation(
     rows = (
         await session.execute(
             select(
-                EmployeeCompensation.id,
-                EmployeeCompensation.effective_from,
-                EmployeeCompensation.effective_to,
+                col(EmployeeCompensation.id),
+                col(EmployeeCompensation.effective_from),
+                col(EmployeeCompensation.effective_to),
             )
             .where(EmployeeCompensation.tenant_id == tenant_id)
             .where(EmployeeCompensation.employment_id == emp_uuid)
@@ -1172,9 +1175,9 @@ async def set_employee_compensation(
         try:
             before_ctc = (
                 await session.execute(
-                    select(EmployeeCompensation.annual_ctc).where(
-                        EmployeeCompensation.tenant_id == tenant_id,
-                        EmployeeCompensation.id == open_row.id,
+                    select(col(EmployeeCompensation.annual_ctc)).where(
+                        col(EmployeeCompensation.tenant_id) == tenant_id,
+                        col(EmployeeCompensation.id) == open_row.id,
                     )
                 )
             ).scalar_one()
@@ -1183,8 +1186,8 @@ async def set_employee_compensation(
         await session.execute(
             update(EmployeeCompensation)
             .where(
-                EmployeeCompensation.tenant_id == tenant_id,
-                EmployeeCompensation.id == open_row.id,
+                col(EmployeeCompensation.tenant_id) == tenant_id,
+                col(EmployeeCompensation.id) == open_row.id,
             )
             .values(effective_to=body.effective_from)
         )

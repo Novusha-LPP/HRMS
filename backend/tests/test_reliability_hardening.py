@@ -221,7 +221,12 @@ async def test_reset_outbox_retries_provider_failure_without_storing_plain_token
 
 
 @pytest.mark.database
-async def test_unconfigured_recovery_returns_the_same_error_for_known_and_unknown_accounts(api):
+async def test_unconfigured_recovery_returns_the_same_error_for_known_and_unknown_accounts(
+    api, monkeypatch
+):
+    # Pin the settings: a developer's .env with HRMS_DEBUG=true turns recovery on.
+    monkeypatch.setattr(settings, "debug", False)
+    monkeypatch.setattr(settings, "mail_backend", "disabled")
     client, engine = api
     email, _ = await _console(client, engine)
     known = await client.post("/v1/platform/forgot-password", json={"email": email})
