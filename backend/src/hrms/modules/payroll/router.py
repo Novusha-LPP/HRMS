@@ -1002,7 +1002,8 @@ async def _breakup_for(
     )
     calc_lines, _ = await _lines_from_input(session, tenant_id, [_line_input(ln) for ln in lines])
     rules = await rules_at(session, tenant_id, on)
-    return calculator.calculate(Decimal(comp.annual_ctc if amount is None else amount), calc_lines, rules)
+    ctc = comp.annual_ctc if amount is None else amount
+    return calculator.calculate(Decimal(ctc), calc_lines, rules)
 
 
 @router.get(
