@@ -138,7 +138,7 @@ from hrms.modules.leave.schemas import (
     YearEndCloseResponse,
 )
 from hrms.modules.org.models import OrgUnit
-from hrms.modules.people.models import Assignment, Employment, EmploymentState
+from hrms.modules.people.models import Assignment, Employment
 from hrms.modules.policy.engine import resolve_policy
 from hrms.modules.time.holidays import holiday_scope_sql
 
@@ -311,7 +311,9 @@ async def list_balances(
         if resolved is None:
             continue
         bucket_id, _ = resolved
-        bp = await resolve_employee_bucket_policy(session, tenant_id, emp_uuid, bucket_id, today_date)
+        bp = await resolve_employee_bucket_policy(
+            session, tenant_id, emp_uuid, bucket_id, today_date
+        )
         prob_eligible = bp.probation_eligible if bp else True
         is_locked = is_probation and not prob_eligible
         unlock_d = None
@@ -360,7 +362,11 @@ async def list_balances(
                     )
                 )
             elif bp and bp.days_per_year > 0:
-                allocated = bp.days_per_year if bp.accrual_type == "ANNUAL_UPFRONT" else round(bp.days_per_year / 12, 1)
+                allocated = (
+                    bp.days_per_year
+                    if bp.accrual_type == "ANNUAL_UPFRONT"
+                    else round(bp.days_per_year / 12, 1)
+                )
                 results.append(
                     LeaveBalanceResponse(
                         id=f"active-{lt.id}",
@@ -1130,13 +1136,23 @@ async def create_application(
     resolved = await _resolve_bucket_for_type(session, tenant_id, lt, create_if_missing=False)
     bucket_id = resolved[0] if resolved else None
     bp = (
-        await resolve_employee_bucket_policy(session, tenant_id, emp_uuid, bucket_id, body.from_date)
+        await resolve_employee_bucket_policy(
+            session, tenant_id, emp_uuid, bucket_id, body.from_date
+        )
         if bucket_id
         else None
     )
-    apply_sandwich = getattr(lt, "apply_sandwich_rule", False) or (getattr(bp, "apply_sandwich_rule", False) if bp else False)
+    apply_sandwich = getattr(lt, "apply_sandwich_rule", False) or (
+        getattr(bp, "apply_sandwich_rule", False) if bp else False
+    )
     allocation = await _allocate_days(
-        session, tenant_id, emp_uuid, body.from_date, body.to_date, body.half_day_option, apply_sandwich=apply_sandwich
+        session,
+        tenant_id,
+        emp_uuid,
+        body.from_date,
+        body.to_date,
+        body.half_day_option,
+        apply_sandwich=apply_sandwich,
     )
     days = sum(allocation.values())
     await _validate_application(session, tenant_id, emp_uuid, lt, body, days)
@@ -1182,13 +1198,23 @@ async def submit_application(
     resolved = await _resolve_bucket_for_type(session, tenant_id, lt, create_if_missing=False)
     bucket_id = resolved[0] if resolved else None
     bp = (
-        await resolve_employee_bucket_policy(session, tenant_id, app.employment_id, bucket_id, app.from_date)
+        await resolve_employee_bucket_policy(
+            session, tenant_id, app.employment_id, bucket_id, app.from_date
+        )
         if bucket_id
         else None
     )
-    apply_sandwich = getattr(lt, "apply_sandwich_rule", False) or (getattr(bp, "apply_sandwich_rule", False) if bp else False)
+    apply_sandwich = getattr(lt, "apply_sandwich_rule", False) or (
+        getattr(bp, "apply_sandwich_rule", False) if bp else False
+    )
     app.days_by_month = await _allocate_days(
-        session, tenant_id, app.employment_id, app.from_date, app.to_date, app.half_day_option, apply_sandwich=apply_sandwich
+        session,
+        tenant_id,
+        app.employment_id,
+        app.from_date,
+        app.to_date,
+        app.half_day_option,
+        apply_sandwich=apply_sandwich,
     )
     app.days_requested = sum(app.days_by_month.values())
     await _hold_leave_balance(session, tenant_id, principal, app, lt)
@@ -1847,7 +1873,9 @@ async def _allocate_days(
     day = start
     while day <= end:
         policy = await resolve_policy(employment_id, day, session, tenant_id)
-        is_work = (day not in holidays) and is_working_day(day, policy.work_days, policy.saturday_pattern)
+        is_work = (day not in holidays) and is_working_day(
+            day, policy.work_days, policy.saturday_pattern
+        )
         day_status.append((day, is_work))
         day += timedelta(days=1)
 
@@ -1857,13 +1885,13 @@ async def _allocate_days(
 
     allocation: dict[str, float] = {}
     for idx, (curr_day, is_work) in enumerate(day_status):
-        should_count = False
-        if is_work:
-            should_count = True
-        elif apply_sandwich and first_work_idx != -1 and last_work_idx != -1 and first_work_idx < idx < last_work_idx:
-            should_count = True
-
-        if should_count:
+        in_sandwich = (
+            apply_sandwich
+            and first_work_idx != -1
+            and last_work_idx != -1
+            and first_work_idx < idx < last_work_idx
+        )
+        if is_work or in_sandwich:
             key = f"{curr_day.year:04d}-{curr_day.month:02d}"
             qty = 0.5 if (half_day != "NONE" and is_work and len(day_status) == 1) else 1.0
             allocation[key] = allocation.get(key, 0.0) + qty
@@ -1882,7 +1910,11 @@ async def _validate_application(session, tenant_id, employment_id, lt, body, day
         bucket_id = resolved[0] if resolved else None
         bp = (
             await resolve_employee_bucket_policy(
-                session, tenant_id, employment_id, bucket_id, getattr(body, "from_date", now_utc().date())
+                session,
+                tenant_id,
+                employment_id,
+                bucket_id,
+                getattr(body, "from_date", now_utc().date()),
             )
             if bucket_id
             else None
@@ -2755,8 +2787,8 @@ async def deposit_initial_balances_for_assignment(
     q = (
         select(Employment)
         .where(Employment.tenant_id == tenant_id)
-        .where(Employment.archived_at == None)
-        .where(Employment.separation_date == None)
+        .where(col(Employment.archived_at).is_(None))
+        .where(col(Employment.separation_date).is_(None))
     )
     if assignment.employment_id:
         q = q.where(Employment.id == assignment.employment_id)
@@ -2799,6 +2831,7 @@ async def deposit_initial_balances_for_assignment(
                 continue
 
             fy_start_month = await resolve_employee_fy_start_month(session, tenant_id, emp.id)
+            fy_start_year = today.year if today.month >= fy_start_month else today.year - 1
 
             if bp.accrual_type == "ANNUAL_UPFRONT" and bp.days_per_year > 0:
                 already = (
@@ -2809,12 +2842,15 @@ async def deposit_initial_balances_for_assignment(
                         .where(LeaveBalanceTransaction.bucket_id == bp.bucket_id)
                         .where(
                             col(LeaveBalanceTransaction.transaction_type).in_(
-                                [LeaveTransactionType.GRANT.value, LeaveTransactionType.OPENING.value]
+                                [
+                                    LeaveTransactionType.GRANT.value,
+                                    LeaveTransactionType.OPENING.value,
+                                ]
                             )
                         )
                         .where(
                             LeaveBalanceTransaction.effective_date
-                            >= date(today.year if today.month >= fy_start_month else today.year - 1, fy_start_month, 1)
+                            >= date(fy_start_year, fy_start_month, 1)
                         )
                     )
                 ).scalar()
@@ -2843,7 +2879,10 @@ async def deposit_initial_balances_for_assignment(
                         .where(LeaveBalanceTransaction.tenant_id == tenant_id)
                         .where(LeaveBalanceTransaction.employment_id == emp.id)
                         .where(LeaveBalanceTransaction.bucket_id == bp.bucket_id)
-                        .where(LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value)
+                        .where(
+                            LeaveBalanceTransaction.transaction_type
+                            == LeaveTransactionType.ACCRUAL.value
+                        )
                         .where(LeaveBalanceTransaction.effective_date == first_of_month)
                     )
                 ).scalar()
@@ -2893,7 +2932,9 @@ async def deposit_initial_balances_for_employee(
         employment_id=employment_id,
         effective_from=today,
     )
-    return await deposit_initial_balances_for_assignment(session, tenant_id, dummy_asgn, recorded_by)
+    return await deposit_initial_balances_for_assignment(
+        session, tenant_id, dummy_asgn, recorded_by
+    )
 
 
 # ─── Unified 1-Screen Policy Endpoints ────────────────────────────────────────
@@ -2916,8 +2957,8 @@ async def list_unified_policies(
         await session.execute(
             select(LeaveType)
             .where(LeaveType.tenant_id == tenant_id)
-            .where(LeaveType.is_comp_off == False)
-            .where(LeaveType.archived_at == None)
+            .where(col(LeaveType.is_comp_off).is_(False))
+            .where(col(LeaveType.archived_at).is_(None))
             .order_by(LeaveType.name)
         )
     ).scalars().all()
@@ -2952,17 +2993,21 @@ async def list_unified_policies(
         await session.execute(
             select(LeavePolicyAssignment)
             .where(LeavePolicyAssignment.tenant_id == tenant_id)
-            .where(LeavePolicyAssignment.archived_at == None)
+            .where(col(LeavePolicyAssignment.archived_at).is_(None))
         )
     ).scalars().all()
-    asgn_by_pset: dict[UUID, LeavePolicyAssignment] = {a.leave_policy_set_id: a for a in assignments}
+    asgn_by_pset: dict[UUID, LeavePolicyAssignment] = {
+        a.leave_policy_set_id: a for a in assignments
+    }
 
     # Org units lookup
     org_units = {
         ou.id: ou.name
         for ou in (
             await session.execute(
-                select(OrgUnit).where(OrgUnit.tenant_id == tenant_id).where(OrgUnit.archived_at == None)
+                select(OrgUnit)
+                .where(OrgUnit.tenant_id == tenant_id)
+                .where(col(OrgUnit.archived_at).is_(None))
             )
         ).scalars().all()
     }
@@ -2990,10 +3035,17 @@ async def list_unified_policies(
                 name=lt.name,
                 code=lt.code,
                 days_per_year=bp.days_per_year if bp else lt.days_per_year,
-                accrual_type=bp.accrual_type if bp else ("MONTHLY_PRORATE" if lt.accrual_enabled else "ANNUAL_UPFRONT"),
+                accrual_type=(
+                    bp.accrual_type
+                    if bp
+                    else ("MONTHLY_PRORATE" if lt.accrual_enabled else "ANNUAL_UPFRONT")
+                ),
                 org_unit_id=ou_id_str,
                 org_unit_name=ou_name,
-                apply_sandwich_rule=bool(getattr(lt, "apply_sandwich_rule", False) or (getattr(bp, "apply_sandwich_rule", False) if bp else False)),
+                apply_sandwich_rule=bool(
+                    getattr(lt, "apply_sandwich_rule", False)
+                    or (getattr(bp, "apply_sandwich_rule", False) if bp else False)
+                ),
                 probation_eligible=bp.probation_eligible if bp else False,
                 carry_forward=lt.carry_forward,
                 max_carry_forward_days=lt.max_carry_forward_days,
@@ -3036,7 +3088,7 @@ async def create_or_update_unified_policy(
                     func.lower(LeaveType.name) == name.lower(),
                 )
             )
-            .where(LeaveType.archived_at == None)
+            .where(col(LeaveType.archived_at).is_(None))
         )
     ).scalars().first()
 
@@ -3172,7 +3224,7 @@ async def create_or_update_unified_policy(
                 select(LeavePolicyAssignment)
                 .where(LeavePolicyAssignment.tenant_id == tenant_id)
                 .where(LeavePolicyAssignment.org_unit_id == ou_uuid)
-                .where(LeavePolicyAssignment.archived_at == None)
+                .where(col(LeavePolicyAssignment.archived_at).is_(None))
             )
         ).scalars().first()
 

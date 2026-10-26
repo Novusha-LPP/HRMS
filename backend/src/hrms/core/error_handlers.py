@@ -238,7 +238,10 @@ async def integrity_error_handler(
     detail_msg = CONSTRAINT_MESSAGES.get(str(constraint))
     if not detail_msg:
         detail_msg = (
-            f"Database conflict on constraint '{constraint}': {getattr(cause, 'detail', str(exc.orig))}"
+            (
+                f"Database conflict on constraint '{constraint}': "
+                f"{getattr(cause, 'detail', str(exc.orig))}"
+            )
             if not settings.is_deployed
             else "This change conflicts with an existing record or references a missing record"
         )
