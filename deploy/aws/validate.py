@@ -93,7 +93,9 @@ def validate_settings(runtime: dict, migrate: dict, deploy: dict) -> None:
             if not key_id or key_id == "dev" or key_id in ids:
                 raise ValueError()
             ids.add(key_id)
-            if len(base64.b64decode(material, altchars=b"-_", validate=True)) != 32:
+            if len(base64.b64decode(
+                material + "=" * (-len(material) % 4), altchars=b"-_", validate=True
+            )) != 32:
                 raise ValueError()
     except (KeyError, ValueError):
         raise ValueError("Set valid, unique HRMS_FIELD_ENCRYPTION_KEYS with 32-byte keys") from None
@@ -110,20 +112,19 @@ def validate_settings(runtime: dict, migrate: dict, deploy: dict) -> None:
             raise ValueError(f"{where}: key id {key_id!r} is 'dev' or listed twice")
         pay_ids.add(key_id)
         try:
-            raw = base64.b64decode(material, altchars=b"-_", validate=True)
+            raw = base64.b64decode(
+                material + "=" * (-len(material) % 4), altchars=b"-_", validate=True
+            )
         except ValueError:
             # Describe the shape only, never the secret itself.
             bad = sorted({c for c in material if not re.fullmatch(r"[A-Za-z0-9_=-]", c)})
             parts = [f"{len(material)} characters after the id"]
-            if len(material) % 4:
-                parts.append("not a multiple of 4, so the '=' padding is missing")
             if bad:
                 parts.append("illegal characters: " + " ".join(repr(c) for c in bad))
             shape = ", ".join(parts)
             raise ValueError(
                 f"{where} is not base64url ({shape}): remove spaces, quotes, a trailing "
-                "newline or a 'NAME=' prefix; use base64.urlsafe_b64encode, which keeps the "
-                "'=' padding"
+                "newline or a 'NAME=' prefix"
             ) from None
         if len(raw) != 32:
             raise ValueError(f"{where} decodes to {len(raw)} bytes, not 32")
