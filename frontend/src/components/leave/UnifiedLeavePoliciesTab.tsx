@@ -178,7 +178,7 @@ export function UnifiedLeavePoliciesTab({
               <Shield size={18} className="text-primary" /> Leave policies
             </h3>
             <p className="text-xs text-fg-subtle">
-              Unified 1-screen setup: Quota, accrual schedule, department assignment, and sandwich rules.
+              Configure leave quotas, accrual schedules, department assignments, and policy rules.
             </p>
           </div>
           <button className="btn-primary" onClick={openCreate}>
