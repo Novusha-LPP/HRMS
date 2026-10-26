@@ -23,7 +23,7 @@ What differs from the October import, because the history is messier:
 
 Run from backend:
   .venv/bin/python scripts/migrate_exim_punch_history.py --tenant suraj-group \
-      --punches "exim.attendancepunches copy.json"
+      --punches "exim.attendancepunches.json"
 Add --apply to commit.
 """
 
@@ -119,7 +119,7 @@ async def prepare(session, tenant_ref, data_dir, punches_file, company="suraj", 
             stats["unresolved_samples"].append({"punch_id": sid, "reason": reason})
 
     users = {
-        unwrap(r["_id"]): r for r in json.loads((data_dir / "exim.users copy.json").read_text())
+        unwrap(r["_id"]): r for r in json.loads((data_dir / "exim.users.json").read_text())
     }
     punches = json.loads((data_dir / punches_file).read_text())
     rows = (
@@ -365,7 +365,7 @@ async def main():
     parser = argparse.ArgumentParser(description=__doc__)
     parser.add_argument("--tenant", required=True)
     parser.add_argument("--data-dir", type=Path, default=ROOT)
-    parser.add_argument("--punches", default="exim.attendancepunches copy.json")
+    parser.add_argument("--punches", default="exim.attendancepunches.json")
     parser.add_argument("--company", choices=["suraj", "rabs"], default="suraj")
     parser.add_argument(
         "--decisions", type=Path, help="JSON with {'same': {exim id: employee code}}"

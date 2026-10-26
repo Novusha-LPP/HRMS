@@ -95,7 +95,7 @@ async def migrate(session, args):
     wanted = set(decisions.get("create", []))
     users = {
         unwrap(u["_id"]): u
-        for u in json.loads((args.data_dir / "exim.users copy.json").read_text())
+        for u in json.loads((args.data_dir / "exim.users.json").read_text())
     }
     stats = new_stats(
         requested=len(wanted),

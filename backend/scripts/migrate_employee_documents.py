@@ -19,6 +19,12 @@ Run from backend:
   .venv/bin/python scripts/migrate_employee_documents.py --tenant <rabs> --source exim-rabs \
       --decisions rabs_decisions.json
 Add --apply to import; --limit N takes only the first N files (for a trial).
+
+--repair: for documents already recorded whose stored file cannot be opened here (saved under a
+key this environment does not have, or missing from the store), download the file again from its
+old address and save it under the SAME reference with this environment's key. The database row
+is kept (size and type refreshed), and the photo's cached thumbnails are dropped so they are
+made again. A file that is gone from the old bucket is reported and left alone.
 """
 
 import argparse
@@ -40,6 +46,7 @@ from sqlalchemy.ext.asyncio import AsyncSession, create_async_engine
 from hrms import model_registry  # noqa: F401  (load tenant-aware model metadata for standalone CLI)
 from hrms.core import document_store
 from hrms.core.config import settings
+from hrms.modules.kyc import photo
 from hrms.modules.kyc.models import DocumentStatus, DocumentType, EmployeeKycDocument
 
 ROOT = Path(__file__).resolve().parents[2]
@@ -178,6 +185,8 @@ async def migrate(session, args):
         "imported": Counter(),
         "bytes": 0,
         "skipped": Counter(),
+        "unreadable": Counter(),
+        "repaired": Counter(),
         "follow_up": [],
     }
     accounts = (
@@ -211,7 +220,7 @@ async def migrate(session, args):
         )
         resolve = lambda f: by_code.get(f["owner"].lower())  # noqa: E731
     else:
-        users = json.loads((args.data_dir / "exim.users copy.json").read_text())
+        users = json.loads((args.data_dir / "exim.users.json").read_text())
         files = list(exim_files(users, rabs=args.source == "exim-rabs"))
 
         def resolve(f):
@@ -223,14 +232,19 @@ async def migrate(session, args):
     if args.limit:
         files = files[: args.limit]
     stats["planned"] = len(files)
-    known = {
-        r[0]
+    known_rows = {
+        r[0]: (r[1], r[2])
         for r in (
             await session.execute(
-                text("SELECT id FROM employee_kyc_documents WHERE tenant_id = :tid"), {"tid": tid}
+                text(
+                    "SELECT id, storage_path, document_type FROM employee_kyc_documents "
+                    "WHERE tenant_id = :tid"
+                ),
+                {"tid": tid},
             )
         ).all()
     }
+    known = set(known_rows)
     has_photo = {
         r[0]
         for r in (
@@ -253,6 +267,15 @@ async def migrate(session, args):
         key = f"{f['source']}:{f['owner']}:{f['field']}:{f['index']}:{path}"
         f["id"] = source_uuid(tid, "employee-document", key)
         if f["id"] in known:
+            if args.repair:
+                path_ref, doc_type = known_rows[f["id"]]
+                try:
+                    document_store.load(path_ref)
+                except Exception as exc:  # noqa: BLE001 - any failure to open means "repair it"
+                    stats["unreadable"][type(exc).__name__] += 1
+                    f["repair"] = (path_ref, doc_type)
+                    per_employee.setdefault(employment, []).append(f)
+                    continue
             stats["already_imported"] += 1
             continue
         if f["type"] == DocumentType.PHOTO and employment in has_photo:
@@ -263,10 +286,46 @@ async def migrate(session, args):
     return tid, per_employee, stats
 
 
+async def repair_one(session, tid, f, stats):
+    path_ref, doc_type = f["repair"]
+    data, reason = fetch(f["url"])
+    if data is None:
+        stats["skipped"][f"cannot repair: {reason}"] += 1
+        stats["follow_up"].append({"code": f["code"], "field": f["field"], "reason": reason})
+        return
+    mime = mime_of(data)
+    if mime is None:
+        stats["skipped"]["cannot repair: unsupported file type"] += 1
+        stats["follow_up"].append(
+            {"code": f["code"], "field": f["field"], "reason": "unsupported file type"}
+        )
+        return
+    document_store.save(path_ref[len(document_store.REF_PREFIX) :], data)
+    await session.execute(
+        text(
+            "UPDATE employee_kyc_documents SET file_size = :n, mime_type = :m "
+            "WHERE tenant_id = :tid AND id = :id"
+        ),
+        {"n": len(data), "m": mime, "tid": tid, "id": f["id"]},
+    )
+    if doc_type == "PHOTO":
+        # Thumbnails kept under an old key cannot be opened either; they are made again on demand.
+        for ref in (photo.thumbnail_ref(tid, f["id"]), photo.large_ref(tid, f["id"])):
+            try:
+                document_store.remove(ref)
+            except Exception:  # noqa: BLE001 - a stale thumbnail is replaced when next unreadable
+                stats["skipped"]["old thumbnail not removed"] += 1
+    stats["repaired"][doc_type] += 1
+    stats["bytes"] += len(data)
+
+
 async def import_employee(session, tid, employment, files, stats):
     saved = []
     try:
         for f in files:
+            if f.get("repair"):
+                await repair_one(session, tid, f, stats)
+                continue
             data, reason = fetch(f["url"])
             if data is None:
                 stats["skipped"][reason] += 1
@@ -321,6 +380,9 @@ async def main():
         "--decisions", type=Path, help="JSON with {'same': {exim id: employee code}}"
     )
     parser.add_argument("--limit", type=int, default=0)
+    parser.add_argument(
+        "--repair", action="store_true", help="re-save documents whose stored file cannot be opened"
+    )
     parser.add_argument("--apply", action="store_true")
     parser.add_argument("--report", type=Path, default=Path("/tmp/hrms-documents.json"))
     args = parser.parse_args()

@@ -80,7 +80,7 @@ async def migrate(session, tenant_ref, data_dir, company="suraj", decisions=None
         "approver_not_recorded": 0,
     }
     users = {
-        unwrap(r["_id"]): r for r in json.loads((data_dir / "exim.users copy.json").read_text())
+        unwrap(r["_id"]): r for r in json.loads((data_dir / "exim.users.json").read_text())
     }
     rows = (
         (

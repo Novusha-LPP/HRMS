@@ -353,7 +353,9 @@ def map_suraj_role(
     if designation is None and department is None and not is_hod:
         if key in SURAJ_KNOWN_ROLES:
             return SURAJ_KNOWN_ROLES[key], recognised
-        return Access(role_name, scope_type, SURAJ_EMPLOYEE.job, SURAJ_EMPLOYEE.department), recognised
+        return Access(
+            role_name, scope_type, SURAJ_EMPLOYEE.job, SURAJ_EMPLOYEE.department
+        ), recognised
 
     job = clean_designation(designation)
     dept = clean_department(department)
@@ -904,15 +906,13 @@ async def _upsert_kyc(ctx: Context, rec: ImportRecord, employment_id: UUID, pers
     """Create the KYC record, or fill its blanks. Returns how many rows changed."""
     # Raw SQL bypasses the models' EncryptedString columns: encrypt those values here, or the
     # imported identifiers would land in plain text (core/field_crypto.py).
-    from hrms.core.field_crypto import write_cipher
+    from hrms.core.field_crypto import FieldCryptoError, write_cipher
     from hrms.deploy import ENCRYPTED_COLUMNS
 
     protected = ENCRYPTED_COLUMNS["employee_kyc_records"]
     c = write_cipher()
     values = {
-        k: (c.encrypt(str(v), k) if c and k in protected else v)
-        for k, v in rec.kyc.items()
-        if v
+        k: (c.encrypt(str(v), k) if c and k in protected else v) for k, v in rec.kyc.items() if v
     }
     if not values:
         return 0
@@ -927,9 +927,42 @@ async def _upsert_kyc(ctx: Context, rec: ImportRecord, employment_id: UUID, pers
         )
     ).fetchone()
     if existing:
-        # Fill blanks only: whatever HR or the employee has since entered stays.
-        sets = ", ".join(f"{k} = COALESCE({k}, CAST(:{k} AS varchar))" for k in values)
-        blanks = " OR ".join(f"{k} IS NULL" for k in values)
+        # Fill blanks only: whatever HR or the employee has since entered stays. The one
+        # exception is a protected value saved under a key this environment does not have: it
+        # can never be shown (the app prints "[unreadable ...]"), so it is replaced by the
+        # source value, encrypted under the active key.
+        unreadable = set()
+        protected_here = [k for k in values if k in protected]
+        if c and protected_here:
+            stored = (
+                (
+                    await ctx.session.execute(
+                        text(
+                            f"SELECT {', '.join(protected_here)} FROM employee_kyc_records "
+                            "WHERE tenant_id = :tid AND id = :kid"
+                        ),
+                        {"tid": tid, "kid": str(existing[0])},
+                    )
+                )
+                .mappings()
+                .one()
+            )
+            for k in protected_here:
+                if stored[k]:
+                    try:
+                        c.decrypt(stored[k], k)
+                    except FieldCryptoError:
+                        unreadable.add(k)
+        ctx.stats["kyc_values_re_encrypted"] = ctx.stats.get("kyc_values_re_encrypted", 0) + len(
+            unreadable
+        )
+        sets = ", ".join(
+            f"{k} = CAST(:{k} AS varchar)"
+            if k in unreadable
+            else f"{k} = COALESCE({k}, CAST(:{k} AS varchar))"
+            for k in values
+        )
+        blanks = " OR ".join("true" if k in unreadable else f"{k} IS NULL" for k in values)
         result = await ctx.session.execute(
             text(
                 f"UPDATE employee_kyc_records SET {sets} "
