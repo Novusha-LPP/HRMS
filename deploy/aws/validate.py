@@ -112,9 +112,18 @@ def validate_settings(runtime: dict, migrate: dict, deploy: dict) -> None:
         try:
             raw = base64.b64decode(material, altchars=b"-_", validate=True)
         except ValueError:
+            # Describe the shape only, never the secret itself.
+            bad = sorted({c for c in material if not re.fullmatch(r"[A-Za-z0-9_=-]", c)})
+            parts = [f"{len(material)} characters after the id"]
+            if len(material) % 4:
+                parts.append("not a multiple of 4, so the '=' padding is missing")
+            if bad:
+                parts.append("illegal characters: " + " ".join(repr(c) for c in bad))
+            shape = ", ".join(parts)
             raise ValueError(
-                f"{where} is not base64url: remove spaces, quotes, a trailing newline "
-                "or a 'NAME=' prefix"
+                f"{where} is not base64url ({shape}): remove spaces, quotes, a trailing "
+                "newline or a 'NAME=' prefix; use base64.urlsafe_b64encode, which keeps the "
+                "'=' padding"
             ) from None
         if len(raw) != 32:
             raise ValueError(f"{where} decodes to {len(raw)} bytes, not 32")

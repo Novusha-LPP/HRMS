@@ -248,11 +248,23 @@ async def test_a_lost_key_blocks_neither_the_list_nor_new_salaries(api, monkeypa
     assert listed[second["id"]]["annual_ctc"] == "900000.00" and not listed[second["id"]]["error"]
     assert listed[first["id"]]["annual_ctc"] is None
     assert "pay-1" in listed[first["id"]]["error"]
-    # The single record says why, with a code the screen can act on.
-    r = await client.get(f"/v1/payroll/employees/{first['id']}/compensation")
-    assert r.status_code == 409 and r.json()["code"] == "ENCRYPTION_KEY_UNAVAILABLE"
-    assert "pay-1" in r.json()["detail"]
+    # The single record says why, per row, instead of failing as a whole.
+    one = await ok(client, "GET", f"/v1/payroll/employees/{first['id']}/compensation")
+    assert one["current"]["annual_ctc"] is None and "pay-1" in one["current"]["error"]
+    assert one["breakup"] is None and "pay-1" in one["breakup_error"]
     # The new employee is unaffected.
     assert (await ok(client, "GET", f"/v1/payroll/employees/{second['id']}/compensation"))[
         "current"
     ]["annual_ctc"] == "900000.00"
+
+    # HR can enter the salary again, and the old, unreadable one stays in the history.
+    await ok(
+        client,
+        "POST",
+        f"/v1/payroll/employees/{first['id']}/compensation",
+        json={**body, "annual_ctc": "700000", "effective_from": "2021-01-01"},
+    )
+    detail = await ok(client, "GET", f"/v1/payroll/employees/{first['id']}/compensation")
+    assert detail["current"]["annual_ctc"] == "700000.00" and detail["breakup"]
+    old = next(h for h in detail["history"] if h["effective_from"] == "2020-01-01")
+    assert old["annual_ctc"] is None and "pay-1" in old["error"]
