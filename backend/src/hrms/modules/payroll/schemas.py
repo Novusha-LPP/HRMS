@@ -170,7 +170,8 @@ class CompensationResponse(BaseModel):
     employment_id: str
     structure_id: str
     structure_name: str
-    annual_ctc: Decimal
+    annual_ctc: Decimal | None
+    error: str | None = None
     currency: str
     effective_from: date
     effective_to: date | None
