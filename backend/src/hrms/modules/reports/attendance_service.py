@@ -21,6 +21,7 @@ from hrms.modules.reports.attendance_schemas import (
     AttendanceSummaryReport,
     AttendanceSummaryTotals,
 )
+from hrms.modules.time.groups import group_on, group_spans
 from hrms.modules.time.holidays import holiday_scope_sql
 from hrms.modules.time.presence import classify
 
@@ -136,6 +137,7 @@ def summarize_days(days: list[AttendanceSummaryDay]) -> AttendanceSummaryMetrics
         m.total_work_minutes += day.effective_minutes
         m.late_days += day.late_by_minutes > 0 or day.status == "LATE"
         m.early_departure_days += day.early_departure_minutes > 0
+        m.not_marked_days += day.status == "NOT_MARKED"
     # The reference calls paid-equivalent days "Total Working Days": weekly off,
     # holiday and paid leave are included; absence and LWP are excluded.
     m.total_working_days = (
@@ -446,6 +448,8 @@ async def build_attendance_summary(
         leave_map[row["employment_id"]].append(row)
     for row in ledgers:
         ledger_map[row["employment_id"]].append(row)
+    # People whose attendance is marked (time/groups.py): a gap there is not an absence.
+    group_map = await group_spans(session, tenant_id, [p["id"] for p in people], first, last)
     policies = {
         day: ReportPolicyResolver(session, tenant_id, day)
         for day in (first + timedelta(days=i) for i in range((last - first).days + 1))
@@ -491,16 +495,21 @@ async def build_attendance_summary(
                 return sum(0.5 if r["half_day_option"] != "NONE" else 1 for r in rows)
 
             ad = ad_map.get((eid, day))
+            marked = group_on(group_map.get(eid), day) is not None
             if ad and ad["first_punch_in"]:
                 state = ad["status"]
             elif eligible_leave:
                 state = "ON_LEAVE"
+            elif marked and ad and ad["status_override"]:
+                state = ad["status"]  # marked present / absent (time/marking.py)
             elif holiday:
                 state = "HOLIDAY"
             elif not working:
                 state = "WEEKEND"
             elif day > business_today(policy.timezone):
                 state = "UPCOMING"
+            elif marked:
+                state = "NOT_MARKED"
             else:
                 state = ad["status"] if ad and ad["status"] != "PENDING" else "ABSENT"
             display_status = state.replace("_", " ").title()

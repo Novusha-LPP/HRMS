@@ -54,6 +54,7 @@ erDiagram
     user_accounts ||--o{ approval_delegations : delegate_user_id
     user_accounts ||--o{ approval_delegations : original_user_id
     user_accounts ||--o{ approval_events : actor_user_id
+    user_accounts ||--o{ attendance_group_access : user_account_id
     user_accounts ||--o{ correction_approval_actions : approver_user_account_id
     user_accounts ||--o{ daily_report_snapshots : user_id
     user_accounts ||--o{ dashboard_layouts : user_account_id
@@ -131,6 +132,7 @@ erDiagram
     locations ||--o{ assignments : location_id
     org_units ||--o{ assignments : org_unit_id
     positions ||--o{ assignments : position_id
+    legal_entities ||--o{ attendance_groups : legal_entity_id
     legal_entities ||--o{ employee_id_schemes : legal_entity_id
     legal_entities ||--o{ employee_policy_assignments : legal_entity_id
     org_units ||--o{ employee_policy_assignments : org_unit_id
@@ -237,6 +239,8 @@ erDiagram
     positions ||--o{ assignments : position_id
     employments ||--o{ attendance_correction_requests : employment_id
     employments ||--o{ attendance_days : employment_id
+    employments ||--o{ attendance_group_members : employment_id
+    employments ||--o{ attendance_marks : employment_id
     employments ||--o{ comp_off_grants : employment_id
     employments ||--o{ company_transfers : from_employment_id
     persons ||--o{ company_transfers : person_id
@@ -823,6 +827,32 @@ erDiagram
 
 ```mermaid
 erDiagram
+    attendance_group_access {
+        uuid tenant_id PK
+        uuid id PK
+        uuid group_id FK
+        uuid user_account_id FK
+        uuid created_by FK
+    }
+    attendance_group_members {
+        uuid tenant_id PK
+        uuid id PK
+        uuid group_id FK
+        uuid employment_id FK
+        uuid created_by FK
+    }
+    attendance_groups {
+        uuid tenant_id PK
+        uuid id PK
+        uuid legal_entity_id FK
+        uuid created_by FK
+    }
+    attendance_marks {
+        uuid tenant_id PK
+        uuid id PK
+        uuid employment_id FK
+        uuid marked_by FK
+    }
     company_transfers {
         uuid tenant_id PK
         uuid id PK
@@ -877,6 +907,12 @@ erDiagram
         uuid approved_by FK
         uuid created_by FK
     }
+    attendance_groups ||--o{ attendance_group_access : group_id
+    user_accounts ||--o{ attendance_group_access : user_account_id
+    employments ||--o{ attendance_group_members : employment_id
+    attendance_groups ||--o{ attendance_group_members : group_id
+    legal_entities ||--o{ attendance_groups : legal_entity_id
+    employments ||--o{ attendance_marks : employment_id
     employments ||--o{ company_transfers : from_employment_id
     persons ||--o{ company_transfers : person_id
     employments ||--o{ company_transfers : to_employment_id
@@ -910,6 +946,10 @@ erDiagram
 | `assignments` | People | Where an employment sits over time (unit, location, job, grade, position). No overlaps; effective_to is exclusive. |
 | `attendance_correction_requests` | Time and attendance | A request to correct a day's attendance, and its status. |
 | `attendance_days` | Time and attendance | The calculated attendance of one employee on one work date. |
+| `attendance_group_access` | Other | Who may see an attendance group's daily sheet (VIEW) or also mark it (MARK), granted per group by HR. |
+| `attendance_group_members` | Other | Who is in which attendance group and from when; effective_to is the first day they are no longer in it. A person is in at most one group on any day. |
+| `attendance_groups` | Other | Groups of people whose attendance is marked, not punched (guards, drivers, cleaners): a name, optionally the one company it belongs to, retired by archiving. |
+| `attendance_marks` | Other | Every time a marked day was set or cleared: the employee and date, the status (NULL: cleared) and any in/out times set, who did it, when, through what, and why. |
 | `auth_throttle` | Platform and access | Failed-attempt counters and lockouts for sign-in and similar endpoints. |
 | `candidates` | Recruitment | People who applied or were sourced. |
 | `comp_off_grants` | Time and attendance | Compensatory leave earned for working on an off day. |

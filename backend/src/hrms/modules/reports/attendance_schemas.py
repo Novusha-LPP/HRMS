@@ -24,6 +24,8 @@ class AttendanceSummaryMetrics(BaseModel):
     average_hours_per_day: float | None = None
     late_days: int = 0
     early_departure_days: int = 0
+    # Working days of people whose attendance is marked (time/marking.py) that nobody marked.
+    not_marked_days: int = 0
 
 
 class AttendanceSummaryDay(BaseModel):

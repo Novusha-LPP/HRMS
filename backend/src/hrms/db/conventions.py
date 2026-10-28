@@ -39,6 +39,7 @@ PLATFORM_ONLY = frozenset(
 # Deletes that cascade from a parent (candidate erasure) run as the table owner, not hrms_app.
 APPEND_ONLY = frozenset(
     {
+        "attendance_marks",
         "entity_change_log",
         "kyc_access_log",
         "leave_balance_transactions",
@@ -175,6 +176,9 @@ DOMAINS: dict[str, str | tuple[str, ...]] = {
     # pending_status) store the plain form instead of PENDING_L4, PENDING_L5, ...
     "attendance_correction_requests.status": (_CORRECTIONS + "CorrectionStatus", "PENDING"),
     "attendance_days.ot_status": "hrms.modules.time.models:OvertimeStatus",
+    "attendance_group_access.access_level": "hrms.modules.time.models:GroupAccess",
+    "attendance_marks.source": "hrms.modules.time.models:MarkSource",
+    "attendance_marks.status": "hrms.modules.time.models:MarkStatus",
     "attendance_days.status": "hrms.modules.time.models:AttendanceStatus",
     "employee_kyc_documents.document_type": "hrms.modules.kyc.models:DocumentType",
     "employee_kyc_documents.status": "hrms.modules.kyc.models:DocumentStatus",
@@ -279,7 +283,13 @@ DOMAIN_EXEMPT = {
 # (a change closes the old row the day before). A no-overlap constraint must use the matching
 # range bounds, '[)' or '[]', or it lets two rows apply on the handover day.
 EFFECTIVE_END_EXCLUSIVE = frozenset(
-    {"assignments", "assignment_managers", "employee_compensations", "statutory_rules"}
+    {
+        "assignments",
+        "assignment_managers",
+        "attendance_group_members",
+        "employee_compensations",
+        "statutory_rules",
+    }
 )
 EFFECTIVE_END_INCLUSIVE = frozenset(
     {"employee_policy_assignments", "leave_policy_assignments", "holiday_calendar_assignments"}

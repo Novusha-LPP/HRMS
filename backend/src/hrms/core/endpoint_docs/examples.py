@@ -63,6 +63,32 @@ REQUEST_EXAMPLES: dict[str, dict[str, Any]] = {
         ],
         "reason": "Biometric device was offline",
     },
+    "mark_day": {
+        "marks": [
+            {"employment_id": "emp_driver_1", "status": "PRESENT"},
+            {
+                "employment_id": "emp_guard_1",
+                "status": "PRESENT",
+                "punch_in": "20:00",
+                "punch_out": "08:00",
+            },
+            {"employment_id": "emp_driver_2", "status": "ABSENT", "remark": "Not at the depot"},
+        ],
+        "remark": "Daily roll call",
+    },
+    "create_group": {"name": "Guards", "description": "Gate and site security"},
+    "add_members": {
+        "employment_ids": ["emp_guard_1", "emp_guard_2"],
+        "effective_from": "2026-11-01",
+    },
+    "grant_access": {"access_level": "MARK"},
+    "record_leave": {
+        "employment_id": "emp_...",
+        "leave_type_id": "lt_...",
+        "from_date": "2026-10-20",
+        "to_date": "2026-10-22",
+        "reason": "Family function",
+    },
     "create_application": {
         "leave_type_id": "lt_...",
         "from_date": "2026-10-20",
