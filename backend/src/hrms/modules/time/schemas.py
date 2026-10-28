@@ -408,3 +408,171 @@ class CalendarDaysSet(BaseModel):
     """The calendar's complete selection from the holiday list."""
 
     holidays: list[CalendarDayChoice] = Field(default_factory=list, max_length=200)
+
+
+# ─── Marked attendance (time/marking.py) ─────────────────────────────────────
+
+
+class MarkInfo(BaseModel):
+    status: str | None  # PRESENT / ABSENT, or None when the mark was cleared
+    punch_in: datetime | None = None
+    punch_out: datetime | None = None
+    remark: str | None
+    marked_by: str | None
+    marked_at: datetime
+    source: str
+
+
+class MarkingRow(BaseModel):
+    employment_id: str
+    employee_number: str | None
+    name: str
+    company: str
+    department: str | None
+    group_id: str
+    group_name: str
+    # What the caller may do with this person's day: MARK or VIEW.
+    access: Literal["VIEW", "MARK"]
+    # PRESENT / ABSENT (marked), NOT_MARKED, ON_LEAVE, HOLIDAY, WEEKEND, UPCOMING,
+    # OFF_DAY_WORKED (marked present on a day off), or a punched day's own status.
+    status: str
+    is_off_day: bool
+    holiday_name: str | None = None
+    leave_type: str | None = None
+    # The person's own punches (a day with them is computed from them and can't be marked).
+    has_punches: bool = False
+    # Times a marker entered: the day's hours, lateness and overtime come from them.
+    punch_in: datetime | None = None
+    punch_out: datetime | None = None
+    worked_minutes: int = 0
+    late_by_minutes: int = 0
+    # The person's policy clock: times are entered and shown on it.
+    timezone: str = "Asia/Kolkata"
+    is_locked: bool = False
+    can_mark: bool
+    blocked_reason: str | None = None
+    mark: MarkInfo | None = None
+
+
+class MarkingResponse(BaseModel):
+    work_date: date
+    rows: list[MarkingRow]
+    counts: dict[str, int]
+
+
+class MarkEntry(BaseModel):
+    employment_id: str
+    # None clears the mark: the day goes back to "Not marked".
+    status: Literal["PRESENT", "ABSENT"] | None
+    # Optional times on the person's own clock (policy timezone), "HH:MM". With times the day
+    # counts like punches (hours, late, half day, overtime). An out time not after the in time
+    # is the next morning (night shift). Times need status PRESENT.
+    punch_in: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    punch_out: str | None = Field(default=None, pattern=r"^([01]\d|2[0-3]):[0-5]\d$")
+    remark: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def times_go_with_present(self):
+        if self.punch_out and not self.punch_in:
+            raise ValueError("An out time needs an in time")
+        if self.punch_in and self.status != "PRESENT":
+            raise ValueError("Times can only be given with status PRESENT")
+        if self.punch_out and self.punch_out == self.punch_in:
+            raise ValueError("The out time can't be the same as the in time")
+        return self
+
+
+class MarkingUpdate(BaseModel):
+    marks: list[MarkEntry] = Field(min_length=1, max_length=500)
+    # Used for every row that has no remark of its own.
+    remark: str | None = Field(default=None, max_length=500)
+
+    @model_validator(mode="after")
+    def one_row_per_person(self):
+        ids = [m.employment_id for m in self.marks]
+        if len(ids) != len(set(ids)):
+            raise ValueError("Each employee can appear only once")
+        return self
+
+
+class MarkingResult(BaseModel):
+    work_date: date
+    changed: int
+    unchanged: int
+    rows: list[MarkingRow]
+
+
+class MarkingLeaveType(BaseModel):
+    id: str
+    name: str
+    code: str
+    is_paid: bool
+
+
+class MarkingLeaveRequest(BaseModel):
+    employment_id: str
+    leave_type_id: str
+    from_date: date
+    to_date: date
+    half_day_option: Literal["NONE", "FIRST_HALF", "SECOND_HALF"] = "NONE"
+    reason: str | None = Field(default=None, max_length=1000)
+
+    @model_validator(mode="after")
+    def validate_dates(self):
+        if self.to_date < self.from_date:
+            raise ValueError("to_date must not precede from_date")
+        if (self.to_date - self.from_date).days > 92:
+            raise ValueError("Record at most 93 days of leave at a time")
+        if self.half_day_option != "NONE" and self.to_date != self.from_date:
+            raise ValueError("Half-day leave must cover exactly one date")
+        return self
+
+
+class AttendanceGroupCreate(BaseModel):
+    name: str = Field(min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    # Only people of this company can join, if set.
+    legal_entity_id: str | None = None
+
+
+class AttendanceGroupUpdate(BaseModel):
+    name: str | None = Field(default=None, min_length=1, max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    legal_entity_id: str | None = None
+
+
+class AttendanceGroupResponse(BaseModel):
+    id: str
+    name: str
+    description: str | None
+    legal_entity_id: str | None
+    company: str | None
+    member_count: int
+    # What the caller may do: MARK (also everything HR managing groups can), VIEW.
+    my_access: Literal["VIEW", "MARK"]
+    can_manage: bool
+
+
+class GroupMember(BaseModel):
+    employment_id: str
+    employee_number: str | None
+    name: str
+    company: str
+    department: str | None
+    effective_from: date
+
+
+class GroupMembersAdd(BaseModel):
+    employment_ids: list[str] = Field(min_length=1, max_length=500)
+    effective_from: date
+
+
+class GroupAccessGrant(BaseModel):
+    access_level: Literal["VIEW", "MARK"]
+
+
+class GroupAccessEntry(BaseModel):
+    user_account_id: str
+    name: str
+    email: str | None
+    access_level: Literal["VIEW", "MARK"]

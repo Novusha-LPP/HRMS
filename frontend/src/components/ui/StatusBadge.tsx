@@ -2,7 +2,7 @@ type Tone = "success" | "warning" | "danger" | "info" | "plum" | "neutral" | "br
 
 const TONE_BY_STATUS: Record<string, Tone> = {
   PRESENT: "success", APPROVED: "success", COMPLETED: "success", ACTIVE: "success", CONFIRMED: "success", VERIFIED: "success",
-  LATE: "warning", PROBATION: "warning", HALF_DAY: "warning", PENDING: "warning", ACTION_REQUIRED: "warning",
+  LATE: "warning", NOT_MARKED: "warning", PROBATION: "warning", HALF_DAY: "warning", PENDING: "warning", ACTION_REQUIRED: "warning",
   ABSENT: "danger", MISSED_PUNCH: "danger", REJECTED: "danger", OVERDUE: "danger", ON_NOTICE: "danger", NOTICE: "danger",
   ON_LEAVE: "info", IN_PROGRESS: "info", CONTRACT: "info", SUBMITTED: "info",
   HOLIDAY: "plum", OFF_DAY_WORKED: "plum",
@@ -18,6 +18,7 @@ export function statusTone(status: string): Tone {
 
 const LABEL_BY_STATUS: Record<string, string> = {
   OFF_DAY_WORKED: "Worked on off day",
+  NOT_MARKED: "Not marked",
 };
 
 export function humanize(status: string) {

@@ -57,6 +57,7 @@ _PREFIX_MAP: dict[str, str] = {
     "role": "rol",
     # Policy
     "policy_template": "pol",
+    "attendance_group": "agrp",
     "employee_policy": "epol",
     # Leave
     "leave_type": "lt",

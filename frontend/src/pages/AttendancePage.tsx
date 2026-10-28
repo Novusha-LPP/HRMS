@@ -21,6 +21,7 @@ import { useToast, errorMessage } from "../components/ui/Toast";
 const DOT: Record<string, string> = {
   PRESENT: "bg-success", LATE: "bg-warning", ABSENT: "bg-danger", ON_LEAVE: "bg-info",
   HOLIDAY: "bg-plum", HALF_DAY: "bg-warning", WEEKEND: "bg-line-strong", OFF_DAY_WORKED: "bg-plum",
+  NOT_MARKED: "bg-warning",
 };
 
 const CELL: Record<string, string> = {
@@ -32,6 +33,7 @@ const CELL: Record<string, string> = {
   OFF_DAY_WORKED: "bg-plum/[0.07] border-plum/20",
   HALF_DAY: "bg-warning/[0.08] border-warning/25",
   WEEKEND: "border-transparent bg-muted/60",
+  NOT_MARKED: "border-dashed border-warning/40",
 };
 
 function fmtMins(m: number) {

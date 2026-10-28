@@ -137,6 +137,121 @@ step is involved.
 - Sending the same punches again returns `400`.
 """,
     ),
+    # ─── Marked attendance ───────────────────────────────────────────────────
+    "marking_day": (
+        "A day's marked attendance",
+        """
+Everyone in the attendance groups the caller can see (guards, drivers, cleaners…), employed
+on `work_date`, with that day's state. A group is visible if the caller was given **VIEW** or
+**MARK** on it, or holds `attendance.groups.manage` (every group, for people in their scope).
+
+- `PRESENT` / `ABSENT`: marked; with times, the status the times give (`LATE`, `HALF_DAY`…);
+- `OFF_DAY_WORKED`: present on a weekly off or holiday;
+- `NOT_MARKED`: a working day nobody has marked yet (never counted as an absence);
+- `ON_LEAVE`, `HOLIDAY`, `WEEKEND`, `UPCOMING`, or a punched day's own status.
+
+`access` and `can_mark` / `blocked_reason` say what the caller may do with each row;
+`punch_in` / `punch_out` / `worked_minutes` show times a marker entered, `mark` the latest mark
+(who, when, from where, remark). Filter with `group_id` and `legal_entity_id`.
+""",
+    ),
+    "mark_day": (
+        "Mark a day for many people",
+        """
+Marks `work_date` `PRESENT` or `ABSENT` for each person in `marks`, or clears the mark with
+`status: null` (the day goes back to `NOT_MARKED`). Needs **MARK** on each person's group.
+
+Optional `punch_in` / `punch_out` (`HH:MM` on the person's own clock, with `PRESENT`) are kept as
+punches with source `MARKED`, and the day is worked out from them like any punched day: hours,
+late, half day, overtime. An out time not after the in time is the next morning (night shift).
+Changing or clearing a mark voids the earlier times (kept in the history).
+
+The whole request is checked first. If any row breaks a rule, **nothing** is saved and the `422`
+names each refused person: not in a group the caller can mark, their own attendance, a future or
+locked day, a time later than now, a day with their own punches or on approved leave, or
+`ABSENT` on a day off. A row's `remark`, else the top-level `remark`, is kept with the mark.
+""",
+    ),
+    "marking_leave_types": (
+        "Leave types a marker can record",
+        "The company's active leave types, for recording leave with "
+        "`POST /v1/time/marking/leave`. Needs **MARK** on at least one group.",
+    ),
+    "record_leave": (
+        "Record leave from one date to another",
+        """
+Records leave for someone in a group the caller can **MARK**, as an **approved** leave
+application with the caller as approver. It meets every rule an application does except advance
+notice: active type, length, document, overlap (`409`) and balance
+(`409 Insufficient leave balance`; use a leave-without-pay type then).
+
+An `ABSENT` mark on those days is cleared, and its history says why. A `PRESENT` mark, a day with
+the person's own punches, or a locked day refuses the leave (`409`). Your own leave is refused
+(`403`).
+""",
+    ),
+    "list_groups": (
+        "Attendance groups you can see",
+        "Groups of people whose attendance is marked (guards, drivers, cleaners…) that the "
+        "caller can VIEW or MARK, with today's member count. With `attendance.groups.manage`, "
+        "every group.",
+    ),
+    "create_group": (
+        "Create an attendance group",
+        "Needs `attendance.groups.manage`. Names are unique (ignoring case) among active groups "
+        "(`409`). Set `legal_entity_id` to allow only that company's people in it.",
+    ),
+    "update_group": (
+        "Rename or describe an attendance group",
+        "Needs `attendance.groups.manage`. Restricting it to a company is refused while members "
+        "from another company are still in it (`409`).",
+    ),
+    "archive_group": (
+        "Retire an attendance group",
+        "Needs `attendance.groups.manage`. Only a group with nobody in it can be retired (`409`). "
+        "Its history stays.",
+    ),
+    "list_members": (
+        "Who is in an attendance group on a day",
+        "The people in the group on `on` (default today) and since when. Needs VIEW or MARK on "
+        "the group, or `attendance.groups.manage`.",
+    ),
+    "add_members": (
+        "Add people to an attendance group",
+        """
+Adds people from `effective_from`: from that day their attendance is marked, not punched. Needs
+`attendance.groups.manage`, over people in the caller's scope.
+
+A person is in one group at a time: someone already in another group then is refused (`409`,
+"take them out first"). Nobody is added if any row is refused. Adding someone already in this
+group changes nothing.
+""",
+    ),
+    "remove_member": (
+        "Take someone out of an attendance group",
+        "Ends the membership after `last_day` (default today); from the next day their attendance "
+        "is punched again, or they can join another group. Days before stay marked. Needs "
+        "`attendance.groups.manage`.",
+    ),
+    "list_access": (
+        "Who may view or mark a group",
+        "The people given **VIEW** (see the daily sheet) or **MARK** (also mark days and record "
+        "leave) on this group. Needs `attendance.groups.manage`.",
+    ),
+    "grant_access": (
+        "Let someone view or mark a group",
+        """
+Gives a login **VIEW** or **MARK** on the group, or changes it. The grant is the whole permission
+for that group: the person needs no HR role, and it isn't narrowed by their role's scope, so a
+supervisor can keep the guards' sheet with an ordinary employee login. Needs
+`attendance.groups.manage`.
+""",
+    ),
+    "revoke_access": (
+        "Withdraw someone's access to a group",
+        "Takes effect at once. Marks they already made stay, with their name. Needs "
+        "`attendance.groups.manage`.",
+    ),
     # ─── Holiday calendars ───────────────────────────────────────────────────
     "coverage": (
         "Holiday calendar coverage",

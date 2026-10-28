@@ -458,6 +458,30 @@ async def _build_me_response(
 
         if await led_unit_ids(session, tenant_id, employment_id):
             permissions.add("recruitment.request")
+    # Attendance groups are granted per group, not by role (time/groups.py): tell the client
+    # whether to show the marking sheet, and whether it may mark or only view.
+    if {"*", "attendance.groups.manage"} & permissions:
+        permissions |= {"attendance.view", "attendance.mark"}
+    else:
+        levels = {
+            level
+            for (level,) in (
+                await session.execute(
+                    text("""
+                        SELECT DISTINCT a.access_level FROM attendance_group_access a
+                        JOIN attendance_groups g ON g.tenant_id = a.tenant_id
+                             AND g.id = a.group_id AND g.archived_at IS NULL
+                        WHERE a.tenant_id = CAST(:tid AS uuid)
+                          AND a.user_account_id = CAST(:uid AS uuid)
+                    """),
+                    {"tid": str(tenant_id), "uid": str(account_id)},
+                )
+            ).all()
+        }
+        if levels:
+            permissions.add("attendance.view")
+        if "MARK" in levels:
+            permissions.add("attendance.mark")
 
     return MeResponse(
         mfa_required=bool(account_row and account_row["mfa_secret"])

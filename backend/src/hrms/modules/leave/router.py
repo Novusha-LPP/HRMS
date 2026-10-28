@@ -595,9 +595,7 @@ async def _accruals_this_fy(
         )
         .where(LeaveBalanceTransaction.tenant_id == tenant_id)
         .where(LeaveBalanceTransaction.bucket_id == bucket_id)
-        .where(
-            LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value
-        )
+        .where(LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value)
         .where(LeaveBalanceTransaction.effective_date >= min(starts.values()))
         .where(LeaveBalanceTransaction.effective_date < as_of)
     )
@@ -761,9 +759,7 @@ async def accrue_period(
                 continue
             if entitlement.days_per_year <= 0:
                 continue
-            eligible = (
-                entitlement.probation_eligible or emp_state != "PROBATION"
-            ) and (
+            eligible = (entitlement.probation_eligible or emp_state != "PROBATION") and (
                 tenure_months(hire_date, as_of) + prior_months >= entitlement.min_service_months
             )
             if not eligible or emp_id in already:
@@ -1090,6 +1086,80 @@ async def create_application(
     session.add(app)
     await session.flush()
     return _app_resp(app, lt, [])
+
+
+async def record_approved_leave(
+    session,
+    tenant_id,
+    principal,
+    employment_id: UUID,
+    body: LeaveApplyRequest,
+    *,
+    comments: str,
+) -> LeaveApplicationResponse:
+    """
+    Leave someone has taken or will take, entered as already approved by the person who keeps
+    their attendance (time/marking.py), not applied for by the employee. It meets every rule an
+    application does except advance notice — type, length, document, overlap and balance — and
+    holds then takes the balance exactly as an application approved without a chain would.
+    The caller decides who may do this.
+    """
+    lt = await _get_lt(session, tenant_id, body.leave_type_id)
+    allocation = await _allocate_days(
+        session, tenant_id, employment_id, body.from_date, body.to_date, body.half_day_option
+    )
+    days = sum(allocation.values())
+    await _validate_application(session, tenant_id, employment_id, lt, body, days, recorded=True)
+    stamp = now_utc()
+    app = LeaveApplication(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        employment_id=employment_id,
+        leave_type_id=lt.id,
+        from_date=body.from_date,
+        to_date=body.to_date,
+        days_requested=days,
+        days_by_month=allocation,
+        document_id=to_uuid(body.document_id) if body.document_id else None,
+        half_day_option=body.half_day_option,
+        reason=body.reason,
+        status=LeaveApplicationStatus.DRAFT,
+        current_level=1,
+        total_levels=1,
+        recorded_at=stamp,
+    )
+    session.add(app)
+    await session.flush()
+    await _check_overlap(session, tenant_id, app)
+    await _hold_leave_balance(session, tenant_id, principal, app, lt)
+    app.status = LeaveApplicationStatus.APPROVED
+    app.applied_at = stamp
+    await _post_leave_transaction(
+        session,
+        tenant_id,
+        principal,
+        app,
+        lt,
+        LeaveTransactionType.LEAVE_TAKEN,
+        approved_by=principal.user_account_id,
+    )
+    session.add(
+        LeaveApprovalAction(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            application_id=app.id,
+            action_type=LeaveApprovalActionType.APPROVE,
+            level=1,
+            approver_employment_id=principal.employment_id,
+            approver_user_account_id=principal.user_account_id,
+            comments=comments,
+            actioned_at=stamp,
+            recorded_at=stamp,
+        )
+    )
+    session.add(app)
+    await session.flush()
+    return _app_resp(app, lt, await _get_history(session, tenant_id, app.id))
 
 
 @router.post("/applications/{app_id}/submit", response_model=LeaveApplicationResponse)
@@ -1764,7 +1834,11 @@ async def _allocate_days(session, tenant_id, employment_id, start, end, half_day
     return allocation
 
 
-async def _validate_application(session, tenant_id, employment_id, lt, body, days):
+async def _validate_application(
+    session, tenant_id, employment_id, lt, body, days, *, recorded=False
+):
+    """Every rule an application must meet. `recorded` is leave entered after the fact by
+    whoever keeps the person's attendance: advance notice can't apply to it."""
     if not lt.is_active or lt.archived_at:
         raise HTTPException(422, "This leave type is inactive")
     legacy_document = await validate_legacy_application(
@@ -1779,7 +1853,8 @@ async def _validate_application(session, tenant_id, employment_id, lt, body, day
     ):
         raise HTTPException(422, "Leave exceeds the maximum application duration")
     if (
-        not lt.legacy_managed
+        not recorded
+        and not lt.legacy_managed
         and lt.advance_notice_days
         and body.from_date < now_utc().date() + timedelta(days=lt.advance_notice_days)
     ):
