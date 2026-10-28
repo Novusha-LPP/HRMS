@@ -506,6 +506,7 @@ async def _apply(session, tenant_id, principal, person, day, ad, current, target
                     punch_type="VOID",
                     punched_at=punch["punched_at"],
                     source=PunchSource.MARKED,
+                    source_system=principal.via_app if principal.via_key_id else None,
                     is_corrected=True,
                     original_punch_id=punch["id"],
                     correction_reason="Changed on the marking sheet",
@@ -536,6 +537,7 @@ async def _apply(session, tenant_id, principal, person, day, ad, current, target
                     punch_type=kind,
                     punched_at=instant,
                     source=PunchSource.MARKED,
+                    source_system=principal.via_app if principal.via_key_id else None,
                     recorded_at=stamp,
                     recorded_by=principal.user_account_id,
                 )
@@ -571,6 +573,14 @@ async def _people(
         return []
     sql = _PEOPLE_SQL
     params: dict[str, object] = {"tid": tenant_id, "d": day, "groups": groups}
+    if principal.via_key_id is not None:
+        # Through a connected app: only companies its key covers that switch app marking on.
+        from hrms.modules.integrations.profiles import app_marking_entities
+
+        sql += " AND e.legal_entity_id = ANY(:app_entities)"
+        params["app_entities"] = await app_marking_entities(
+            session, tenant_id, principal.via_key_id
+        )
     if can_manage(scope):
         # HR sees every group, but only the people their own scope covers.
         clause, extra = scope.for_permission(MANAGE).employment_filter_sql("e")

@@ -91,6 +91,59 @@ async def effective_settings(
     return validate_full(settings)
 
 
+async def app_session_feature_on(
+    session: AsyncSession, tenant_id: UUID, key_id: UUID, employment_id: UUID | None, feature: str
+) -> bool:
+    """Whether the app behind this key switches `feature` on for the employee's company (the
+    same test the session gate applies to the feature's routes)."""
+    row = (
+        await session.execute(
+            text("""
+                SELECT k.app_id, e.legal_entity_id FROM api_keys k
+                LEFT JOIN employments e ON e.tenant_id = k.tenant_id AND e.id = :eid
+                WHERE k.tenant_id = :tid AND k.id = :kid
+            """),
+            {"tid": tenant_id, "kid": key_id, "eid": employment_id},
+        )
+    ).one_or_none()
+    if row is None:
+        return False
+    options = await effective_settings(session, tenant_id, row.app_id, row.legal_entity_id)
+    return bool(getattr(options.self_service, feature))
+
+
+async def app_marking_entities(session: AsyncSession, tenant_id: UUID, key_id: UUID) -> list[UUID]:
+    """
+    The companies whose people a session issued through this key may see and mark on the
+    marking sheet: those the key covers whose settings switch app marking on. An attendance group
+    can span companies, so the marker's own company switching it on isn't enough.
+    """
+    key = (
+        await session.execute(
+            text(
+                "SELECT app_id, legal_entity_ids FROM api_keys WHERE tenant_id = :tid AND id = :kid"
+            ),
+            {"tid": tenant_id, "kid": key_id},
+        )
+    ).one_or_none()
+    if key is None:
+        return []
+    covered = (
+        {UUID(str(e)) for e in key.legal_entity_ids} if key.legal_entity_ids is not None else None
+    )
+    entities = (
+        await session.execute(
+            text("SELECT id FROM legal_entities WHERE tenant_id = :tid"), {"tid": tenant_id}
+        )
+    ).scalars()
+    return [
+        le
+        for le in entities
+        if (covered is None or le in covered)
+        and (await effective_settings(session, tenant_id, key.app_id, le)).self_service.marking
+    ]
+
+
 def check_document(document: dict[str, Any], *, is_override: bool, base: dict[str, Any]) -> None:
     """Refuse a settings document the schema rejects, naming each bad field."""
     try:

@@ -46,6 +46,7 @@ What is and is **not** exposed. Read this before designing anything:
 | **Back-dated or batch punches** (biometric device dumps, `punched_at`) | **No.** The server stamps the time itself; sending `punched_at` or a `DEVICE` source is refused with `422`. Missed punches go through a correction | [§7](#7-punch-in-and-punch-out), [§9](#9-attendance-corrections) |
 | Apply for, submit, cancel leave; read balances | Yes | Employee session |
 | Raise and cancel attendance corrections | Yes | Employee session |
+| Mark present/absent (with optional times) and record leave for attendance groups (drivers, guards…) | Yes, once the admin switches on `marking` | Session of a person HR gave Mark on the group ([MARKED_ATTENDANCE_INTEGRATION.md](MARKED_ATTENDANCE_INTEGRATION.md)) |
 | Approve or reject leave and corrections | Yes, for managers | Employee session of the approver |
 | Read daily attendance and approved leave for everyone | Yes | API key, `attendance.read`, `leave.read` |
 | HR's report builder (`/v1/reports`), the daily-analysis export, payroll, recruitment, admin settings | **No** | Reachable only by signing in to HRMS as HR |
@@ -66,7 +67,7 @@ What is and is **not** exposed. Read this before designing anything:
 3. **Settings for the app** (a draft that is previewed, then published): which fields and events the
    app receives, when a new joiner becomes visible to it (on save, N days before joining, or on the
    joining date), the self-service features it may use (`punch`, `attendance`, `corrections`,
-   `leave`, `profile_edit`, `approvals`), the session length (5–480 minutes, default 60), and a
+   `leave`, `profile_edit`, `approvals`, and `marking`, which is off by default), the session length (5–480 minutes, default 60), and a
    safety limit on exits per day.
 4. **Mappings.** Where your department, location, designation or company names differ from HRMS's,
    the administrator maps them.
@@ -378,6 +379,7 @@ Then call the HRMS endpoints below with `Authorization: Bearer <access_token>` (
 | `attendance` or `leave` | `GET /v1/time/holidays` |
 | `corrections` | `POST /v1/corrections`, `POST /v1/corrections/{id}/cancel`, `GET /v1/corrections` |
 | `leave` | `GET /v1/leave/types`, `/balances`, `/applications`, `/applications/summary`; `POST /v1/leave/applications`, `…/{id}/submit`, `…/{id}/cancel` |
+| `marking` (off by default) | `GET /v1/time/marking`, `PUT /v1/time/marking/{work_date}`, `GET /v1/time/marking/leave-types`, `POST /v1/time/marking/leave`, for the attendance groups HR gave this person access to ([MARKED_ATTENDANCE_INTEGRATION.md](MARKED_ATTENDANCE_INTEGRATION.md)) |
 | `approvals` | `GET /v1/approvals/inbox`, `GET /v1/approvals/requests/{id}`, `POST /v1/approvals/requests/{id}/decision`; `POST /v1/corrections/{id}/approve` and `/reject`; `POST /v1/leave/applications/{id}/approve`, `/reject`, `/cancel-approve`, `/cancel-reject`; `GET /v1/dashboard/team`, `GET /v1/dashboard/manager` |
 
 Any other call, or a feature the administrator switched off, returns

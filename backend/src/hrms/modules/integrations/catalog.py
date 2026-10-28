@@ -94,6 +94,9 @@ class SelfServiceSettings(_Strict):
     leave: bool = True
     profile_edit: bool = True
     approvals: bool = True
+    # Mark attendance for the attendance groups the person was given Mark or View on. Off unless
+    # switched on: it changes other people's attendance, not the person's own.
+    marking: bool = False
     session_minutes: int = Field(default=60, ge=5, le=480)
 
 

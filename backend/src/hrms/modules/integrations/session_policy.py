@@ -25,6 +25,11 @@ SESSION_ROUTES: dict[tuple[str, str], tuple[str, ...] | None] = {
     ("GET", "/v1/time/today"): ("punch", "attendance"),
     ("GET", "/v1/time/attendance-days"): ("attendance",),
     ("GET", "/v1/time/holidays"): ("attendance", "leave"),
+    # Marked attendance: the person marks the groups HR gave them access to (time/marking.py)
+    ("GET", "/v1/time/marking"): ("marking",),
+    ("PUT", "/v1/time/marking/{work_date}"): ("marking",),
+    ("GET", "/v1/time/marking/leave-types"): ("marking",),
+    ("POST", "/v1/time/marking/leave"): ("marking",),
     # Corrections
     ("GET", "/v1/corrections"): ("corrections", "approvals"),
     ("POST", "/v1/corrections"): ("corrections",),

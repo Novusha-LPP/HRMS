@@ -70,8 +70,9 @@ group access, so the app shows them the sheet.
 ## API
 `/v1/time/attendance-groups` (groups, members, access) and `/v1/time/marking` (day sheet,
 marks, leave types, leave). The reference text is in the API docs (`core/endpoint_docs/time.py`).
-A connected app can mark through the same calls; its marks are recorded with source
-`INTEGRATION`.
+A connected app can mark through the same calls, with the marker's own session, once the admin
+switches on **Mark attendance groups** in the app's settings (off by default). Its marks are
+recorded with source `INTEGRATION`. See [MARKED_ATTENDANCE_INTEGRATION.md](MARKED_ATTENDANCE_INTEGRATION.md).
 
 ## Deploying
 Migration `0074` adds `attendance_groups`, `attendance_group_members`, `attendance_group_access`

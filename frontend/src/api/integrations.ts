@@ -77,6 +77,7 @@ export interface IntegrationSettings {
     leave: boolean;
     profile_edit: boolean;
     approvals: boolean;
+    marking: boolean;
     session_minutes: number;
   };
   safety: { max_exits_per_day: number; max_exit_percent: number; over_limit: "HOLD" | "REJECT" };

@@ -274,8 +274,8 @@ export function SettingsTab({ app }: { app: ConnectedApp }) {
         {two && (
           <Section title="Self-service through the app" hint="What employees can do from inside the app's screens. HR and admin work always needs HRMS.">
             <div className="grid gap-2 sm:grid-cols-3">
-              {(["punch", "attendance", "corrections", "leave", "profile_edit", "approvals"] as const).map((k) => (
-                <Toggle key={k} label={{ punch: "Punch in and out", attendance: "See attendance", corrections: "Request corrections", leave: "Leave", profile_edit: "Edit own profile", approvals: "Managers approve" }[k]}
+              {(["punch", "attendance", "corrections", "leave", "profile_edit", "approvals", "marking"] as const).map((k) => (
+                <Toggle key={k} label={{ punch: "Punch in and out", attendance: "See attendance", corrections: "Request corrections", leave: "Leave", profile_edit: "Edit own profile", approvals: "Managers approve", marking: "Mark attendance groups" }[k]}
                   checked={s.self_service[k]} onChange={(v) => set(`self_service.${k}`, v)} marker={mark(`self_service.${k}`)} />
               ))}
             </div>
@@ -283,6 +283,7 @@ export function SettingsTab({ app }: { app: ConnectedApp }) {
               <NumberField label="Session length (minutes)" value={s.self_service.session_minutes} min={5} max={480}
                 onChange={(v) => set("self_service.session_minutes", v)} marker={mark("self_service.session_minutes")} />
             </Row>
+            <p className="text-xs text-fg-subtle">Mark attendance groups lets people with Mark or View on a group (Settings → Attendance groups) mark it and record its leave from the app. Off by default.</p>
           </Section>
         )}
 

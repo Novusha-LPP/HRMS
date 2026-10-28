@@ -359,6 +359,16 @@ async def me(principal: CurrentUser, session: SessionDep) -> MeResponse:
         session, principal.tenant_id, principal.user_account_id, principal.employment_id, scope
     )
     result.mfa_required = result.mfa_required and not principal.mfa_verified
+    if principal.via_key_id is not None:
+        from hrms.modules.integrations.profiles import app_session_feature_on
+
+        # Don't offer the marking sheet to an app whose sessions can't open it.
+        if not await app_session_feature_on(
+            session, principal.tenant_id, principal.via_key_id, principal.employment_id, "marking"
+        ):
+            result.permissions = [
+                p for p in result.permissions if p not in {"attendance.view", "attendance.mark"}
+            ]
     return result
 
 
