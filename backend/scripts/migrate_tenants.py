@@ -38,7 +38,7 @@ import os
 import re
 import sys
 from dataclasses import dataclass, field
-from datetime import UTC, date, datetime
+from datetime import UTC, date, datetime, timedelta
 from pathlib import Path
 from typing import Any
 from uuid import UUID, uuid4
@@ -523,14 +523,66 @@ class ImportRecord:
     kyc: dict[str, Any] = field(default_factory=dict)
     kyc_status: str = "SUBMITTED"
     kyc_verified_at: date | None = None
+    # Set when employment and login differ (a driver still working whose old login was off).
+    employed: bool | None = None
 
     @property
     def employment_state(self) -> str:
-        return "ACTIVE" if self.is_active else "SEPARATED"
+        employed = self.is_active if self.employed is None else self.employed
+        return "ACTIVE" if employed else "SEPARATED"
 
     @property
     def account_status(self) -> str:
         return "ACTIVE" if self.is_active else "INACTIVE"
+
+
+# Drivers have no company, name or join date in the export, only a username, a password and
+# the days their attendance was marked (exim.attendances.json); the employee is built from those.
+DRIVER = Access("EMPLOYEE", "SELF", "Driver", "Transport")
+IST_OFFSET = timedelta(hours=5, minutes=30)
+
+
+def driver_worked_days(attendance: list[dict]) -> tuple[dict[str, tuple[date, date]], date | None]:
+    """EXIM user id -> (first, last) day their attendance was marked; and the last day marked."""
+    spans: dict[str, tuple[date, date]] = {}
+    for row in attendance:
+        uid = row["driver_id"]["$oid"] if isinstance(row["driver_id"], dict) else row["driver_id"]
+        raw = row["date"]["$date"] if isinstance(row["date"], dict) else row["date"]
+        day = date.fromisoformat(str(raw)[:10])
+        first, last = spans.get(uid, (day, day))
+        spans[uid] = (min(first, day), max(last, day))
+    return spans, max((last for _, last in spans.values()), default=None)
+
+
+def build_driver_record(
+    u: dict,
+    entity_id: UUID,
+    worked: tuple[date, date] | None,
+    export_end: date | None,
+    hash_pw=hash_password,
+) -> ImportRecord | None:
+    """
+    A driver: the name comes from the username (jayram_kumar -> Jayram Kumar), the join date is
+    when their account was made (or their first marked day, if earlier), and their old password
+    carries over. A driver whose old account is not active has left (the user's rule, so they
+    don't appear among working people): on the day after their last marked day, so all their
+    marked days stay theirs, or the day after joining if they were never marked. The old
+    deactivation date isn't used: it was often months before their last marked day.
+    """
+    rec = build_suraj_record(u, entity_id, hash_pw)
+    if rec is None:
+        return None
+    parts = [p for p in re.split(r"[_\s.]+", rec.employee_code) if p]
+    rec.first_name, rec.last_name = clean_name(parts[0] if parts else "", " ".join(parts[1:]))
+    created = (datetime.fromtimestamp(int(rec.erp_user_id[:8], 16), UTC) + IST_OFFSET).date()
+    rec.hire_date = min(created, worked[0]) if worked else created
+    rec.access = DRIVER
+    if rec.is_active:
+        rec.employed, rec.separation_date = True, None
+    else:
+        rec.employed = False
+        rec.separation_date = (worked[1] if worked else rec.hire_date) + timedelta(days=1)
+    return rec
 
 
 def build_suraj_record(u: dict, entity_id: UUID, hash_pw=hash_password) -> ImportRecord | None:
@@ -1334,11 +1386,21 @@ def _load(path: Path):
 
 
 async def migrate_suraj(
-    session, tenant_id: UUID, data_dir: Path, overwrite: bool, repair: bool = False
+    session,
+    tenant_id: UUID,
+    data_dir: Path,
+    overwrite: bool,
+    repair: bool = False,
+    drivers_entity: str | None = None,
 ) -> dict:
-    """Migrate the usable Suraj Group users from exim.users.json."""
+    """Migrate the usable Suraj Group users from exim.users.json (and, with `drivers_entity`,
+    the drivers, who have no company in the export, into that legal entity)."""
     logger.info("Starting Suraj Group migration...")
     raw_users = _load(data_dir / "exim.users.json")
+    worked: dict[str, tuple[date, date]] = {}
+    export_end = None
+    if drivers_entity:
+        worked, export_end = driver_worked_days(_load(data_dir / "exim.attendances.json"))
 
     entities = {
         r[1]: r[0]
@@ -1371,7 +1433,10 @@ async def migrate_suraj(
         excluded_demo=0,
         usable=0,
         entities_breakdown={},
+        drivers={"employed": [], "left": []},
     )
+    if drivers_entity and drivers_entity not in entities:
+        raise SystemExit(f"--drivers-entity: no legal entity named {drivers_entity!r}")
 
     records: list[ImportRecord] = []
     extra_depts_by_entity: dict[UUID, set[str]] = {eid: set() for eid in entities.values()}
@@ -1379,7 +1444,28 @@ async def migrate_suraj(
 
     for u in raw_users:
         company = (u.get("company") or "").strip().lower()
-        if not company:
+        if not company and drivers_entity and (u.get("role") or "").strip().lower() == "driver":
+            entity_id = entities[drivers_entity]
+            rec = build_driver_record(u, entity_id, worked.get(source_id(u) or ""), export_end)
+            if rec is None:
+                stats["errors"].append({"source_id": source_id(u), "error": "missing _id/username"})
+                continue
+            stats["drivers"]["employed" if rec.employed else "left"].append(
+                {
+                    "code": rec.employee_code,
+                    "joined": rec.hire_date,
+                    "left": rec.separation_date,
+                    "login": rec.account_status,
+                }
+            )
+            stats["usable"] += 1
+            stats["entities_breakdown"][drivers_entity] = (
+                stats["entities_breakdown"].get(drivers_entity, 0) + 1
+            )
+            records.append(rec)
+            extra_depts_by_entity[entity_id].add(DRIVER.department)
+            all_jobs.add(DRIVER.job)
+        elif not company:
             stats["excluded_blank_company"] += 1
         elif "rabs" in company:
             stats["excluded_rabs"] += 1
@@ -1620,6 +1706,11 @@ async def main(argv: list[str] | None = None) -> int:
     parser.add_argument(
         "--rabs-tenant", help="Tenant (UUID or slug) that receives the Sharanga users"
     )
+    parser.add_argument(
+        "--drivers-entity",
+        help="Also import EXIM drivers (no company in the export) into this Suraj legal entity, "
+        "e.g. 'SR Container Carriers'; needs exim.attendances.json in --data-dir",
+    )
     args = parser.parse_args(argv)
     for which, ref in (("suraj", args.suraj_tenant), ("rabs", args.rabs_tenant)):
         if args.tenant in (which, "all") and not ref:
@@ -1648,12 +1739,14 @@ async def main(argv: list[str] | None = None) -> int:
 
         all_stats = []
         for tenant_id, display_name, source, importer in targets:
+            extra = {"drivers_entity": args.drivers_entity} if importer is migrate_suraj else {}
             stats = await importer(
                 session,
                 tenant_id,
                 args.data_dir,
                 args.overwrite_existing,
                 repair=args.repair,
+                **extra,
             )
             all_stats.append((tenant_id, source, stats))
             logger.info("%s result:\n%s", display_name, json.dumps(stats, indent=2, default=str))

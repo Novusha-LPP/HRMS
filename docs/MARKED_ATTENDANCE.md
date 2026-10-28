@@ -85,3 +85,25 @@ HR creates a group and adds people.
 - Cancelling recorded leave from the marking page. HR cancels it from Leave.
 - Half-day marks without times. With times, half days come from the hours.
 - Rotating shift rosters for guards. A fixed night policy works today.
+
+## Importing the EXIM drivers (2026-10-28)
+The 56 EXIM drivers have only a username and password in the export. Two scripts, both dry-run by
+default and safe to repeat:
+
+1. `migrate_tenants.py --tenant suraj --suraj-tenant suraj-group --drivers-entity "SR Container Carriers" --allow-partial`
+   creates them as employees of that company (name from the username, joined when their account
+   was made, their old password kept). A driver whose old login is active is employed. One whose
+   login is switched off has left, so they don't show among working people: on the day after
+   their last marked day (all their marked days stay theirs), or the day after joining if never
+   marked. Left drivers appear only under Employees → Inactive.
+2. `import_exim_drivers_group.py --tenant suraj-group --apply` creates the **Drivers** group, puts
+   each driver in it for their employment, gives drivers without a policy of their own
+   **Drivers (7-day week)** (a copy of the default policy working all week: in the old data they
+   worked Sundays as much as weekdays), and imports `exim.attendances.json` as marks with the
+   original marker and time. Old "leave" had no application, so it becomes absent with a note.
+   Absent on a holiday is skipped.
+
+Rehearsed on a copy of the local database and applied locally: 56 drivers (36 employed, 20 left),
+5,394 days (4,002 present, 1,215 absent, 177 leave as absent), 35 holiday absences skipped; a
+second run adds nothing. Who can mark the Drivers group is set by the Admin under
+Attendance groups → Drivers → Who can view or mark.
