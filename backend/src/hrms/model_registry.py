@@ -258,6 +258,9 @@ _STRICT_TABLES = {
     "rejoin_policies",
     "prior_service",
     "company_transfers",
+    "attendance_groups",
+    "attendance_group_members",
+    "attendance_group_access",
 }
 _NULLABLE_TIMESTAMPS = {
     "created_at",

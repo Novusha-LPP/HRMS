@@ -271,7 +271,7 @@ class AttendanceGroup(SQLModel, table=True):
     description: str | None = Field(default=None, max_length=500)
     legal_entity_id: UUID | None = Field(default=None)
     created_by: UUID | None = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
     version: int = Field(default=0)
     archived_at: datetime | None = Field(default=None)
 
@@ -288,7 +288,7 @@ class AttendanceGroupMember(SQLModel, table=True):
     effective_from: date = Field()
     effective_to: date | None = Field(default=None)
     created_by: UUID | None = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
 
 
 class AttendanceGroupAccess(SQLModel, table=True):
@@ -302,7 +302,7 @@ class AttendanceGroupAccess(SQLModel, table=True):
     user_account_id: UUID = Field(index=True)
     access_level: str = Field(max_length=10)
     created_by: UUID | None = Field(default=None)
-    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
 
 
 class AttendanceMark(SQLModel, table=True):
@@ -324,4 +324,4 @@ class AttendanceMark(SQLModel, table=True):
     remark: str | None = Field(default=None, max_length=500)
     source: str = Field(default=MarkSource.MANUAL, max_length=20)
     marked_by: UUID = Field()
-    marked_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    marked_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
