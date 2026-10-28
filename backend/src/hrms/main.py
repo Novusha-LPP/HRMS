@@ -41,14 +41,19 @@ from hrms.modules.leave.separation_router import router as leave_separation_rout
 from hrms.modules.onboarding.router import router as onboarding_router
 from hrms.modules.org.router import router as org_router
 from hrms.modules.payroll.router import router as payroll_router
+from hrms.modules.people.lifecycle_reports import router as lifecycle_reports_router
+from hrms.modules.people.prior_service_router import router as prior_service_router
 from hrms.modules.people.rejoin_router import router as rejoin_router
 from hrms.modules.people.router import router as people_router
+from hrms.modules.people.transfer_router import router as transfer_router
 from hrms.modules.platform.router import router as platform_router
 from hrms.modules.policy.router import router as policy_router
 from hrms.modules.preferences.router import router as preferences_router
 from hrms.modules.recruitment.router import router as recruitment_router
 from hrms.modules.reports.router import router as reports_router
+from hrms.modules.time.groups import router as time_groups_router
 from hrms.modules.time.holiday_calendars import router as holiday_calendars_router
+from hrms.modules.time.marking import router as time_marking_router
 from hrms.modules.time.register import router as time_register_router
 from hrms.modules.time.router import router as time_router
 
@@ -114,8 +119,13 @@ app.include_router(org_router)
 app.include_router(platform_router)
 app.include_router(people_router)
 app.include_router(rejoin_router)
+app.include_router(prior_service_router)
+app.include_router(transfer_router)
+app.include_router(lifecycle_reports_router)
 app.include_router(time_router)
 app.include_router(time_register_router)
+app.include_router(time_marking_router)
+app.include_router(time_groups_router)
 app.include_router(holiday_calendars_router)
 app.include_router(onboarding_router)
 app.include_router(reports_router)

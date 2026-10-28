@@ -9,7 +9,7 @@ from sqlalchemy import text
 from tests.helpers import hire, ok, org_basics, person_and_employment
 from tests.integration_support import make_app, world
 
-pytestmark = pytest.mark.database
+pytestmark = [pytest.mark.database, pytest.mark.serial]
 
 
 async def _feed(client, headers, after=None):

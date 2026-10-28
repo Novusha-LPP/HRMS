@@ -154,7 +154,7 @@ python3 -c "import os,base64; print('k1:'+base64.urlsafe_b64encode(os.urandom(32
 Run `openssl rand -hex 32` separately for each database role password, signing secret, and
 metrics token. Runtime and migration role passwords must match. URL-encode the existing
 owner password in its connection URL. Use literal values without shell quotes or `export`.
-Keep a separate recovery copy of `HRMS_FIELD_ENCRYPTION_KEYS`; losing it loses encrypted data.
+Keep a separate recovery copy of `HRMS_FIELD_ENCRYPTION_KEYS`, `HRMS_PAYROLL_ENCRYPTION_KEYS` and `HRMS_PAYROLL_PEPPER`; losing any of them loses encrypted data. Add the last two as `testing` environment secrets, with required reviewers.
 
 All three database URLs use **`?ssl=verify-full`**. The containers mount the RDS CA bundle
 and set `PGSSLROOTCERT`. Do not use the libpq `sslmode` query parameter in SQLAlchemy's

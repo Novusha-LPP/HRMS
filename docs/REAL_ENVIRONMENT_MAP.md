@@ -243,7 +243,7 @@ Not secret. Full list with defaults: `backend/src/hrms/core/config.py`.
 - **Identity of the deployment:** `HRMS_ENVIRONMENT` (local/testing/production), `HRMS_VERSION`, `HRMS_ENV_FILE`
 - **Network:** `HRMS_CORS_ORIGINS`, `HRMS_WEB_API_URL`, `HRMS_API_PORT`, `HRMS_WEB_PORT`, `HRMS_BIND_ADDRESS`, `HRMS_FORWARDED_ALLOW_IPS` (172.30.25.1 = Docker bridge gateway)
 - **Documents:** `HRMS_DOCUMENT_STORAGE` (`local`|`s3`), `HRMS_DOCUMENT_S3_BUCKET`, `HRMS_DOCUMENT_S3_REGION`, `HRMS_STORAGE_DIR`
-- **Behaviour:** `HRMS_ALLOW_PUBLIC_REGISTRATION` (false on testing), `HRMS_API_DOCS_ENABLED` (false on testing), `HRMS_DEFAULT_TIMEZONE` (Asia/Kolkata), `HRMS_JOBS_DAILY_AT` (00:30), `HRMS_THROTTLE_ENABLED`, login lockout limits
+- **Behaviour:** `HRMS_ALLOW_PUBLIC_REGISTRATION` (false on testing), `HRMS_API_DOCS_ENABLED` (true on testing, false on production), `HRMS_DEFAULT_TIMEZONE` (Asia/Kolkata), `HRMS_JOBS_DAILY_AT` (00:30), `HRMS_THROTTLE_ENABLED`, login lockout limits
 - **Performance:** `HRMS_DATABASE_POOL_SIZE`/`_MAX_OVERFLOW` (5/5 on testing), `WEB_CONCURRENCY` (2), `HRMS_API_MEMORY` (1g)
 - **Logging:** `HRMS_LOG_LEVEL`, `HRMS_LOG_FORMAT` (json when deployed)
 - **Mail:** `HRMS_MAIL_BACKEND` = `disabled` (SES supported; needs `HRMS_MAIL_FROM`, `HRMS_PLATFORM_RESET_BASE_URL`)
@@ -263,7 +263,7 @@ is promoted from testing to production unchanged.
 
 | Where | What is stored | Who manages it |
 |---|---|---|
-| **GitHub → Settings → Environments → `testing` → Secrets** | `RDS_OWNER_PASSWORD`, `HRMS_APP_ROLE_PASSWORD`, `HRMS_PLATFORM_ROLE_PASSWORD`, `HRMS_SECRET_KEY`, `HRMS_METRICS_TOKEN`, `HRMS_FIELD_ENCRYPTION_KEYS` | you. If any is missing, the workflow warns and keeps the files already on EC2. |
+| **GitHub → Settings → Environments → `testing` → Secrets** | `RDS_OWNER_PASSWORD`, `HRMS_APP_ROLE_PASSWORD`, `HRMS_PLATFORM_ROLE_PASSWORD`, `HRMS_SECRET_KEY`, `HRMS_METRICS_TOKEN`, `HRMS_FIELD_ENCRYPTION_KEYS`, `HRMS_PAYROLL_ENCRYPTION_KEYS`, `HRMS_PAYROLL_PEPPER` | you. If any is missing, the workflow warns and keeps the files already on EC2. |
 | **Same environment → Variables** (public) | `AWS_REGION`, `AWS_ACCOUNT_ID`, `AWS_ROLE_ARN`, `AWS_TESTING_ENABLED`, `EC2_INSTANCE_ID`, `DEPLOY_ARTIFACT_BUCKET`, `ECR_API_REPOSITORY`, `ECR_WEB_REPOSITORY`, `EC2_IMAGE_PLATFORM`, `RDS_HOSTNAME`, `RDS_DATABASE`, `RDS_OWNER_USERNAME`, `HRMS_WEB_API_URL`, `HRMS_CORS_ORIGINS`, `HRMS_DEFAULT_TIMEZONE`, `HRMS_DOCUMENT_STORAGE`, `HRMS_DOCUMENT_S3_BUCKET`; optional `FRONTEND_ECS_ENABLED` | you |
 | **EC2 `/etc/hrms/`** | the 3 env files (root, mode 600) and `rds-global-bundle.pem` (RDS CA certificate) | `deploy.sh` installs them |
 | **EC2 `/opt/hrms/testing/releases/…`** | each release bundle; symlink `current` = live release; `deploy.lock` prevents parallel deploys | `deploy.sh` |

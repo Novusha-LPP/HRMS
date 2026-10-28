@@ -1,4 +1,4 @@
-import { api, type Versioned } from "./client";
+import { api, API_BASE_URL, ApiError, type Versioned } from "./client";
 
 export interface Employment {
   id: string;
@@ -279,4 +279,89 @@ export const separationApi = {
   archiveRule: (id: string) => api.delete<void>(`/v1/leave/separation-rules/${id}`),
   preview: (employmentId: string, asOf: string) =>
     api.get<SeparationPreview>(`/v1/leave/separation-preview?employment_id=${employmentId}&as_of=${asOf}`),
+};
+
+export interface PriorServiceItem {
+  id: string;
+  employer_name: string;
+  from_date: string;
+  to_date: string;
+  months: number;
+  days: number;
+  recognised_for_leave: boolean;
+  recognised_for_gratuity: boolean;
+  note: string | null;
+}
+
+export interface PriorServiceSummary {
+  items: PriorServiceItem[];
+  recognised_leave_months: number;
+  recognised_gratuity_days: number;
+}
+
+export const priorServiceApi = {
+  list: (personId: string) => api.get<PriorServiceSummary>(`/v1/persons/${personId}/prior-service`),
+  add: (personId: string, body: { employer_name: string; from_date: string; to_date: string; recognised_for_leave: boolean; recognised_for_gratuity: boolean; note?: string }) =>
+    api.post<PriorServiceItem>(`/v1/persons/${personId}/prior-service`, body),
+  remove: (personId: string, id: string) => api.delete<void>(`/v1/persons/${personId}/prior-service/${id}`),
+};
+
+export interface CompanyTransferPreview {
+  from_company: string;
+  to_company: string;
+  leave_mode: "CARRY" | "SETTLE";
+  leave: { leave_type_id: string; leave_type_name: string; days: number }[];
+  warnings: string[];
+  blocked: string[];
+  can_proceed: boolean;
+}
+
+export const companyTransferApi = {
+  preview: (q: { employment_id: string; legal_entity_id: string; effective_date: string; leave_mode: "CARRY" | "SETTLE" }) =>
+    api.get<CompanyTransferPreview>(`/v1/people/transfer-preview?${new URLSearchParams(q)}`),
+  transfer: (body: {
+    employment_id: string;
+    legal_entity_id: string;
+    effective_date: string;
+    leave_mode: "CARRY" | "SETTLE";
+    placement: { org_unit_id: string; location_id: string; job_id: string; manager_employment_id?: string };
+    employee_number?: string;
+    reason?: string;
+  }) => api.post<{ from_employment_id: string; to_employment_id: string; employee_number: string; leave_mode: string }>("/v1/people/transfers", body),
+};
+
+export type LifecycleReportKind = "rejoins" | "company-transfers" | "separation-settlements";
+
+export interface ReportTable {
+  title: string;
+  columns: string[];
+  rows: (string | number | boolean | null)[][];
+  truncated: boolean;
+}
+
+const REPORT_PATH: Record<LifecycleReportKind, string> = {
+  rejoins: "/v1/people/reports/rejoins",
+  "company-transfers": "/v1/people/reports/company-transfers",
+  "separation-settlements": "/v1/leave/reports/separation-settlements",
+};
+
+export const lifecycleReportsApi = {
+  table: (kind: LifecycleReportKind, from: string, to: string) =>
+    api.get<ReportTable>(`${REPORT_PATH[kind]}?from_date=${from}&to_date=${to}`),
+  /** Download the same report as a spreadsheet file, with the session cookie. */
+  async downloadCsv(kind: LifecycleReportKind, from: string, to: string) {
+    const response = await fetch(`${API_BASE_URL}${REPORT_PATH[kind]}?from_date=${from}&to_date=${to}&format=csv`, {
+      credentials: "include", headers: { "X-HRMS-Session": "cookie" }, signal: AbortSignal.timeout(60_000),
+    });
+    if (!response.ok) {
+      const body = await response.json().catch(() => ({}));
+      throw new ApiError(response.status, body.code ?? "EXPORT_FAILED", typeof body.detail === "string" ? body.detail : "Couldn’t download the report");
+    }
+    const href = URL.createObjectURL(await response.blob());
+    const link = document.createElement("a");
+    link.href = href;
+    link.download = `${kind}-${to}.csv`;
+    link.click();
+    setTimeout(() => URL.revokeObjectURL(href), 1000);
+  },
 };

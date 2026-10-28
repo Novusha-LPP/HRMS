@@ -170,7 +170,8 @@ class CompensationResponse(BaseModel):
     employment_id: str
     structure_id: str
     structure_name: str
-    annual_ctc: Decimal
+    annual_ctc: Decimal | None
+    error: str | None = None
     currency: str
     effective_from: date
     effective_to: date | None
@@ -200,3 +201,6 @@ class SalaryListItem(BaseModel):
     annual_ctc: Decimal | None
     structure_name: str | None
     effective_from: date | None
+    # Set when this salary is encrypted with a key that is not configured (annual_ctc is then
+    # empty); the rest of the list is unaffected.
+    error: str | None = None

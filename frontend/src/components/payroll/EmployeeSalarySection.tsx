@@ -142,7 +142,7 @@ export function EmployeeSalarySection({
           <ol className="space-y-2">
             {detail.data.history.map((h, i) => {
               const previous = detail.data.history[i + 1];
-              const change = previous
+              const change = previous && h.annual_ctc !== null && previous.annual_ctc !== null
                 ? (Number(h.annual_ctc) - Number(previous.annual_ctc)) / Number(previous.annual_ctc)
                 : null;
               return (
@@ -152,7 +152,7 @@ export function EmployeeSalarySection({
                 >
                   <div className="min-w-0">
                     <p className="font-medium text-fg">
-                      {inr(h.annual_ctc)}
+                      {h.annual_ctc === null ? <span className="text-danger">Unreadable</span> : inr(h.annual_ctc)}
                       {change !== null && Number.isFinite(change) && (
                         <span
                           className={`ml-2 text-xs font-normal ${
@@ -165,7 +165,7 @@ export function EmployeeSalarySection({
                       )}
                     </p>
                     <p className="text-xs text-fg-subtle">
-                      {h.structure_name}
+                      {h.error ?? h.structure_name}
                       {h.reason ? ` · ${h.reason}` : ""}
                       {h.note ? ` · ${h.note}` : ""}
                     </p>

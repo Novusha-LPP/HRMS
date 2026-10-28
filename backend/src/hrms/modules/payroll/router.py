@@ -21,7 +21,8 @@ from decimal import Decimal
 from uuid import UUID, uuid4
 
 from fastapi import APIRouter, HTTPException, Query, status
-from sqlalchemy import text
+from sqlalchemy import Text, text, type_coerce, update
+from sqlalchemy.orm import defer
 from sqlmodel import col, select
 
 from hrms.core.authn import CurrentUser
@@ -29,6 +30,7 @@ from hrms.core.authz import ScopeDep, authorize_employment, require_permission
 from hrms.core.change_audit import record_change
 from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import business_today
+from hrms.core.field_crypto import FieldCryptoError, open_amount, seal_amount
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
 from hrms.core.tenancy import TenantDep
@@ -954,7 +956,14 @@ async def create_standard_salary_structure(
 # ─── Employee compensation ────────────────────────────────────────────────────
 
 
-async def _compensation_responses(session, tenant_id: UUID, rows: list[EmployeeCompensation]):
+async def _compensation_responses(
+    session,
+    tenant_id: UUID,
+    rows: list[EmployeeCompensation],
+    amounts: dict[UUID, tuple[Decimal | None, str | None]] | None = None,
+):
+    """`amounts` maps a row to (amount, error) for rows read without the ORM decrypting them."""
+    amounts = amounts or {}
     names = await _user_names(session, tenant_id, {r.recorded_by for r in rows})
     structure_names = dict(
         (
@@ -971,7 +980,8 @@ async def _compensation_responses(session, tenant_id: UUID, rows: list[EmployeeC
             employment_id=to_typed_id("employment", r.employment_id),
             structure_id=to_typed_id("salary_structure", r.structure_id),
             structure_name=structure_names.get(r.structure_id, ""),
-            annual_ctc=r.annual_ctc,
+            annual_ctc=amounts[r.id][0] if r.id in amounts else r.annual_ctc,
+            error=amounts[r.id][1] if r.id in amounts else None,
             currency=r.currency,
             effective_from=r.effective_from,
             effective_to=r.effective_to,
@@ -984,13 +994,16 @@ async def _compensation_responses(session, tenant_id: UUID, rows: list[EmployeeC
     ]
 
 
-async def _breakup_for(session, tenant_id: UUID, comp: EmployeeCompensation, on: date):
+async def _breakup_for(
+    session, tenant_id: UUID, comp: EmployeeCompensation, on: date, amount: Decimal | None = None
+):
     lines = (await _structure_lines(session, tenant_id, [comp.structure_id])).get(
         comp.structure_id, []
     )
     calc_lines, _ = await _lines_from_input(session, tenant_id, [_line_input(ln) for ln in lines])
     rules = await rules_at(session, tenant_id, on)
-    return calculator.calculate(Decimal(comp.annual_ctc), calc_lines, rules)
+    ctc = comp.annual_ctc if amount is None else amount
+    return calculator.calculate(Decimal(ctc), calc_lines, rules)
 
 
 @router.get(
@@ -1004,10 +1017,13 @@ async def get_employee_compensation(
 ) -> EmployeeCompensationDetail:
     emp_uuid = to_uuid(employment_id)
     await authorize_employment(session, tenant_id, scope.for_permission("payroll.read"), emp_uuid)
+    # The amount is read as stored and opened row by row: one sealed with a key that is gone
+    # shows as unreadable in the history without hiding the rows that can still be read.
     rows = list(
         (
             await session.execute(
                 select(EmployeeCompensation)
+                .options(defer(EmployeeCompensation.annual_ctc))  # type: ignore[arg-type]
                 .where(EmployeeCompensation.tenant_id == tenant_id)
                 .where(EmployeeCompensation.employment_id == emp_uuid)
                 .order_by(col(EmployeeCompensation.effective_from).desc())
@@ -1016,6 +1032,26 @@ async def get_employee_compensation(
         .scalars()
         .all()
     )
+    stored: dict[UUID, str | None] = {
+        row[0]: row[1]
+        for row in (
+            await session.execute(
+                select(
+                    col(EmployeeCompensation.id),
+                    type_coerce(EmployeeCompensation.annual_ctc, Text),
+                ).where(
+                    col(EmployeeCompensation.tenant_id) == tenant_id,
+                    col(EmployeeCompensation.employment_id) == emp_uuid,
+                )
+            )
+        ).all()
+    }
+    amounts: dict[UUID, tuple[Decimal | None, str | None]] = {}
+    for r in rows:
+        try:
+            amounts[r.id] = (open_amount(stored[r.id], "annual_ctc"), None)
+        except FieldCryptoError as exc:
+            amounts[r.id] = (None, f"Salary unreadable: {exc}")
     today = business_today()
     current = next(
         (
@@ -1025,13 +1061,17 @@ async def get_employee_compensation(
         ),
         None,
     ) or next((r for r in reversed(rows) if r.effective_from > today), None)
-    history = await _compensation_responses(session, tenant_id, rows)
+    history = await _compensation_responses(session, tenant_id, rows, amounts)
     breakup = breakup_error = None
-    if current is not None:
+    current_ctc = amounts[current.id][0] if current is not None else None
+    if current is not None and current_ctc is None:
+        breakup_error = amounts[current.id][1]
+    elif current is not None and current_ctc is not None:
         try:
             on = max(current.effective_from, today) if current.effective_to is None else today
             breakup = _breakup_response(
-                Decimal(current.annual_ctc), await _breakup_for(session, tenant_id, current, on)
+                current_ctc,
+                await _breakup_for(session, tenant_id, current, on, current_ctc),
             )
         except calculator.BreakupError as exc:
             breakup_error = str(exc)
@@ -1092,18 +1132,20 @@ async def set_employee_compensation(
     if structure.legal_entity_id and structure.legal_entity_id != emp["legal_entity_id"]:
         raise HTTPException(422, "This structure belongs to a different company.")
 
-    rows = list(
-        (
-            await session.execute(
-                select(EmployeeCompensation)
-                .where(EmployeeCompensation.tenant_id == tenant_id)
-                .where(EmployeeCompensation.employment_id == emp_uuid)
-                .order_by(col(EmployeeCompensation.effective_from))
+    # Only dates and ids here: the amount of an older row may be sealed with a key that is no
+    # longer configured, and that must not stop HR from entering the salary again.
+    rows = (
+        await session.execute(
+            select(
+                col(EmployeeCompensation.id),
+                col(EmployeeCompensation.effective_from),
+                col(EmployeeCompensation.effective_to),
             )
+            .where(EmployeeCompensation.tenant_id == tenant_id)
+            .where(EmployeeCompensation.employment_id == emp_uuid)
+            .order_by(col(EmployeeCompensation.effective_from))
         )
-        .scalars()
-        .all()
-    )
+    ).all()
     open_row = next((r for r in rows if r.effective_to is None), None)
     if open_row is not None and body.effective_from <= open_row.effective_from:
         raise HTTPException(
@@ -1128,13 +1170,27 @@ async def set_employee_compensation(
     except calculator.BreakupError as exc:
         raise HTTPException(422, str(exc)) from exc
 
+    before_ctc = None
     if open_row is not None:
-        before_ctc = open_row.annual_ctc
-        open_row.effective_to = body.effective_from
-        session.add(open_row)
-        await session.flush()
-    else:
-        before_ctc = None
+        try:
+            before_ctc = (
+                await session.execute(
+                    select(col(EmployeeCompensation.annual_ctc)).where(
+                        col(EmployeeCompensation.tenant_id) == tenant_id,
+                        col(EmployeeCompensation.id) == open_row.id,
+                    )
+                )
+            ).scalar_one()
+        except FieldCryptoError:
+            before_ctc = None  # sealed under a key that is gone; the revision still goes ahead
+        await session.execute(
+            update(EmployeeCompensation)
+            .where(
+                col(EmployeeCompensation.tenant_id) == tenant_id,
+                col(EmployeeCompensation.id) == open_row.id,
+            )
+            .values(effective_to=body.effective_from)
+        )
     session.add(draft)
     await session.flush()
     await record_change(
@@ -1147,8 +1203,9 @@ async def set_employee_compensation(
         before=None,
         after={
             "employment_id": emp_uuid,
-            "annual_ctc": draft.annual_ctc,
-            "previous_annual_ctc": before_ctc,
+            # Sealed: the change log is readable by more people than payroll is.
+            "annual_ctc": seal_amount(draft.annual_ctc, "annual_ctc"),
+            "previous_annual_ctc": seal_amount(before_ctc, "annual_ctc"),
             "structure": structure.name,
             "effective_from": draft.effective_from,
             "reason": draft.reason,
@@ -1212,19 +1269,26 @@ async def list_salaries(
         .mappings()
         .all()
     )
-    return [
-        SalaryListItem(
-            employment_id=to_typed_id("employment", r["id"]),
-            employee_number=r["employee_number"],
-            name=r["name"],
-            legal_entity_id=to_typed_id("legal_entity", r["legal_entity_id"]),
-            company=r["company"],
-            department=r["department"],
-            designation=r["designation"],
-            employment_state=r["employment_state"],
-            annual_ctc=r["annual_ctc"],
-            structure_name=r["structure_name"],
-            effective_from=r["effective_from"],
+    items = []
+    for r in rows:
+        try:
+            ctc, error = open_amount(r["annual_ctc"], "annual_ctc"), None
+        except FieldCryptoError as exc:
+            ctc, error = None, f"Salary unreadable: {exc}"
+        items.append(
+            SalaryListItem(
+                employment_id=to_typed_id("employment", r["id"]),
+                employee_number=r["employee_number"],
+                name=r["name"],
+                legal_entity_id=to_typed_id("legal_entity", r["legal_entity_id"]),
+                company=r["company"],
+                department=r["department"],
+                designation=r["designation"],
+                employment_state=r["employment_state"],
+                annual_ctc=ctc,
+                structure_name=r["structure_name"],
+                effective_from=r["effective_from"],
+                error=error,
+            )
         )
-        for r in rows
-    ]
+    return items

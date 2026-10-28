@@ -62,6 +62,9 @@ ROLE_PERMISSIONS: dict[str, frozenset[str]] = {
             "corrections.approve",
             "corrections.write",
             "time.write",
+            # Create attendance groups (guards, drivers…), add people, decide who may view or
+            # mark each one; and view and mark every group's people in scope (time/groups.py).
+            "attendance.groups.manage",
             "onboarding.read",
             "onboarding.write",
             "policy.read",

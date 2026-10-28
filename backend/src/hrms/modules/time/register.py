@@ -31,6 +31,7 @@ from hrms.modules.corrections.models import (
     CorrectionStatus,
 )
 from hrms.modules.policy.engine import resolve_policy
+from hrms.modules.time.groups import group_on, group_spans
 from hrms.modules.time.holidays import holiday_scope_sql
 from hrms.modules.time.models import AttendanceDay, Punch
 from hrms.modules.time.schemas import (
@@ -462,7 +463,14 @@ async def _range_context(session, tenant_id, emp, employee, first, last):
         while day <= min(r["to_date"], last):
             leaves[day] = r["name"]
             day += timedelta(days=1)
-    return {"stored": stored, "holidays": holidays, "leaves": leaves, "today": business_today()}
+    groups = await group_spans(session, tenant_id, [emp], first, last)
+    return {
+        "stored": stored,
+        "holidays": holidays,
+        "leaves": leaves,
+        "groups": groups.get(emp),
+        "today": business_today(),
+    }
 
 
 async def _register_day(session, tenant_id, emp, day, context) -> RegisterDay:
@@ -472,16 +480,21 @@ async def _register_day(session, tenant_id, emp, day, context) -> RegisterDay:
     holiday = context["holidays"].get(day)
     leave = context["leaves"].get(day)
     working = is_working_day(day, policy.work_days, policy.saturday_pattern)
+    marked = group_on(context.get("groups"), day) is not None  # time/groups.py
     if ad and ad.first_punch_in:
         state = ad.status
     elif leave:
         state = "ON_LEAVE"
+    elif marked and ad and ad.status_override:
+        state = ad.status  # marked present / absent (present on a day off: off-day work)
     elif holiday:
         state = "HOLIDAY"
     elif not working:
         state = "WEEKEND"
     elif day > context["today"]:
         state = "UPCOMING"
+    elif marked:
+        state = "NOT_MARKED"  # a marked day nobody has marked yet is not an absence
     else:
         state = ad.status if ad and ad.status != "PENDING" else "ABSENT"
     flags = ad.review_flags.split(",") if ad and ad.review_flags else []

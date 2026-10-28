@@ -46,3 +46,12 @@ test("the same name is flagged, and a different birth date clears it", () => {
   assert.equal(findPossibleDuplicates(known, { first: "Binu", last: "Singh", dob: "1985-05-05" }).length, 1);
   assert.deepEqual(findPossibleDuplicates(people, { first: "", last: "Singh", dob: "" }), []);
 });
+
+import { describeService } from "../src/lib/rejoin.ts";
+
+test("earlier service reads in years and months", () => {
+  assert.equal(describeService(0), "Under a month");
+  assert.equal(describeService(5), "5 months");
+  assert.equal(describeService(12), "1 year");
+  assert.equal(describeService(38), "3 years 2 months");
+});

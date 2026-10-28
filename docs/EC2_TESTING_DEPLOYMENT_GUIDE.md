@@ -217,10 +217,12 @@ HRMS_PLATFORM_DATABASE_URL=postgresql+asyncpg://hrms_platform:YOUR_PLATFORM_ROLE
 HRMS_SECRET_KEY=YOUR_64_HEX_CHARACTERS_SECRET_KEY
 HRMS_METRICS_TOKEN=YOUR_64_HEX_CHARACTERS_METRICS_TOKEN
 HRMS_FIELD_ENCRYPTION_KEYS=k1:YOUR_GENERATED_BASE64_KEY
+HRMS_PAYROLL_ENCRYPTION_KEYS=p1:YOUR_OTHER_GENERATED_BASE64_KEY
+HRMS_PAYROLL_PEPPER=YOUR_32_PLUS_CHARACTER_RANDOM_PEPPER
 
 HRMS_CORS_ORIGINS=https://testhrms.alvision.in
 HRMS_ALLOW_PUBLIC_REGISTRATION=false
-HRMS_API_DOCS_ENABLED=false
+HRMS_API_DOCS_ENABLED=true
 HRMS_DATABASE_POOL_SIZE=5
 HRMS_DATABASE_MAX_OVERFLOW=5
 HRMS_DEFAULT_TIMEZONE=Asia/Kolkata
@@ -303,6 +305,8 @@ Inside the `testing` environment, click **Add environment secret** to supply the
 | `HRMS_SECRET_KEY` | 64-hex char JWT / session signing key | `openssl rand -hex 32` |
 | `HRMS_METRICS_TOKEN` | Bearer token protecting `GET /metrics` | `openssl rand -hex 32` |
 | `HRMS_FIELD_ENCRYPTION_KEYS` | AES-256 key for field-level PII encryption | `k1:<base64url 32 bytes>` (e.g. `python3 -c "import os,base64; print('k1:'+base64.urlsafe_b64encode(os.urandom(32)).decode())"`) |
+| `HRMS_PAYROLL_ENCRYPTION_KEYS` | Separate AES-256 key(s) for salaries; must differ from the PII key | `p1:<base64url 32 bytes>` (see [PAYROLL_ENCRYPTION.md](PAYROLL_ENCRYPTION.md)) |
+| `HRMS_PAYROLL_PEPPER` | Secret mixed into the salary key; losing or changing it makes salaries unreadable | 32+ random characters, e.g. `python3 -c "import secrets;print(secrets.token_urlsafe(48))"` |
 
 ### 3. Add Environment Variables under `testing`
 Inside the `testing` environment, click **Add environment variable**:

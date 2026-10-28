@@ -112,7 +112,9 @@ export interface Compensation {
   employment_id: string;
   structure_id: string;
   structure_name: string;
-  annual_ctc: Money;
+  /** Null when the salary was sealed with a key that is no longer configured (see `error`). */
+  annual_ctc: Money | null;
+  error?: string | null;
   currency: string;
   effective_from: string;
   effective_to: string | null;

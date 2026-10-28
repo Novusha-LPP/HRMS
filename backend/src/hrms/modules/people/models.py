@@ -71,6 +71,30 @@ class RejoinMode(enum.StrEnum):
     FRESH = "FRESH"
 
 
+class TransferLeaveMode(enum.StrEnum):
+    """What happens to leave when someone moves to another company of the group."""
+
+    CARRY = "CARRY"
+    SETTLE = "SETTLE"
+
+
+class CompanyTransfer(SQLModel, table=True):
+    """A person moved from one company to another: ties the two employments together."""
+
+    __tablename__ = "company_transfers"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    person_id: UUID = Field(index=True)
+    from_employment_id: UUID
+    to_employment_id: UUID
+    effective_date: date
+    leave_mode: str = Field(max_length=10)
+    reason: str | None = Field(default=None)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
+
+
 class RejoinPolicy(SQLModel, table=True):
     """How a company (or every company, when none is named) treats someone who rejoins."""
 
@@ -83,6 +107,25 @@ class RejoinPolicy(SQLModel, table=True):
     force_fresh_after_days: int | None = Field(default=None, ge=0)
     effective_from: date
     archived_at: datetime | None = Field(default=None)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
+
+
+class PriorService(SQLModel, table=True):
+    """Work for an earlier employer that this company recognises (belongs to the person)."""
+
+    __tablename__ = "prior_service"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    person_id: UUID = Field(index=True)
+    employer_name: str = Field(max_length=200)
+    from_date: date
+    to_date: date
+    recognised_for_leave: bool = Field(default=False)
+    recognised_for_gratuity: bool = Field(default=False)
+    note: str | None = Field(default=None, max_length=500)
+    document_id: UUID | None = Field(default=None)
     created_by: UUID | None = Field(default=None)
     created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
 

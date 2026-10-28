@@ -247,6 +247,62 @@ is changed.
 - `can_proceed` is false while anything is in `blocked`.
 """,
     ),
+    "report_rejoins": (
+        "Report: people who rejoined",
+        "Everyone who rejoined in the date range (default: the last 90 days): when they left "
+        "and came back, the days away, whether earlier service continued or started fresh, "
+        "whether the break was accepted, and the reason. Only people your access covers appear. "
+        "`format=csv` downloads it as a spreadsheet file.",
+    ),
+    "report_company_transfers": (
+        "Report: moves between companies",
+        "Everyone moved from one company to another in the date range (default: the last 90 "
+        "days), with old and new employee IDs and companies and whether leave was carried over "
+        "or settled. `format=csv` downloads it as a spreadsheet file.",
+    ),
+    "preview_company_transfer": (
+        "Preview a move to another company",
+        "Checks whether the person can move to `legal_entity_id` and what it would do: the "
+        "leave balances that would be carried over (with `leave_mode=CARRY`), warnings, and "
+        "anything that blocks it (`blocked`). Nothing is changed.",
+    ),
+    "transfer_to_company": (
+        "Move a person to another company",
+        """
+Ends their employment in this company and starts a new one in `legal_entity_id` on
+`effective_date` (today or earlier), so each company keeps its own attendance, payroll and
+history.
+
+- **`leave_mode`:** `CARRY` moves the unused leave balances to the new company and keeps their
+  service going. `SETTLE` applies this company's rules for leavers and starts the new
+  employment with no leave.
+- **`placement`:** the department, location and designation in the new company.
+- **What follows the person:** their login, their identity record (copied) and uploaded
+  documents including the photo (moved).
+- Needs `people.write` over both companies. Refused if a change is already scheduled for them.
+""",
+    ),
+    "list_prior_service": (
+        "List earlier service",
+        "Work this person did for earlier employers that your company recognises, with the "
+        "months and days of each and the totals recognised for leave eligibility "
+        "(`recognised_leave_months`) and for gratuity (`recognised_gratuity_days`).",
+    ),
+    "add_prior_service": (
+        "Record earlier service",
+        """
+Records a period the person worked for another employer.
+
+- **`recognised_for_leave`:** the months count towards the minimum service a leave rule asks for.
+- **`recognised_for_gratuity`:** the days are added to the person's service for gratuity.
+- The period must have ended, must not overlap time they worked here, and must not overlap
+  another recorded period (409).
+""",
+    ),
+    "delete_prior_service": (
+        "Remove earlier service",
+        "Deletes a recorded period. Leave eligibility follows the change from the next accrual.",
+    ),
     "employment_history": (
         "Employment history",
         "Each stint of this employment, newest first: when they joined and left, why, whether "

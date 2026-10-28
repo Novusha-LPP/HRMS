@@ -12,8 +12,28 @@ async function call(request: APIRequestContext, method: string, path: string, da
   return response.status() === 204 ? null : response.json();
 }
 
+// The backend uses the real clock, so the month under test is always next month: every day in it is upcoming.
+function targetMonth() {
+  const now = new Date();
+  const year = now.getUTCFullYear() + (now.getUTCMonth() === 11 ? 1 : 0);
+  const month = (now.getUTCMonth() + 1) % 12;
+  const pad = (n: number) => String(n).padStart(2, "0");
+  const days = Array.from({ length: new Date(Date.UTC(year, month + 1, 0)).getUTCDate() }, (_, i) => i + 1);
+  const dow = (d: number) => new Date(Date.UTC(year, month, d)).getUTCDay();
+  const saturdays = days.filter((d) => dow(d) === 6);
+  return {
+    iso: (d: number) => `${year}-${pad(month + 1)}-${pad(d)}`,
+    sundays: days.filter((d) => dow(d) === 0),
+    saturdays,
+    firstFriday: days.find((d) => dow(d) === 5)!,
+    listLabel: (d: number) => `Sat, ${d} ${new Date(Date.UTC(year, month, d)).toLocaleString("en-GB", { month: "short", timeZone: "UTC" })}`,
+  };
+}
+
 test("attendance calendar shows assigned weekly offs even without punches", async ({ page, request }) => {
   const tag = randomUUID().slice(0, 8);
+  const m = targetMonth();
+  const [firstSat, secondSat, , fourthSat] = m.saturdays;
   const admin = await call(request, "POST", "/v1/auth/register-company", {
     company_name: `Calendar ${tag}`, admin_email: `calendar-admin-${tag}@example.com`,
     admin_password: password,
@@ -36,31 +56,31 @@ test("attendance calendar shows assigned weekly offs even without punches", asyn
     saturday_pattern: "SECOND_OFF", ot_enabled: false,
   }, token);
   await call(request, "POST", "/v1/policies/assignments", {
-    employment_id: emp.id, policy_template_id: policy.id, effective_from: "2026-10-01",
+    employment_id: emp.id, policy_template_id: policy.id, effective_from: m.iso(1),
   }, token);
   await call(request, "POST", "/v1/time/holidays", {
-    name: "Calendar Festival", holiday_date: "2026-10-02",
+    name: "Calendar Festival", holiday_date: m.iso(m.firstFriday),
   }, token);
   // No materialized attendance rows exist: weekly offs must come from policy resolution.
-  expect(await call(request, "GET", `/v1/time/attendance-days?employment_id=${emp.id}&from_date=2026-10-01&to_date=2026-10-31`, undefined, token)).toEqual([]);
+  expect(await call(request, "GET", `/v1/time/attendance-days?employment_id=${emp.id}&from_date=${m.iso(1)}&to_date=${m.iso(28)}`, undefined, token)).toEqual([]);
 
-  await page.clock.setFixedTime(new Date("2026-10-06T06:30:00Z"));
+  await page.clock.setFixedTime(new Date(`${m.iso(6)}T06:30:00Z`));
   await page.goto("/login");
   await page.getByLabel("Username, Phone, or Email").fill(email);
   await page.getByLabel("Password", { exact: true }).fill(password);
   await page.getByRole("button", { name: "Sign in", exact: true }).click();
   await expect(page).toHaveURL(/dashboard/);
   await page.goto("/attendance");
-  for (const day of ["04", "10", "11", "18", "25"]) {
-    await expect(page.locator(`[data-date="2026-10-${day}"]`).getByText("Weekly off", { exact: true })).toBeVisible();
+  for (const day of [...m.sundays, secondSat]) {
+    await expect(page.locator(`[data-date="${m.iso(day)}"]`).getByText("Weekly off", { exact: true })).toBeVisible();
   }
-  await expect(page.locator('[data-date="2026-10-03"]')).not.toContainText("Weekly off");
-  await expect(page.locator('[data-date="2026-10-24"]')).not.toContainText("Weekly off");
-  await expect(page.locator('[data-date="2026-10-02"]')).toContainText("Calendar Festival");
-  await expect(page.locator('[data-date="2026-10-24"]')).toContainText("upcoming");
+  await expect(page.locator(`[data-date="${m.iso(firstSat)}"]`)).not.toContainText("Weekly off");
+  await expect(page.locator(`[data-date="${m.iso(fourthSat)}"]`)).not.toContainText("Weekly off");
+  await expect(page.locator(`[data-date="${m.iso(m.firstFriday)}"]`)).toContainText("Calendar Festival");
+  await expect(page.locator(`[data-date="${m.iso(fourthSat)}"]`)).toContainText("upcoming");
   await page.getByRole("radio", { name: "List", exact: true }).click();
-  await expect(page.getByRole("row").filter({ hasText: "Sat, 10 Oct" })).toContainText("Weekly off");
+  await expect(page.getByRole("row").filter({ hasText: m.listLabel(secondSat) })).toContainText("Weekly off");
   await page.getByRole("radio", { name: "Calendar", exact: true }).click();
   await page.setViewportSize({ width: 390, height: 844 });
-  await expect(page.locator('[data-date="2026-10-10"]').getByText("Weekly off", { exact: true })).toBeVisible();
+  await expect(page.locator(`[data-date="${m.iso(secondSat)}"]`).getByText("Weekly off", { exact: true })).toBeVisible();
 });

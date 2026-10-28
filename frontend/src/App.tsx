@@ -28,6 +28,8 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ defaul
 const RecruitmentPage = lazy(() => import("./pages/RecruitmentPage").then(m => ({ default: m.RecruitmentPage })));
 const OpeningDetailPage = lazy(() => import("./pages/OpeningDetailPage").then(m => ({ default: m.OpeningDetailPage })));
 const DailyAnalysisPage = lazy(() => import("./pages/DailyAnalysisPage").then(m => ({ default: m.DailyAnalysisPage })));
+const AttendanceGroupsPage = lazy(() => import("./pages/AttendanceGroupsPage").then(m => ({ default: m.AttendanceGroupsPage })));
+const MarkAttendancePage = lazy(() => import("./pages/MarkAttendancePage").then(m => ({ default: m.MarkAttendancePage })));
 const AttendanceRegisterPage = lazy(() => import("./pages/AttendanceRegisterPage").then(m => ({ default: m.AttendanceRegisterPage })));
 const MyTeamPage = lazy(() => import("./pages/MyTeamPage").then(m => ({ default: m.MyTeamPage })));
 const StatutoryPage = lazy(() => import("./pages/StatutoryPage").then(m => ({ default: m.StatutoryPage })));
@@ -125,6 +127,8 @@ export default function App() {
                               <Route path="/kyc" element={<Navigate to="/profile?tab=kyc" replace />} />
                               <Route path="/attendance" element={<AttendancePage />} />
                               <Route path="/attendance/register" element={<AttendanceRegisterPage />} />
+                              <Route path="/attendance/marking" element={<MarkAttendancePage />} />
+                              <Route path="/attendance/groups" element={<AttendanceGroupsPage />} />
                               <Route path="/leave" element={<LeavePage />} />
                               <Route path="/corrections" element={<CorrectionsPage />} />
                               <Route path="/approvals" element={<ApprovalsPage />} />

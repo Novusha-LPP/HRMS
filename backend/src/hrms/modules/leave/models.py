@@ -20,6 +20,7 @@ LeaveReferenceType = Literal[
     "MANUAL",
     "REJOIN",
     "SEPARATION",
+    "TRANSFER",
     "YEAR_END",
 ]
 

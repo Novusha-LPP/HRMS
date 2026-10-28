@@ -9,6 +9,10 @@ on:
         description: PostgreSQL image for the isolated backend and browser databases
         type: string
         default: postgres:16-alpine
+      coverage:
+        description: Measure coverage and enforce fail_under (pull requests and releases; the testing deploy skips it)
+        type: boolean
+        default: true
 permissions:
   contents: read
 # A newer push to a pull request supersedes the run in flight. Called runs (release, testing
@@ -62,8 +66,22 @@ jobs:
       # Exercise reversible migrations on a separate database, then a populated upgrade.
       - name: Verify migration upgrade and rollback boundaries
         run: python scripts/check_migrations.py
-      # Coverage below [tool.coverage.report] fail_under fails the build.
-      - run: pytest -q --cov --cov-report=term
+      # Tests run in parallel, one cloned database per worker (tests/conftest.py). The few that
+      # need the whole Postgres cluster to themselves (@pytest.mark.serial) run afterwards.
+      # Coverage below [tool.coverage.report] fail_under fails the build; it is only measured
+      # when inputs.coverage is on (always for pull requests, which have no inputs).
+      - name: Tests (parallel)
+        if: format('{0}', inputs.coverage) != 'false'
+        run: pytest -q -n auto --cov --cov-report= --cov-fail-under=0
+      - name: Tests (cluster-exclusive) and coverage
+        if: format('{0}', inputs.coverage) != 'false'
+        run: pytest -q -m serial --cov --cov-append --cov-report=term
+      - name: Tests (parallel, no coverage)
+        if: format('{0}', inputs.coverage) == 'false'
+        run: pytest -q -n auto
+      - name: Tests (cluster-exclusive, no coverage)
+        if: format('{0}', inputs.coverage) == 'false'
+        run: pytest -q -m serial
   frontend:
     runs-on: ubuntu-latest
     timeout-minutes: 15

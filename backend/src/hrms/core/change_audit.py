@@ -66,6 +66,11 @@ ENTITY_TYPES = frozenset(
         "holiday_calendar",
         "holiday_calendar_assignment",
         "approval_flow",
+        # Recorded by database triggers (migration 0072)
+        "leave_separation_rule",
+        "rejoin_policy",
+        "prior_service",
+        "company_transfer",
     }
 )
 

@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from sqlmodel import col, select
 
 from hrms.core.authz import SYSTEM_ACTOR
+from hrms.core.metrics import REJOINS
 from hrms.modules.leave.engine import record_transaction
 from hrms.modules.leave.models import (
     LeaveBalanceBucket,
@@ -348,6 +349,7 @@ async def apply_rejoin(
             {"leave_type_id": str(e.leave_type_id), "days": e.days} for e in decision.leave
         ]
     await session.flush()
+    REJOINS.labels(decision.mode.value).inc()
     return await spells.open_next_spell(
         session,
         tenant_id,

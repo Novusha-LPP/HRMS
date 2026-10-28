@@ -76,7 +76,12 @@ def test_deployed_environments_need_their_own_key():
         Settings(**DEPLOYED, field_encryption_keys=field_crypto.DEV_KEYS)
     with pytest.raises(ValidationError, match="32 bytes"):
         Settings(**DEPLOYED, field_encryption_keys="k:" + base64.urlsafe_b64encode(b"x").decode())
-    Settings(**DEPLOYED, field_encryption_keys=_key("prod-1"))
+    Settings(
+        **DEPLOYED,
+        field_encryption_keys=_key("prod-1"),
+        payroll_encryption_keys=_key("pay-1"),
+        payroll_pepper="p" * 40,
+    )
 
 
 def test_the_rewrite_command_covers_every_encrypted_column():

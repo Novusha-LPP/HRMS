@@ -42,6 +42,8 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/team", label: "My team", icon: UserRound, roles: ["MANAGER"] },
       { to: "/attendance", label: "Attendance", icon: Clock },
       { to: "/attendance/register", label: "Attendance register", icon: CalendarCheck, roles: [...HR_ROLES, "MANAGER"] },
+      // Attendance groups (guards, drivers…): their days are marked by whoever was given the group.
+      { to: "/attendance/marking", label: "Mark attendance", icon: ClipboardCheck, anyPermission: ["attendance.view", "attendance.mark", "attendance.groups.manage"] },
       { to: "/leave", label: "Leave", icon: Umbrella },
       { to: "/corrections", label: "Corrections", icon: FilePenLine },
       { to: "/approvals", label: "Approvals", icon: ClipboardCheck },
@@ -68,6 +70,7 @@ export const NAV_SECTIONS: NavSection[] = [
     items: [
       { to: "/organization", label: "Organization", icon: Building2, permission: "org.write" },
       { to: "/policy", label: "Policies", icon: ShieldCheck, roles: HR_ROLES },
+      { to: "/attendance/groups", label: "Attendance groups", icon: Users, permission: "attendance.groups.manage" },
       { to: "/approval-flows", label: "Approval flows", icon: ClipboardCheck, permission: "approvals.manage" },
       // Connected apps (ERP, CRM): the company administrator only.
       { to: "/integrations", label: "Integrations", icon: Cable, permission: "integrations.manage" },

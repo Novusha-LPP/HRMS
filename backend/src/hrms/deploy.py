@@ -16,6 +16,12 @@ Both are idempotent, so every deploy runs them. And, for the encrypted identifie
                                                 active key (idempotent; counts only)
     python -m hrms.deploy encrypt-pii --check   exit 1 if any value still needs it
     python -m hrms.deploy decrypt-pii           back to plain text, only to downgrade 0030
+
+and the same for salaries (payroll keys + pepper, migration 0073), including the amounts
+already written into the change history:
+
+    python -m hrms.deploy encrypt-payroll [--check]
+    python -m hrms.deploy decrypt-payroll       only to downgrade 0073
 """
 
 from __future__ import annotations
@@ -101,8 +107,19 @@ def migrate() -> None:
         print("hrms_platform password set from HRMS_PLATFORM_ROLE_PASSWORD")
     print("hrms_app limits: " + ", ".join(f"{k}={v}" for k, v in APP_ROLE_SETTINGS.items()))
     # Every deploy leaves no identifier in plain text or under a retired key (idempotent).
-    rewritten = asyncio.run(_rewrite_pii(check=False))
-    print(f"encrypt-pii: {rewritten} identifier value(s) encrypted with the active key")
+    # A value whose key is no longer configured does not stop the deploy: everything readable
+    # is still rewritten, the rest is left untouched and reported (the app shows an error for
+    # it, and putting the key back makes it readable). `encrypt-pii --check` still fails on it.
+    for name, rewrite, noun in (
+        ("encrypt-pii", _rewrite_pii, "identifier"),
+        ("encrypt-payroll", _rewrite_payroll, "salary"),
+    ):
+        try:
+            count = asyncio.run(rewrite(check=False))
+            print(f"{name}: {count} {noun} value(s) encrypted with the active key")
+        except UnreadableValues as exc:
+            print(f"::warning::{name}: {exc}", file=sys.stderr)
+            print(f"{name}: continuing; the values above stay unreadable until their key returns")
 
 
 # Table -> encrypted columns. Must match the EncryptedString columns of the models
@@ -187,6 +204,115 @@ async def _rewrite_pii(*, check: bool, decrypt: bool = False) -> int:
     return pending
 
 
+# Salaries: table -> sealed columns, and the change-history fields that carry an amount.
+PAYROLL_COLUMNS: dict[str, tuple[str, ...]] = {"employee_compensations": ("annual_ctc",)}
+PAYROLL_LOG_FIELDS = {"employee_compensation": ("annual_ctc", "previous_annual_ctc")}
+
+
+async def _rewrite_payroll(*, check: bool, decrypt: bool = False) -> int:
+    """
+    Seal (or, to downgrade, unseal) every salary under the active payroll key. One transaction
+    per tenant. The change history is append-only for the app, but this runs as the database
+    owner and rewrites only the amount fields of salary entries, never anything else.
+    """
+    import json
+
+    from hrms.core.field_crypto import FieldCryptoError, payroll_cipher
+
+    if not settings.payroll_encryption_keys and not decrypt:
+        if check:
+            raise SystemExit("HRMS_PAYROLL_ENCRYPTION_KEYS is not set: nothing is being encrypted")
+        print("encrypt-payroll: skipped, HRMS_PAYROLL_ENCRYPTION_KEYS is not set (local)")
+        return 0
+    c = payroll_cipher()
+    engine = create_async_engine(settings.database_url)
+    pending = 0
+    unreadable: list[str] = []
+
+    def convert(stored: str, column: str) -> str | None:
+        """The replacement for `stored`, or None when it is already right."""
+        if decrypt:
+            return c.decrypt(stored, column) if c.is_sealed(stored) else None
+        if c.needs_rewrite(stored):
+            return c.encrypt(c.decrypt(stored, column), column)
+        c.decrypt(stored, column)  # proves the key material and ciphertext are intact
+        return None
+
+    try:
+        async with engine.connect() as conn:
+            tenants = [r[0] for r in await conn.execute(text("SELECT id FROM tenants ORDER BY id"))]
+        for tenant_id in tenants:
+            async with engine.begin() as conn:
+                await conn.execute(
+                    text("SELECT set_config('app.tenant_id', :t, true)"), {"t": str(tenant_id)}
+                )
+                for table, columns in PAYROLL_COLUMNS.items():
+                    rows = await conn.execute(
+                        text(f"SELECT id, {', '.join(columns)} FROM {table} WHERE tenant_id = :t"),
+                        {"t": str(tenant_id)},
+                    )
+                    for row in rows.mappings().all():
+                        changes = {}
+                        for column in columns:
+                            if not row[column]:
+                                continue
+                            try:
+                                new = convert(row[column], column)
+                            except FieldCryptoError:
+                                unreadable.append(f"{table}.{column} id={row['id']}")
+                                continue
+                            if new is not None:
+                                changes[column] = new
+                        pending += len(changes)
+                        if changes and not check:
+                            sets = ", ".join(f"{col} = :{col}" for col in changes)
+                            await conn.execute(
+                                text(
+                                    f"UPDATE {table} SET {sets} WHERE tenant_id = :t AND id = :id"
+                                ),
+                                {**changes, "t": str(tenant_id), "id": row["id"]},
+                            )
+                for entity_type, fields in PAYROLL_LOG_FIELDS.items():
+                    rows = await conn.execute(
+                        text(
+                            "SELECT id, changes FROM entity_change_log "
+                            "WHERE tenant_id = :t AND entity_type = :e"
+                        ),
+                        {"t": str(tenant_id), "e": entity_type},
+                    )
+                    for row in rows.mappings().all():
+                        entry = row["changes"]
+                        entry = json.loads(entry) if isinstance(entry, str) else entry
+                        touched = False
+                        for field in fields:
+                            for side in ("old", "new"):
+                                value = (entry.get(field) or {}).get(side)
+                                if not value:
+                                    continue
+                                try:
+                                    new = convert(str(value), "annual_ctc")
+                                except FieldCryptoError:
+                                    unreadable.append(f"entity_change_log id={row['id']}")
+                                    continue
+                                if new is not None:
+                                    entry[field][side] = new
+                                    touched = True
+                                    pending += 1
+                        if touched and not check:
+                            await conn.execute(
+                                text(
+                                    "UPDATE entity_change_log SET changes = CAST(:c AS jsonb) "
+                                    "WHERE tenant_id = :t AND id = :id"
+                                ),
+                                {"c": json.dumps(entry), "t": str(tenant_id), "id": row["id"]},
+                            )
+    finally:
+        await engine.dispose()
+    if unreadable:
+        raise UnreadableValues(unreadable, "HRMS_PAYROLL_ENCRYPTION_KEYS")
+    return pending
+
+
 async def _rewrite_mfa_seeds(engine, tenants, *, check: bool, errors: list[str]) -> int:
     """Retain MFA through encryption-key rotation; seed contents never enter output."""
     from hrms.core.field_crypto import FieldCryptoError, cipher
@@ -239,10 +365,10 @@ async def _rewrite_mfa_seeds(engine, tenants, *, check: bool, errors: list[str])
 
 
 class UnreadableValues(RuntimeError):
-    def __init__(self, where: list[str]):
+    def __init__(self, where: list[str], variable: str = "HRMS_FIELD_ENCRYPTION_KEYS"):
         shown = "; ".join(where[:20]) + (f" (+{len(where) - 20} more)" if len(where) > 20 else "")
         super().__init__(
-            f"{len(where)} value(s) don't decrypt with HRMS_FIELD_ENCRYPTION_KEYS — add back the "
+            f"{len(where)} value(s) don't decrypt with {variable} — add back the "
             f"key that wrote them: {shown}"
         )
 
@@ -331,6 +457,18 @@ def main(argv: list[str]) -> int:
             return 1
         if check:
             print(f"{count} identifier value(s) not yet encrypted with the active key")
+            return 1 if count else 0
+        print(f"{argv[0]}: {count} value(s) rewritten")
+        return 0
+    if argv and argv[0] in ("encrypt-payroll", "decrypt-payroll"):
+        check = "--check" in argv[1:]
+        try:
+            count = asyncio.run(_rewrite_payroll(check=check, decrypt=argv[0] == "decrypt-payroll"))
+        except UnreadableValues as exc:
+            print(f"{argv[0]}: {exc}", file=sys.stderr)
+            return 1
+        if check:
+            print(f"{count} salary value(s) not yet encrypted with the active key")
             return 1 if count else 0
         print(f"{argv[0]}: {count} value(s) rewritten")
         return 0

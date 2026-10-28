@@ -17,6 +17,8 @@ DEPLOYED = dict(
     metrics_token="scrape",
     cors_origins="https://testinghrms.example.com",
     field_encryption_keys="t1:MDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDAwMDA=",
+    payroll_encryption_keys="p1:MTExMTExMTExMTExMTExMTExMTExMTExMTExMTExMTE=",
+    payroll_pepper="pepper-for-the-tests-0123456789abcdef",
 )
 
 
@@ -37,6 +39,8 @@ def test_deployed_environments_get_every_safeguard(environment):
         ({"metrics_token": None}, "HRMS_METRICS_TOKEN"),
         ({"cors_origins": "http://testinghrms.example.com"}, "https://"),
         ({"field_encryption_keys": None}, "HRMS_FIELD_ENCRYPTION_KEYS"),
+        ({"payroll_encryption_keys": None}, "HRMS_PAYROLL_ENCRYPTION_KEYS"),
+        ({"payroll_pepper": None}, "HRMS_PAYROLL_PEPPER"),
         (
             {"app_database_url": "postgresql+asyncpg://hrms_app:hrms_app_dev_password@db/h"},
             "hrms_app",

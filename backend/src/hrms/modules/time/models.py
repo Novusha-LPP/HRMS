@@ -25,6 +25,7 @@ class PunchSource(enum.StrEnum):
     DEVICE = "DEVICE"
     MANUAL = "MANUAL"  # HR correction
     INTEGRATION = "INTEGRATION"  # through a connected app's employee session (source_system)
+    MARKED = "MARKED"  # in/out times entered with a mark (time/marking.py), not by the person
 
 
 class AttendanceStatus(enum.StrEnum):
@@ -60,6 +61,25 @@ class ReviewFlag(enum.StrEnum):
 
 
 LONG_DAY_MINUTES = 16 * 60
+
+
+class MarkStatus(enum.StrEnum):
+    """What a marker can record for a day of someone whose attendance is marked."""
+
+    PRESENT = "PRESENT"
+    ABSENT = "ABSENT"
+
+
+class MarkSource(enum.StrEnum):
+    MANUAL = "MANUAL"  # a person, on the marking screen or through the API
+    INTEGRATION = "INTEGRATION"  # a connected app, through its key
+
+
+class GroupAccess(enum.StrEnum):
+    """What someone may do with an attendance group's daily sheet."""
+
+    VIEW = "VIEW"
+    MARK = "MARK"  # view, mark days and record leave
 
 
 class Holiday(SQLModel, table=True):
@@ -238,3 +258,70 @@ def apply_overtime(ad: AttendanceDay, ot_minutes: int, payable: bool = True) -> 
     ad.ot_reviewed_by = None
     ad.ot_reviewed_at = None
     ad.ot_review_notes = None
+
+
+class AttendanceGroup(SQLModel, table=True):
+    """A group of people whose attendance is marked, not punched: guards, drivers, cleaners."""
+
+    __tablename__ = "attendance_groups"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    name: str = Field(max_length=100)
+    description: str | None = Field(default=None, max_length=500)
+    legal_entity_id: UUID | None = Field(default=None)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
+    version: int = Field(default=0)
+    archived_at: datetime | None = Field(default=None)
+
+
+class AttendanceGroupMember(SQLModel, table=True):
+    """In a group from effective_from until the day before effective_to (None: still in it)."""
+
+    __tablename__ = "attendance_group_members"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    group_id: UUID = Field(index=True)
+    employment_id: UUID = Field(index=True)
+    effective_from: date = Field()
+    effective_to: date | None = Field(default=None)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
+
+
+class AttendanceGroupAccess(SQLModel, table=True):
+    """Someone who may view (VIEW) or also mark (MARK) a group's daily sheet."""
+
+    __tablename__ = "attendance_group_access"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    group_id: UUID = Field(index=True)
+    user_account_id: UUID = Field(index=True)
+    access_level: str = Field(max_length=10)
+    created_by: UUID | None = Field(default=None)
+    created_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
+
+
+class AttendanceMark(SQLModel, table=True):
+    """
+    One mark of a day, append-only: set to present or absent (with any in/out times), or
+    cleared (status None). The latest one is the day's mark; the earlier ones are its history
+    (time/marking.py).
+    """
+
+    __tablename__ = "attendance_marks"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    employment_id: UUID = Field(index=True)
+    work_date: date = Field()
+    status: str | None = Field(default=None, max_length=10)
+    punch_in: datetime | None = Field(default=None)
+    punch_out: datetime | None = Field(default=None)
+    remark: str | None = Field(default=None, max_length=500)
+    source: str = Field(default=MarkSource.MANUAL, max_length=20)
+    marked_by: UUID = Field()
+    marked_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)

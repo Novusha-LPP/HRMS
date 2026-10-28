@@ -40,7 +40,7 @@ from hrms.core.datetime_utils import business_today
 from hrms.core.errors import CodedHTTPException
 from hrms.core.ids import to_typed_id, to_uuid
 from hrms.core.locking import lock_resource
-from hrms.core.metrics import SCHEDULED_ACTIONS
+from hrms.core.metrics import PAST_EMPLOYMENT_REFUSED, SCHEDULED_ACTIONS
 from hrms.core.tenancy import TenantDep
 from hrms.core.versioning import require_version
 from hrms.modules.integrations import hooks as integration_hooks
@@ -640,6 +640,7 @@ async def create_employment(
         )
     ).all()
     if earlier and not body.confirm_new_employment:
+        PAST_EMPLOYMENT_REFUSED.inc()
         who = ", ".join(f"{number} ({str(state).lower()})" for number, state in earlier)
         raise CodedHTTPException(
             status.HTTP_409_CONFLICT,
@@ -793,6 +794,14 @@ async def create_personnel_action(
 
     await _validate_assignment_references(session, tenant_id, emp, body.changes or {}, scope)
     await _reject_conflicting_schedule(session, tenant_id, emp_uuid, body.type, body.effective_date)
+    # Keys the system sets itself are never accepted from a client: skipping the leave
+    # settlement is only for a company transfer, which carries the leave instead.
+    reserved = {"skip_leave_settlement", "rejoin"} & set(body.changes or {})
+    if reserved:
+        raise HTTPException(
+            status.HTTP_422_UNPROCESSABLE_ENTITY,
+            f"{', '.join(sorted(reserved))} can't be sent in changes (use the rejoin field).",
+        )
     if body.rejoin is not None and body.type != PersonnelActionType.REHIRE:
         raise HTTPException(422, "rejoin only applies to a REHIRE")
     if body.type == PersonnelActionType.REHIRE:
@@ -1322,9 +1331,11 @@ async def _apply_personnel_action_change(
         spell = await spells.close_current_spell(
             session, tenant_id, emp, pa.effective_date, pa.reason_code, pa.recorded_by
         )
-        await settle_on_separation(
-            session, tenant_id, emp, spell, pa.effective_date, pa.recorded_by
-        )
+        # A transfer carries the leave to the new company instead of settling it here.
+        if not changes.get("skip_leave_settlement"):
+            await settle_on_separation(
+                session, tenant_id, emp, spell, pa.effective_date, pa.recorded_by
+            )
         current = await _current_assignment(session, tenant_id, pa.employment_id)
         if current:
             current.effective_to = pa.effective_date

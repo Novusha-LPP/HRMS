@@ -84,7 +84,7 @@ and paths that match no route share the single label `unmatched`.
 | Blackbox exporter | `127.0.0.1:9115` | Probes `/health/ready` locally (`hrms-ready`) and both public URLs through Cloudflare (`hrms-public`) |
 | Node exporter | `127.0.0.1:9100` | Host memory and disk (`hrms-host`), plus the backup-age metrics written as text files to `HRMS_MONITORING_TEXTFILE_DIR` (default `/srv/hrms-monitoring`) |
 | Alertmanager | `127.0.0.1:9093` | Groups alerts and sends them to the receiver in `ops/alertmanager/alertmanager.yml` |
-| Grafana | `127.0.0.1:3100` | Four dashboards in *HRMS* and both data sources are provisioned from `ops/grafana/` |
+| Grafana | `127.0.0.1:3100` | Five dashboards in *HRMS* and both data sources are provisioned from `ops/grafana/` |
 
 The dashboards link to each other and share the selected time range:
 
@@ -104,6 +104,13 @@ The dashboards link to each other and share the selected time range:
   statistics require a separate PostgreSQL exporter, which is not currently configured.
 - **HRMS Infrastructure** (`/d/hrms-infra`): host CPU, load per core, memory, disk capacity,
   disk/network throughput, public-site probes and infrastructure alerts.
+- **HRMS Employment Lifecycle** (`/d/hrms-lifecycle`): rejoins per day by whether earlier
+  service continued or started fresh, unused leave settled for leavers (lapsed, paid out,
+  held), held leave closed by the daily `leave-holds` job, company transfers and hires refused
+  because the person already had an employment. Metrics: `hrms_rejoins_total{mode}`,
+  `hrms_leave_separation_settlements_total{action}`, `hrms_leave_holds_resolved_total{outcome}`,
+  `hrms_company_transfers_total{leave_mode}`, `hrms_hire_past_employment_refused_total`. See
+  [REJOIN_RUNBOOK.md](REJOIN_RUNBOOK.md).
 
 Secrets, all gitignored: `ops/.env` (`GRAFANA_ADMIN_PASSWORD`, user `admin`),
 `ops/secrets/<environment>-metrics-token` (each equals that environment's

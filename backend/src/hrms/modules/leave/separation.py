@@ -18,6 +18,7 @@ from sqlmodel import col, select
 
 from hrms.core.authz import SYSTEM_ACTOR
 from hrms.core.datetime_utils import now_utc
+from hrms.core.metrics import HELD_LEAVE_RESOLVED, SEPARATION_SETTLEMENTS
 from hrms.modules.leave.engine import record_transaction
 from hrms.modules.leave.models import (
     LeaveBalanceBucket,
@@ -278,6 +279,7 @@ async def settle_on_separation(
         )
         session.add(settlement)
         settlements.append(settlement)
+        SEPARATION_SETTLEMENTS.labels(item.action).inc()
     await session.flush()
     return settlements
 
@@ -307,6 +309,7 @@ async def resolve_holds(session, tenant_id: UUID, today: date) -> dict[str, int]
             settlement.resolved_on = today
             session.add(settlement)
             counts["restored"] += 1
+            HELD_LEAVE_RESOLVED.labels("restored").inc()
             continue
         if settlement.hold_expires_on is None or settlement.hold_expires_on > today:
             continue
@@ -335,5 +338,6 @@ async def resolve_holds(session, tenant_id: UUID, today: date) -> dict[str, int]
         settlement.resolved_on = today
         session.add(settlement)
         counts["lapsed"] += 1
+        HELD_LEAVE_RESOLVED.labels("lapsed").inc()
     await session.flush()
     return counts

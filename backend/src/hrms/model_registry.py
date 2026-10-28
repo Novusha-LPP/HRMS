@@ -92,6 +92,17 @@ RELATIONS = {
         "created_by": "user_accounts",
     },
     "rejoin_policies": {"legal_entity_id": "legal_entities", "created_by": "user_accounts"},
+    "company_transfers": {
+        "person_id": "persons",
+        "from_employment_id": "employments",
+        "to_employment_id": "employments",
+        "created_by": "user_accounts",
+    },
+    "prior_service": {
+        "person_id": "persons",
+        "document_id": "employee_kyc_documents",
+        "created_by": "user_accounts",
+    },
     "rejoin_records": {
         "employment_id": "employments",
         "personnel_action_id": "personnel_actions",
@@ -245,6 +256,11 @@ _STRICT_TABLES = {
     "leave_separation_rules",
     "leave_separation_settlements",
     "rejoin_policies",
+    "prior_service",
+    "company_transfers",
+    "attendance_groups",
+    "attendance_group_members",
+    "attendance_group_access",
 }
 _NULLABLE_TIMESTAMPS = {
     "created_at",

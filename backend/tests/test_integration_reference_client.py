@@ -12,7 +12,7 @@ import pytest
 from tests.helpers import hire, ok, person_and_employment
 from tests.integration_support import world
 
-pytestmark = pytest.mark.database
+pytestmark = [pytest.mark.database, pytest.mark.serial]
 
 _PATH = Path(__file__).resolve().parents[2] / "docs" / "examples" / "hrms_client.py"
 _spec = importlib.util.spec_from_file_location("hrms_reference_client", _PATH)

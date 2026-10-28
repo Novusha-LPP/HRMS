@@ -51,10 +51,13 @@ _PREFIX_MAP: dict[str, str] = {
     "assignment": "asgn",
     "personnel_action": "pa",
     "rejoin_policy": "rjp",
+    "prior_service": "psv",
+    "company_transfer": "xfr",
     "user": "usr",
     "role": "rol",
     # Policy
     "policy_template": "pol",
+    "attendance_group": "agrp",
     "employee_policy": "epol",
     # Leave
     "leave_type": "lt",

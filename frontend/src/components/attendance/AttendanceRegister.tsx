@@ -22,7 +22,8 @@ const shortTime = (iso: string | null | undefined, d: RegisterDay) => (iso ? zon
 type Filter = "ALL" | "PRESENT" | "LATE" | "ABSENT" | "LEAVE" | "REVIEW";
 const MATCH: Record<Filter, (d: RegisterDay) => boolean> = {
   ALL: () => true,
-  PRESENT: hasWork,
+  // Punched, or marked present on a day nobody punches (time/marking.py).
+  PRESENT: (d) => hasWork(d) || d.status === "PRESENT" || d.status === "OFF_DAY_WORKED",
   LATE: (d) => d.late_by_minutes > 0,
   ABSENT: (d) => !hasWork(d) && d.status === "ABSENT",
   LEAVE: (d) => !hasWork(d) && d.status === "ON_LEAVE",
@@ -42,6 +43,7 @@ const CELL: Record<string, string> = {
   OFF_DAY_WORKED: "border-plum/25 bg-plum/[0.06]",
   WEEKEND: "border-transparent bg-muted/60",
   UPCOMING: "border-line bg-surface opacity-50",
+  NOT_MARKED: "border-dashed border-warning/40 bg-surface",
 };
 
 /** What to say for a day nobody worked. */
@@ -50,6 +52,9 @@ function restLabel(d: RegisterDay) {
   if (d.status === "HOLIDAY") return d.holiday_name ?? "Holiday";
   if (d.status === "WEEKEND") return "Weekly off";
   if (d.status === "UPCOMING") return "";
+  // Attendance that is marked, not punched (time/marking.py).
+  if (d.status === "NOT_MARKED") return "Not marked yet";
+  if (d.status === "PRESENT" || d.status === "OFF_DAY_WORKED") return "Marked present · no punches";
   return "No check-in";
 }
 

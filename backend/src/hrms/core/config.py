@@ -87,6 +87,15 @@ class Settings(BaseSettings):
     # Unset = the published local development key, which deployed environments refuse.
     field_encryption_keys: str | None = None
 
+    # Salaries (core/field_crypto.py, "Payroll"): keys of their own, never the identifier
+    # keys, plus a pepper (32+ random characters) kept in a separate secret from the keys and
+    # the database. Both are required outside local development. Same key format as above.
+    # Several keys: "<new>,<old>". Several peppers: "<key id>:<pepper>,<key id>:<pepper>" (a
+    # single bare pepper is used for every key). Old data stays readable while its key and
+    # pepper are listed; if they are gone it shows an error and the rest keeps working.
+    payroll_encryption_keys: str | None = None
+    payroll_pepper: str | None = None
+
     # Uploaded documents (core/document_store.py), always encrypted with the keys above.
     # "local": under storage_dir. "s3": an S3 (or S3-compatible) bucket — recommended for
     # production: durable, versioned, and not tied to one server's disk.
@@ -215,6 +224,36 @@ class Settings(BaseSettings):
             if DEV_KEY_ID in key_ids:
                 raise ValueError(
                     "HRMS_FIELD_ENCRYPTION_KEYS uses the published development key id 'dev'"
+                )
+            from hrms.core.field_crypto import MIN_PEPPER_LENGTH, parse_peppers
+
+            if not self.payroll_encryption_keys or not self.payroll_pepper:
+                raise ValueError(
+                    f"{where} requires HRMS_PAYROLL_ENCRYPTION_KEYS and HRMS_PAYROLL_PEPPER: "
+                    "salaries are encrypted at rest"
+                )
+            try:
+                payroll_ids = parse_keys(self.payroll_encryption_keys)
+            except FieldCryptoError as exc:
+                raise ValueError(f"HRMS_PAYROLL_ENCRYPTION_KEYS: {exc}") from exc
+            if DEV_KEY_ID in payroll_ids:
+                raise ValueError(
+                    "HRMS_PAYROLL_ENCRYPTION_KEYS uses the published development key id 'dev'"
+                )
+            if set(parse_keys(self.payroll_encryption_keys).values()) & set(
+                key_ids.values()
+            ):
+                raise ValueError(
+                    "HRMS_PAYROLL_ENCRYPTION_KEYS must not reuse an identifier key: payroll "
+                    "keys are held by fewer people"
+                )
+            try:
+                peppers = parse_peppers(self.payroll_pepper, frozenset(payroll_ids))
+            except FieldCryptoError as exc:
+                raise ValueError(f"HRMS_PAYROLL_PEPPER: {exc}") from exc
+            if any(len(v) < MIN_PEPPER_LENGTH for v in peppers.values()):
+                raise ValueError(
+                    f"HRMS_PAYROLL_PEPPER must be at least {MIN_PEPPER_LENGTH} characters"
                 )
             if self.document_storage == "s3" and not self.document_s3_bucket:
                 raise ValueError("HRMS_DOCUMENT_STORAGE=s3 needs HRMS_DOCUMENT_S3_BUCKET")

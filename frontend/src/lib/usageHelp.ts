@@ -19,6 +19,8 @@ export type UsageHelpTopic =
   | "payroll-components"
   | "payroll-statutory"
   | "leavers"
+  | "prior-service"
+  | "company-transfer"
   | "rejoin"
   | "integrations-overview"
   | "integrations-keys"
@@ -307,6 +309,64 @@ export const usageHelp: Record<UsageHelpTopic, UsageHelp> = {
           ["ESIC wages ₹18,208: employee 0.75% = 136.56, rounded up", "₹137"],
           ["ESIC wages ₹18,208: employer 3.25% = 591.76, rounded up", "₹592"],
           ["ESIC wages ₹48,200: over the ceiling, so ESIC", "does not apply"],
+        ],
+      },
+    ],
+  },
+  "company-transfer": {
+    title: "Move someone to another company",
+    introduction: "For a group with more than one company. It ends the person's employment in the first company and starts a new one in the second on the same day, so each company keeps its own attendance, payroll and history.",
+    steps: [
+      { title: "Choose the company and the day", description: "The day they move is today or earlier. The date can't be before they joined." },
+      { title: "Place them in the new company", description: "Choose the department, designation and location there. Give an employee ID, or leave it blank when the company numbers people automatically." },
+      { title: "Decide what happens to their leave", description: "Carry over moves the unused balances to the new company and keeps their service going. Settle here applies the first company's rules for leavers and starts them with no leave." },
+      { title: "Check what follows them", description: "Their login, identity details and uploaded documents (including the photo) follow the person. The first company keeps its own copy of the identity details." },
+    ],
+    note: "A transfer is refused if a change is already scheduled for the person: cancel it first. Your Admin must give you access to both companies. A person who is only changing department stays in the same company: use Transfer instead.",
+    calculation: {
+      title: "What each choice does",
+      items: [
+        { name: "Carry over", text: "Each unused leave balance is closed in the first company and opened for the same number of days in the second. Both sides show an entry, so nothing disappears from the history." },
+        { name: "Service", text: "With Carry over, service for leave continues from where it was. With Settle here it starts again at the new company." },
+        { name: "Settle here", text: "The first company's rules for leavers decide what lapses, is paid out or is held. The new employment starts with no leave." },
+      ],
+    },
+    examples: [
+      {
+        title: "Example: carrying 10 days",
+        intro: "Annual leave, 10 days unused on the day of the move.",
+        rows: [
+          ["First company, balance after the move", "0 days"],
+          ["Second company, opening balance", "10 days"],
+          ["Service for leave", "Continues from the original start date"],
+        ],
+      },
+    ],
+  },
+  "prior-service": {
+    title: "Earlier service",
+    introduction: "Record work a person did for another employer when your company chooses to recognise it. It belongs to the person, so it stays with them if they change company or rejoin.",
+    steps: [
+      { title: "Add the period", description: "Enter the employer and the dates the person started and stopped. The period must have ended, and must not overlap time they worked here or another period already recorded." },
+      { title: "Say what it counts for", description: "Tick Count towards the service a leave rule asks for if leave rules should treat them as experienced. Tick Count towards service for gratuity to add it to their service for gratuity." },
+      { title: "Check the totals", description: "The line under the list shows the months recognised for leave and the days recognised for gratuity." },
+    ],
+    note: "A period that is on record but not ticked changes nothing. Leave eligibility follows the change from the next monthly credit. Whether earlier service counts towards gratuity is a legal question: confirm it with your labour adviser.",
+    calculation: {
+      title: "How it counts",
+      items: [
+        { name: "Months for leave", text: "Complete months between the start and end dates. They are added to the months the person has served here, then compared with the minimum service a leave rule asks for." },
+        { name: "Days for gratuity", text: "Every day from the start date to the end date, both included." },
+      ],
+    },
+    examples: [
+      {
+        title: "Example: a rule that asks for 24 months",
+        intro: "Someone joined 10 days ago and worked 3 years for an earlier employer.",
+        rows: [
+          ["Service here", "0 months"],
+          ["Earlier service, not ticked for leave", "0 months counted, not yet eligible"],
+          ["Earlier service, ticked for leave", "36 months counted, eligible from the next credit"],
         ],
       },
     ],

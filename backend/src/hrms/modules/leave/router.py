@@ -595,9 +595,7 @@ async def _accruals_this_fy(
         )
         .where(LeaveBalanceTransaction.tenant_id == tenant_id)
         .where(LeaveBalanceTransaction.bucket_id == bucket_id)
-        .where(
-            LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value
-        )
+        .where(LeaveBalanceTransaction.transaction_type == LeaveTransactionType.ACCRUAL.value)
         .where(LeaveBalanceTransaction.effective_date >= min(starts.values()))
         .where(LeaveBalanceTransaction.effective_date < as_of)
     )
@@ -690,7 +688,14 @@ async def accrue_period(
     clause, params = employment_clause, employment_params or {}
     emp_rows = await session.execute(
         text(f"""
-            SELECT e.id, COALESCE(e.continuity_start_date, e.hire_date), e.employment_state
+            SELECT e.id, COALESCE(e.continuity_start_date, e.hire_date), e.employment_state,
+                   COALESCE((
+                       SELECT sum(
+                           EXTRACT(YEAR FROM age(ps.to_date, ps.from_date)) * 12
+                           + EXTRACT(MONTH FROM age(ps.to_date, ps.from_date)))
+                       FROM prior_service ps
+                       WHERE ps.tenant_id = e.tenant_id AND ps.person_id = e.person_id
+                         AND ps.recognised_for_leave), 0) AS prior_months
             FROM employments e
             WHERE e.tenant_id = CAST(:tid AS uuid)
               AND (e.separation_date IS NULL OR e.separation_date > CAST(:as_of AS date))
@@ -698,13 +703,15 @@ async def accrue_period(
         """),
         {"tid": str(tenant_id), "as_of": as_of, **params},
     )
-    employees = sorted(((UUID(str(r[0])), r[1], r[2]) for r in emp_rows), key=lambda e: str(e[0]))
+    employees = sorted(
+        ((UUID(str(r[0])), r[1], r[2], int(r[3])) for r in emp_rows), key=lambda e: str(e[0])
+    )
 
     # Everything per employee is resolved up front in a handful of queries (policy sets
     # once per placement, not per person), then each leave type is credited with one
     # set-based write — see engine.record_accruals. A 2,000-person run used to be ~100k
     # statements in one request.
-    emp_ids = [emp_id for emp_id, _, _ in employees]
+    emp_ids = [emp_id for emp_id, _, _, _ in employees]
     fy_months = await resolve_fy_start_months_bulk(session, tenant_id, emp_ids)
     policy_sets = await resolve_leave_policy_sets_bulk(session, tenant_id, emp_ids, as_of)
     bucket_policies: dict[tuple, LeaveBucketPolicy | None] = {}
@@ -738,7 +745,7 @@ async def accrue_period(
             session, tenant_id, bucket_id, as_of, fy_months, emp_ids
         )
         credits: list[tuple[UUID, float, int]] = []
-        for emp_id, hire_date, emp_state in employees:
+        for emp_id, hire_date, emp_state, prior_months in employees:
             pset = policy_sets.get(emp_id)
             key = (pset.id if pset else None, bucket_id)
             if key not in bucket_policies:
@@ -752,9 +759,9 @@ async def accrue_period(
                 continue
             if entitlement.days_per_year <= 0:
                 continue
-            eligible = (
-                entitlement.probation_eligible or emp_state != "PROBATION"
-            ) and tenure_months(hire_date, as_of) >= entitlement.min_service_months
+            eligible = (entitlement.probation_eligible or emp_state != "PROBATION") and (
+                tenure_months(hire_date, as_of) + prior_months >= entitlement.min_service_months
+            )
             if not eligible or emp_id in already:
                 continue
             # A month that rounds to 0 is still recorded, so the count of months stays right.
@@ -1079,6 +1086,80 @@ async def create_application(
     session.add(app)
     await session.flush()
     return _app_resp(app, lt, [])
+
+
+async def record_approved_leave(
+    session,
+    tenant_id,
+    principal,
+    employment_id: UUID,
+    body: LeaveApplyRequest,
+    *,
+    comments: str,
+) -> LeaveApplicationResponse:
+    """
+    Leave someone has taken or will take, entered as already approved by the person who keeps
+    their attendance (time/marking.py), not applied for by the employee. It meets every rule an
+    application does except advance notice — type, length, document, overlap and balance — and
+    holds then takes the balance exactly as an application approved without a chain would.
+    The caller decides who may do this.
+    """
+    lt = await _get_lt(session, tenant_id, body.leave_type_id)
+    allocation = await _allocate_days(
+        session, tenant_id, employment_id, body.from_date, body.to_date, body.half_day_option
+    )
+    days = sum(allocation.values())
+    await _validate_application(session, tenant_id, employment_id, lt, body, days, recorded=True)
+    stamp = now_utc()
+    app = LeaveApplication(
+        tenant_id=tenant_id,
+        id=uuid4(),
+        employment_id=employment_id,
+        leave_type_id=lt.id,
+        from_date=body.from_date,
+        to_date=body.to_date,
+        days_requested=days,
+        days_by_month=allocation,
+        document_id=to_uuid(body.document_id) if body.document_id else None,
+        half_day_option=body.half_day_option,
+        reason=body.reason,
+        status=LeaveApplicationStatus.DRAFT,
+        current_level=1,
+        total_levels=1,
+        recorded_at=stamp,
+    )
+    session.add(app)
+    await session.flush()
+    await _check_overlap(session, tenant_id, app)
+    await _hold_leave_balance(session, tenant_id, principal, app, lt)
+    app.status = LeaveApplicationStatus.APPROVED
+    app.applied_at = stamp
+    await _post_leave_transaction(
+        session,
+        tenant_id,
+        principal,
+        app,
+        lt,
+        LeaveTransactionType.LEAVE_TAKEN,
+        approved_by=principal.user_account_id,
+    )
+    session.add(
+        LeaveApprovalAction(
+            tenant_id=tenant_id,
+            id=uuid4(),
+            application_id=app.id,
+            action_type=LeaveApprovalActionType.APPROVE,
+            level=1,
+            approver_employment_id=principal.employment_id,
+            approver_user_account_id=principal.user_account_id,
+            comments=comments,
+            actioned_at=stamp,
+            recorded_at=stamp,
+        )
+    )
+    session.add(app)
+    await session.flush()
+    return _app_resp(app, lt, await _get_history(session, tenant_id, app.id))
 
 
 @router.post("/applications/{app_id}/submit", response_model=LeaveApplicationResponse)
@@ -1753,7 +1834,11 @@ async def _allocate_days(session, tenant_id, employment_id, start, end, half_day
     return allocation
 
 
-async def _validate_application(session, tenant_id, employment_id, lt, body, days):
+async def _validate_application(
+    session, tenant_id, employment_id, lt, body, days, *, recorded=False
+):
+    """Every rule an application must meet. `recorded` is leave entered after the fact by
+    whoever keeps the person's attendance: advance notice can't apply to it."""
     if not lt.is_active or lt.archived_at:
         raise HTTPException(422, "This leave type is inactive")
     legacy_document = await validate_legacy_application(
@@ -1768,7 +1853,8 @@ async def _validate_application(session, tenant_id, employment_id, lt, body, day
     ):
         raise HTTPException(422, "Leave exceeds the maximum application duration")
     if (
-        not lt.legacy_managed
+        not recorded
+        and not lt.legacy_managed
         and lt.advance_notice_days
         and body.from_date < now_utc().date() + timedelta(days=lt.advance_notice_days)
     ):

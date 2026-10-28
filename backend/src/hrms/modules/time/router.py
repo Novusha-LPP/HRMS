@@ -631,7 +631,14 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
             ua.email AS email,
             ou.name AS department,
             j.title AS designation,
-            l.name AS location
+            l.name AS location,
+            -- In an attendance group that day (time/groups.py): the day is marked, not punched.
+            EXISTS (
+                SELECT 1 FROM attendance_group_members gm
+                WHERE gm.tenant_id = e.tenant_id AND gm.employment_id = e.id
+                  AND gm.effective_from <= CAST(:target_date AS date)
+                  AND (gm.effective_to IS NULL OR gm.effective_to > CAST(:target_date AS date))
+            ) AS is_marked
         FROM employments e
         JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
         LEFT JOIN user_accounts ua ON ua.tenant_id = e.tenant_id AND ua.employment_id = e.id
@@ -830,12 +837,12 @@ async def _daily_batch(session, tenant_id, scope, target_date, batch_offset, pol
             status_str = str(ad["status"])
         elif first_in:
             status_str = "LATE" if late_by > 0 else "PRESENT"
+        elif not is_working_day(target_date, emp_policy.work_days, emp_policy.saturday_pattern):
+            status_str = "WEEKEND"
         else:
-            status_str = (
-                "ABSENT"
-                if is_working_day(target_date, emp_policy.work_days, emp_policy.saturday_pattern)
-                else "WEEKEND"
-            )
+            # A marked day (time/marking.py) nobody has marked yet is not an absence.
+            # A marked day nobody has marked yet (time/marking.py) is not an absence.
+            status_str = "NOT_MARKED" if emp["is_marked"] else "ABSENT"
 
         if first_in:
             hour_str = f"{to_tz(first_in, emp_policy.timezone).hour:02d}:00"

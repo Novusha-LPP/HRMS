@@ -115,7 +115,7 @@ async def prepare(session, tenant_ref, data_dir, company="suraj", decisions=None
         "reconciliation_largest": 0.0,
     }
     users = {
-        unwrap(r["_id"]): r for r in json.loads((data_dir / "exim.users copy.json").read_text())
+        unwrap(r["_id"]): r for r in json.loads((data_dir / "exim.users.json").read_text())
     }
     rows = (
         (
