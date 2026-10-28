@@ -14,7 +14,6 @@ Authoritative system design and architecture specifications for the HRMS Platfor
 | [Enterprise completion plan](enterprise-plan/README.md) | **Build programme** from today's code to the full requirements v2.0, with every rule configurable from the UI: platform foundations, module plans, industry coverage, roadmap, and the critique with decisions needed. |
 | [Releasing](RELEASING.md) | Release PRs, versioning, verified API/web images, and production promotion. |
 | [Testing CI/CD on EC2](EC2_TESTING_DEPLOYMENT_GUIDE.md) | Complete end-to-end runbook for deploying testing branch to EC2 + Docker + RDS via GitHub Actions and SSM. |
-| [Frontend CI/CD on ECS Fargate](FRONTEND_ECS_CICD.md) | AWS and GitHub setup, automatic testing deployment, and manual production promotion of the same frontend image digest. |
 | [Feature Catalog & Counts](FEATURES.md) | Complete end-to-end catalog of all 342 features across 20 functional modules, with API counts and UI components. |
 
 ---
