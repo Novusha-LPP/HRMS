@@ -7,12 +7,13 @@ import { orgApi } from "../api/org";
 import { peopleApi, personnelActionsApi } from "../api/people";
 import type { Employment } from "../api/people";
 import { departmentMembers, employeeMatches, employeeName, moveTeamMembers } from "../lib/teamManagement";
-import type { LegalEntity, Location, OrgUnit, Job, EmployeeIdScheme, ChangeLogEntry, Grade, CostCentre, Position, MasterStatus } from "../api/org";
+import type { CompanyDetails, LegalEntity, Location, OrgUnit, Job, EmployeeIdScheme, ChangeLogEntry, Grade, CostCentre, Position, MasterStatus } from "../api/org";
 import { dashboardApi } from "../api/dashboard";
 import { usersApi } from "../api/users";
 import type { Role, UserAccount } from "../api/users";
 import { ResetPasswordSheet, SCOPE_LABEL, SignInChip } from "../components/users/AccessPanel";
 import { UsageHelpButton } from "../components/ui/UsageHelpButton";
+import { BrandingTab } from "../components/branding/BrandingTab";
 import { PageHeader } from "../components/ui/PageHeader";
 import { Tabs } from "../components/ui/Tabs";
 import { Sheet, ConfirmDialog } from "../components/ui/Overlay";
@@ -23,11 +24,12 @@ import { format } from "date-fns";
 
 import type { UsageHelpTopic } from "../lib/usageHelp";
 
-type Tab = "overview" | "companies" | "departments" | "locations" | "jobs" | "grades" | "positions" | "cost-centres" | "employee-ids" | "access";
+type Tab = "overview" | "companies" | "branding" | "departments" | "locations" | "jobs" | "grades" | "positions" | "cost-centres" | "employee-ids" | "access";
 
 const TAB_HELP_TOPICS: Record<Tab, UsageHelpTopic> = {
   overview: "org-overview",
   companies: "companies",
+  branding: "branding",
   departments: "departments",
   locations: "locations",
   jobs: "jobs",
@@ -46,6 +48,7 @@ export function OrganizationPage() {
 
   const canCreateCompany = !!user?.isAllScope;
   const canManageAccess = !!user && (user.permissions.includes("iam.read") || user.permissions.includes("*"));
+  const canWriteOrg = !!user && (user.permissions.includes("org.write") || user.permissions.includes("*"));
 
   return (
     <>
@@ -61,6 +64,7 @@ export function OrganizationPage() {
         items={[
           { value: "overview", label: "Overview", help: <UsageHelpButton topic="org-overview" iconOnly /> },
           { value: "companies", label: "Companies", help: <UsageHelpButton topic="companies" iconOnly /> },
+          { value: "branding", label: "Branding", help: <UsageHelpButton topic="branding" iconOnly /> },
           { value: "departments", label: "Departments", help: <UsageHelpButton topic="departments" iconOnly /> },
           { value: "locations", label: "Locations", help: <UsageHelpButton topic="locations" iconOnly /> },
           { value: "jobs", label: "Job titles", help: <UsageHelpButton topic="jobs" iconOnly /> },
@@ -73,6 +77,7 @@ export function OrganizationPage() {
       />
       {tab === "overview" && <OrganizationOverviewTab onNavigateTab={setTab} />}
       {tab === "companies" && <CompaniesTab canCreate={canCreateCompany} />}
+      {tab === "branding" && <BrandingTab canEditGroup={canCreateCompany && canWriteOrg} canEdit={canWriteOrg} />}
       {tab === "departments" && <DepartmentsTab />}
       {tab === "locations" && <LocationsTab />}
       {tab === "jobs" && <JobsTab />}
@@ -467,10 +472,13 @@ function CompanySheet({ open, onClose, initial }: { open: boolean; onClose: () =
   const isEdit = !!initial;
   const empty = { establishmentDate: initial?.establishment_date ?? "", name: initial?.name ?? "", shortName: initial?.short_name ?? "", country: initial?.country_code ?? "IN", fyStart: initial?.financial_year_start_month ?? 0 };
   const [form, setForm] = useState(empty);
+  const emptyDetails = Object.fromEntries(COMPANY_DETAIL_FIELDS.map((f) => [f.key, initial?.[f.key] ?? ""])) as Record<keyof CompanyDetails, string>;
+  const [details, setDetails] = useState(emptyDetails);
 
   const save = useMutation({
     mutationFn: () => {
-      const body = { establishment_date: form.establishmentDate || null, name: form.name.trim(), short_name: form.shortName.trim() || undefined, country_code: form.country, financial_year_start_month: form.fyStart || undefined };
+      const companyDetails = Object.fromEntries(COMPANY_DETAIL_FIELDS.map((f) => [f.key, details[f.key].trim() || null])) as Partial<CompanyDetails>;
+      const body = { establishment_date: form.establishmentDate || null, name: form.name.trim(), short_name: form.shortName.trim() || undefined, country_code: form.country, financial_year_start_month: form.fyStart || undefined, ...companyDetails };
       return isEdit ? orgApi.updateLegalEntity(initial!.id, { ...body, version: initial!.version }) : orgApi.createLegalEntity(body);
     },
     onSuccess: (e) => {
@@ -478,6 +486,7 @@ function CompanySheet({ open, onClose, initial }: { open: boolean; onClose: () =
       qc.invalidateQueries({ queryKey: ["dash-hr"] });
       toast.success(isEdit ? "Company updated" : "Company added", e.name);
       setForm(empty);
+      setDetails(emptyDetails);
       onClose();
     },
     onError: (e) => toast.error(isEdit ? "Couldn’t update company" : "Couldn’t add company", errorMessage(e)),
@@ -529,10 +538,39 @@ function CompanySheet({ open, onClose, initial }: { open: boolean; onClose: () =
             {MONTH_NAMES.map((m, i) => <option key={m} value={i + 1}>{m}</option>)}
           </select>
         </div>
+        <div className="border-t border-line pt-4">
+          <p className="text-sm font-semibold text-fg">Details for payslips</p>
+          <p className="mb-3 text-xs text-fg-subtle">The registered name and address print in every payslip’s header, with the registration numbers you fill in.</p>
+          <div className="grid grid-cols-2 gap-3">
+            {COMPANY_DETAIL_FIELDS.map((f) => (
+              <div key={f.key} className={f.wide ? "col-span-2" : undefined}>
+                <label className="label" htmlFor={`co-${f.key}`}>{f.label}</label>
+                <input id={`co-${f.key}`} className={`input ${f.code ? "font-mono uppercase" : ""}`} maxLength={f.max} placeholder={f.placeholder}
+                  value={details[f.key]} onChange={(e) => setDetails((d) => ({ ...d, [f.key]: e.target.value }))} />
+              </div>
+            ))}
+          </div>
+        </div>
       </form>
     </Sheet>
   );
 }
+
+/** What payslips print about the employer; the API checks each number's format. */
+const COMPANY_DETAIL_FIELDS: { key: keyof CompanyDetails; label: string; placeholder?: string; max: number; wide?: boolean; code?: boolean }[] = [
+  { key: "registered_name", label: "Registered name", placeholder: "e.g. Novusha Industries Private Limited", max: 255, wide: true },
+  { key: "address_line1", label: "Address line 1", placeholder: "Plot 12, MIDC", max: 255, wide: true },
+  { key: "address_line2", label: "Address line 2", placeholder: "Andheri East", max: 255, wide: true },
+  { key: "city", label: "City", placeholder: "Mumbai", max: 100 },
+  { key: "state_code", label: "State", placeholder: "MH", max: 10, code: true },
+  { key: "pincode", label: "PIN code", placeholder: "400093", max: 10 },
+  { key: "cin", label: "CIN", placeholder: "U63090MH2015PTC123456", max: 30, code: true },
+  { key: "pan", label: "PAN", placeholder: "AAACA1234A", max: 20, code: true },
+  { key: "tan", label: "TAN", placeholder: "MUMA12345B", max: 20, code: true },
+  { key: "gstin", label: "GSTIN", placeholder: "27AAACA1234A1Z5", max: 30, code: true },
+  { key: "pf_establishment_code", label: "PF establishment code", placeholder: "MHBAN0012345000", max: 30, code: true },
+  { key: "esic_employer_code", label: "ESIC employer code", placeholder: "17 digits", max: 30, code: true },
+];
 
 /** Shared read-only view of an entity's change history — old value, new value, who, when. */
 function HistoryModal({ open, onClose, title, fetcher }: {

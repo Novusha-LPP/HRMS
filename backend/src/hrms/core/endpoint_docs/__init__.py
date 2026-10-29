@@ -11,6 +11,7 @@ means renaming its key here).
 
 from hrms.core.endpoint_docs import (
     access,
+    branding,
     core_hr,
     insights_platform,
     integrations,
@@ -25,6 +26,7 @@ ENDPOINT_DOCS: dict[str, tuple[str, str]] = {}
 for _module in (
     access,
     core_hr,
+    branding,
     payroll,
     time,
     policy,

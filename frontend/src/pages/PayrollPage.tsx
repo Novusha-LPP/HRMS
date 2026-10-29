@@ -9,20 +9,23 @@ import { SalariesTab } from "../components/payroll/SalariesTab";
 import { StructuresTab } from "../components/payroll/StructuresTab";
 import { ComponentsTab } from "../components/payroll/ComponentsTab";
 import { StatutoryTab } from "../components/payroll/StatutoryTab";
+import { PayslipTemplateEditor } from "../components/branding/PayslipTemplateEditor";
 
-type PageTab = "salaries" | "structures" | "components" | "statutory";
-const TABS: PageTab[] = ["salaries", "structures", "components", "statutory"];
+type PageTab = "salaries" | "structures" | "components" | "statutory" | "payslip";
+const TABS: PageTab[] = ["salaries", "structures", "components", "statutory", "payslip"];
 const TAB_HELP = {
   salaries: "payroll-salaries",
   structures: "payroll-structures",
   components: "payroll-components",
   statutory: "payroll-statutory",
+  payslip: "payslip-template",
 } as const;
 const TAB_HELP_LABEL: Record<PageTab, string> = {
   salaries: "How salaries work",
   structures: "How a CTC is split",
   components: "How components work",
   statutory: "How PF and ESIC work",
+  payslip: "How the payslip layout works",
 };
 
 /**
@@ -37,7 +40,7 @@ export function PayrollPage() {
   const canWrite = has("payroll.write");
   const canReview = has("payroll.review");
   const requested = params.get("tab") as PageTab | null;
-  const tab: PageTab = requested && TABS.includes(requested) ? requested : "salaries";
+  const tab: PageTab = requested && TABS.includes(requested) && (requested !== "payslip" || canWrite) ? requested : "salaries";
 
   if (!user) return null;
   if (!canRead) {
@@ -72,12 +75,19 @@ export function PayrollPage() {
           { value: "structures", label: "Structures" },
           { value: "components", label: "Components" },
           { value: "statutory", label: "Statutory values" },
+          ...(canWrite ? [{ value: "payslip" as const, label: "Payslip" }] : []),
         ]}
       />
       {tab === "salaries" && <SalariesTab canWrite={canWrite} />}
       {tab === "structures" && <StructuresTab canWrite={canWrite} />}
       {tab === "components" && <ComponentsTab canWrite={canWrite} />}
       {tab === "statutory" && <StatutoryTab canWrite={canWrite} canReview={canReview} />}
+      {tab === "payslip" && (
+        <div className="card p-5">
+          <p className="mb-4 max-w-3xl text-sm text-fg-muted">What a payslip shows and how it is laid out. The logo, colours and signatories are set by HR under Organization → Branding. The preview uses made-up figures.</p>
+          <PayslipTemplateEditor canEditGroup={user.isAllScope} canEdit={canWrite} />
+        </div>
+      )}
     </>
   );
 }

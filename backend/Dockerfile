@@ -10,6 +10,12 @@ ENV PYTHONDONTWRITEBYTECODE=1 \
 
 RUN pip install --no-cache-dir uv==0.12.17
 
+# WeasyPrint (payslip PDFs, modules/payroll/payslip/render.py) draws text with Pango and
+# HarfBuzz. The fonts it uses are bundled in the package (hrms/assets/fonts).
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends libpango-1.0-0 libpangoft2-1.0-0 libharfbuzz-subset0 \
+    && rm -rf /var/lib/apt/lists/*
+
 WORKDIR /app
 
 # Dependencies come from uv.lock — exactly the versions that were tested — and only the runtime

@@ -26,8 +26,15 @@ default.
     ),
     "update_legal_entity": (
         "Update a company",
-        "Renames or reconfigures a legal entity. Only fields you send are changed. Needs a "
-        "group-level administrator. Every change is recorded in the entity's history.",
+        """
+Renames or reconfigures a legal entity. Only fields you send are changed. Needs a group-level
+administrator. Every change is recorded in the entity's history.
+
+The company details payslips and statutory files print are here too: `registered_name`, the
+registered address, `cin`, `pan`, `tan`, `gstin`, `pf_establishment_code` and
+`esic_employer_code`. Spaces are removed and letters upper-cased; a value in the wrong format is
+refused (`422`).
+""",
     ),
     "legal_entity_history": ("Company change history", _HISTORY),
     "list_locations": (

@@ -71,6 +71,10 @@ ENTITY_TYPES = frozenset(
         "rejoin_policy",
         "prior_service",
         "company_transfer",
+        # Payslip branding (migration 0075 triggers)
+        "brand_profile",
+        "document_signatory",
+        "payslip_template",
     }
 )
 

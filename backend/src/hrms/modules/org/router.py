@@ -39,6 +39,7 @@ from hrms.modules.org.models import (
 from hrms.modules.org.schemas import (
     AssignDepartmentsRequest,
     ChangeLogEntry,
+    CompanyDetailsFields,
     CostCentreCreate,
     CostCentreResponse,
     CostCentreUpdate,
@@ -158,6 +159,7 @@ async def create_legal_entity(
         country_code=body.country_code,
         establishment_date=body.establishment_date,
         financial_year_start_month=body.financial_year_start_month,
+        **body.model_dump(include=_COMPANY_DETAILS),
     )
     session.add(entity)
     await session.flush()
@@ -174,6 +176,9 @@ async def create_legal_entity(
     return _le_response(entity)
 
 
+_COMPANY_DETAILS = set(CompanyDetailsFields.model_fields)
+
+
 def _le_fields(entity: LegalEntity) -> dict:
     return {
         "name": entity.name,
@@ -181,6 +186,7 @@ def _le_fields(entity: LegalEntity) -> dict:
         "country_code": entity.country_code,
         "establishment_date": entity.establishment_date,
         "financial_year_start_month": entity.financial_year_start_month,
+        **{name: getattr(entity, name) for name in sorted(_COMPANY_DETAILS)},
     }
 
 
@@ -194,6 +200,7 @@ def _le_response(entity: LegalEntity) -> LegalEntityResponse:
         version=entity.version,
         establishment_date=entity.establishment_date,
         financial_year_start_month=entity.financial_year_start_month,
+        **{name: getattr(entity, name) for name in _COMPANY_DETAILS},
     )
 
 

@@ -91,6 +91,11 @@ _PREFIX_MAP: dict[str, str] = {
     "salary_structure": "sstr",
     "salary_structure_line": "ssln",
     "employee_compensation": "ecmp",
+    "payslip_template": "pstm",
+    # Branding
+    "brand_asset": "bast",
+    "brand_profile": "brnd",
+    "document_signatory": "sgn",
     # Integrations
     "connected_app": "app",
     "api_key": "key",

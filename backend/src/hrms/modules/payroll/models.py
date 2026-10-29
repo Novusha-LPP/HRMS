@@ -12,6 +12,8 @@ Payroll foundation tables (migration 0050).
 - EmployeeCompensation: an employee's annual CTC (encrypted at rest, migration 0073) on a
   structure version, effective-dated with
   no overlaps; a revision closes the current row and opens a new one.
+- PayslipTemplate (migration 0075): the layout and what a payslip shows. legal_entity_id None
+  is the group default; a company with its own row uses that instead, as a whole.
 """
 
 import enum
@@ -21,6 +23,7 @@ from typing import Literal
 from uuid import UUID
 
 from sqlalchemy import Column, Numeric
+from sqlalchemy.dialects.postgresql import JSONB
 from sqlmodel import Field, SQLModel
 
 from hrms.core.field_crypto import EncryptedDecimal
@@ -30,6 +33,9 @@ ComponentStatus = Literal["ACTIVE", "INACTIVE"]
 StructureStatus = Literal["ACTIVE", "RETIRED", "INACTIVE"]
 RuleStatus = Literal["ACTIVE", "RETIRED"]
 RuleUnit = Literal["PERCENT", "AMOUNT", "FLAG"]
+PayslipLayout = Literal["MODERN", "CLASSIC", "COMPACT"]
+# COMPUTER_GENERATED: "needs no signature" statement; SIGNATORY: a signatory's name and image.
+SignatureMode = Literal["COMPUTER_GENERATED", "SIGNATORY"]
 
 
 class ComponentKind(enum.StrEnum):
@@ -153,4 +159,29 @@ class EmployeeCompensation(SQLModel, table=True):
     note: str | None = Field(default=None, max_length=500)
     recorded_by: UUID | None = Field(default=None)
     recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC))
+    version: int = Field(default=0)
+
+
+class PayslipTemplate(SQLModel, table=True):
+    __tablename__ = "payslip_templates"
+
+    tenant_id: UUID = Field(primary_key=True)
+    id: UUID = Field(primary_key=True)
+    legal_entity_id: UUID | None = Field(default=None)
+    layout: str = Field(default="MODERN", max_length=20)
+    title: str = Field(default="Payslip", max_length=60)
+    # Ordered keys from payslip.EMPLOYEE_FIELDS.
+    employee_fields: list[str] = Field(
+        default_factory=list, sa_column=Column(JSONB, nullable=False)
+    )
+    show_attendance: bool = Field(default=True)
+    show_leave_balances: bool = Field(default=False)
+    show_employer_contributions: bool = Field(default=False)
+    show_ytd: bool = Field(default=False)
+    hide_zero_lines: bool = Field(default=True)
+    signature_mode: str = Field(default="COMPUTER_GENERATED", max_length=20)
+    signatory_id: UUID | None = Field(default=None)
+    note_text: str | None = Field(default=None, max_length=500)
+    recorded_by: UUID | None = Field(default=None)
+    recorded_at: datetime = Field(default_factory=lambda: datetime.now(UTC), nullable=False)
     version: int = Field(default=0)
