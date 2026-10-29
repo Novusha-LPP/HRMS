@@ -259,8 +259,8 @@ function PreviewPanel({ companyId, template }: { companyId: string | null; templ
   });
 
   return (
-    <div className="xl:sticky xl:top-4 xl:self-start">
-      <div className="mb-2 flex items-center gap-2">
+    <div className="min-w-0 xl:sticky xl:top-4 xl:self-start">
+      <div className="mb-2 flex flex-wrap items-center gap-2">
         <LayoutTemplate size={15} className="text-fg-subtle" />
         <p className="text-sm font-medium text-fg">Preview</p>
         <span className="badge badge-warning">Sample figures</span>

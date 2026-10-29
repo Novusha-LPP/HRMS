@@ -1,6 +1,7 @@
 # Payslips with company branding — design
 
-**Status:** design for review, 2026-10-29. Nothing is built yet.
+**Status:** Phase A (setup) built 2026-10-29 on branch `feature/payslip-branding`, migration 0075.
+Phase B (real payslips) waits for the pay run engine. See *Phase A as built* at the end.
 **Fits:** enterprise plan M11 step 6 ("payslips, F11 template"), F11 (letterhead, logo, signatory per legal
 entity), F14 (branding), and the agreed rule *payslips only come from an approved pay run*.
 
@@ -188,9 +189,42 @@ construction, so no numbering series is needed.
 | **B · Payslips** | Pay run engine (P2) | Generate from an approved run, review, publish, My payslips page, HR download / ZIP / Compact print, access log |
 | **C · Later** | TDS, email provider | Tax summary block, email delivery with password-protected PDF, reissue screen, bilingual labels (D-9), verification QR code |
 
-## Questions for the user
+## Decisions (2026-10-29)
 
-1. **Levels:** group default plus a per-company override (as above), or does any branch need its own
-   payslip header?
-2. **PDF password:** off for in-app download (recommended), or always on?
-3. **Default layout:** Modern, or Classic for accounts and auditors?
+The user chose the recommended defaults:
+
+- group default plus a per-company override, with no branch level;
+- no PDF password for in-app download;
+- Modern as the default layout.
+
+## Phase A as built
+
+| Piece | Where |
+|---|---|
+| Migration 0075 | `legal_entities` company-detail columns; `brand_assets` (append-only), `brand_profiles`, `document_signatories`, `payslip_templates`. One row per scope via `UNIQUE … NULLS NOT DISTINCT (tenant_id, legal_entity_id)`; change history by trigger |
+| Company details | `PATCH /v1/org/legal-entities/{id}` (group admin). Formats checked with plain messages (`org/schemas.py`); Organization → Companies → edit → *Details for payslips* |
+| Branding API | `modules/branding/`: `/v1/branding/profiles`, `/resolved`, `/assets` (upload, image), `/signatories` |
+| Template API | `payroll/payslip_templates.py`: `/v1/payroll/payslip-templates` overview, `PUT /group`, `PUT\|DELETE /companies/{id}`, `POST /preview?format=pdf\|png` |
+| Renderer | `payroll/payslip/`: `formatting.py` (₹ grouping, words, masking), `document.py` (pure view model), `sample.py`, `issuer.py`, `render.py` + `templates/payslip.html.j2`; fonts in `hrms/assets/fonts` |
+| Screens | Organization → **Branding** (group, companies, signatories, payslip layout); Payroll → **Payslip** (layout only, for payroll admins) |
+| Tests | `tests/test_payslip_document.py` (pure, renders every layout to one page), `tests/test_payslip_branding.py` (HTTP, scopes) |
+
+Where it differs from the design above:
+
+- **Branding overrides field by field, but a template overrides as a whole.** A company either uses the
+  group's layout or has its own complete one (*Customize for this company*). Mixing two layouts field by
+  field would make the result hard to predict.
+- **Templates are not versioned rows.** Each scope has one row; its change history comes from the
+  database trigger. Reproducibility comes from Phase B: each generated payslip will copy the resolved
+  template and branding into its own record, so a later edit never changes an issued payslip.
+- **Per-state registrations** (PT, LWF, ESIC sub-codes) are left for the statutory files, which need
+  them; the payslip prints CIN, TAN, PF and ESIC codes from the company.
+- **The preview is an image.** `format=png` rasterizes the PDF with pypdfium2 (about 40 ms), because
+  phone browsers don't display PDFs inline and the desktop PDF viewer flashes while loading. *Download
+  sample PDF* fetches the real PDF.
+- **No dark-background logo**, no PDF password and no locked statutory fields yet (Phase C).
+- **Permissions:** branding and signatories need `org.write` (group-level for the group default and
+  group-wide signatories). Templates accept `payroll.write` or `org.write`. Logos are visible to
+  `org.read` and `payroll.write`; signature images only to `org.write`.
+- **Deployment:** the backend image installs Pango and HarfBuzz (`backend/Dockerfile`), and so does CI.
+  WeasyPrint is imported only when a PDF is rendered, so a server without Pango still starts.
