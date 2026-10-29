@@ -40,6 +40,7 @@ PLATFORM_ONLY = frozenset(
 APPEND_ONLY = frozenset(
     {
         "attendance_marks",
+        "brand_assets",
         "entity_change_log",
         "kyc_access_log",
         "leave_balance_transactions",
@@ -180,6 +181,7 @@ DOMAINS: dict[str, str | tuple[str, ...]] = {
     "attendance_marks.source": "hrms.modules.time.models:MarkSource",
     "attendance_marks.status": "hrms.modules.time.models:MarkStatus",
     "attendance_days.status": "hrms.modules.time.models:AttendanceStatus",
+    "brand_assets.kind": "hrms.modules.branding.models:AssetKind",
     "employee_kyc_documents.document_type": "hrms.modules.kyc.models:DocumentType",
     "employee_kyc_documents.status": "hrms.modules.kyc.models:DocumentStatus",
     "employee_kyc_records.status": "hrms.modules.kyc.models:KycStatus",
@@ -240,6 +242,8 @@ DOMAINS: dict[str, str | tuple[str, ...]] = {
     "integration_profiles.status": _INTEGRATIONS + "ProfileStatus",
     "possible_duplicates.status": _INTEGRATIONS + "DuplicateStatus",
     "pay_components.status": _PAYROLL + "ComponentStatus",
+    "payslip_templates.layout": _PAYROLL + "PayslipLayout",
+    "payslip_templates.signature_mode": _PAYROLL + "SignatureMode",
     "salary_structures.status": _PAYROLL + "StructureStatus",
     "statutory_rules.status": _PAYROLL + "RuleStatus",
     "statutory_rules.unit": _PAYROLL + "RuleUnit",

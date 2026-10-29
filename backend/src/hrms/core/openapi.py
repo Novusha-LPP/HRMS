@@ -244,11 +244,18 @@ TAGS_METADATA: list[dict[str, str]] = [
         "candidates and resumes, applications, and turning an application into a hire.",
     },
     {
+        "name": "Branding",
+        "description": "How payslips (and later letters) look: logo, colours, footer, contact "
+        "details and signatories, set once for the group and overridden per company where it "
+        "differs. HR and Admin manage it (`org.write`).",
+    },
+    {
         "name": "Payroll",
         "description": "Statutory values (PF, ESIC) with the date they apply from and who "
-        "verified them, pay components, versioned salary structures, the CTC breakup, and each "
-        "employee's salary history. Needs the `payroll.*` permissions, which HR managers don't "
-        "hold; the Admin grants the payroll roles.",
+        "verified them, pay components, versioned salary structures, the CTC breakup, each "
+        "employee's salary history, and the payslip templates. Needs the `payroll.*` "
+        "permissions, which HR managers don't hold; the Admin grants the payroll roles. "
+        "Payslip templates also accept `org.write`.",
     },
     {
         "name": "Dashboard",
@@ -287,7 +294,7 @@ TAGS_METADATA: list[dict[str, str]] = [
 TAG_GROUPS: list[dict[str, Any]] = [
     {"name": "Access", "tags": ["Auth", "Users", "Preferences"]},
     {"name": "Core HR", "tags": ["Organisation", "People", "Onboarding", "Employee KYC"]},
-    {"name": "Pay", "tags": ["Payroll"]},
+    {"name": "Pay", "tags": ["Payroll", "Branding"]},
     {
         "name": "Time & leave",
         "tags": [

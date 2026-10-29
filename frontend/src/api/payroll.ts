@@ -1,4 +1,4 @@
-import { api } from "./client";
+import { api, API_BASE_URL, ApiError, type Versioned } from "./client";
 
 /** Amounts arrive as decimal strings (never floats) so paise are exact. */
 export type Money = string;
@@ -190,3 +190,65 @@ export function lineInput(l: StructureLine): StructureLineInput {
     base: l.base ?? null, base_component_id: l.base_component_id ?? null, min_amount: l.min_amount ?? null, max_amount: l.max_amount ?? null,
   };
 }
+
+// ─── Payslip templates ────────────────────────────────────────────────────────
+
+export type PayslipLayout = "MODERN" | "CLASSIC" | "COMPACT";
+export type SignatureMode = "COMPUTER_GENERATED" | "SIGNATORY";
+
+export interface PayslipTemplateInput {
+  layout: PayslipLayout;
+  title: string;
+  /** Keys from the overview's `fields`, in print order. */
+  employee_fields: string[];
+  show_attendance: boolean;
+  show_leave_balances: boolean;
+  show_employer_contributions: boolean;
+  show_ytd: boolean;
+  hide_zero_lines: boolean;
+  signature_mode: SignatureMode;
+  signatory_id: string | null;
+  note_text: string | null;
+}
+
+export interface PayslipTemplate extends PayslipTemplateInput {
+  /** null: the built-in default (nothing saved yet). */
+  id: string | null;
+  legal_entity_id: string | null;
+  version: number | null;
+  recorded_at: string | null;
+}
+
+export interface PayslipTemplateOverview {
+  group: PayslipTemplate;
+  /** template null: the company uses the group's. */
+  companies: { legal_entity_id: string; name: string; template: PayslipTemplate | null }[];
+  fields: { key: string; label: string }[];
+}
+
+export const payslipTemplatesApi = {
+  overview: () => api.get<PayslipTemplateOverview>("/v1/payroll/payslip-templates"),
+  saveGroup: (body: PayslipTemplateInput & Versioned) => api.put<PayslipTemplate>("/v1/payroll/payslip-templates/group", body),
+  saveCompany: (companyId: string, body: PayslipTemplateInput & Versioned) =>
+    api.put<PayslipTemplate>(`/v1/payroll/payslip-templates/companies/${companyId}`, body),
+  resetCompany: (companyId: string) => api.delete(`/v1/payroll/payslip-templates/companies/${companyId}`),
+  /**
+   * A SAMPLE payslip for an unsaved template, with the company's (or the group's) branding: a
+   * PNG of its pages for the screen (shows in every browser), or the PDF to download.
+   */
+  async preview(companyId: string | null, template: PayslipTemplateInput, format: "png" | "pdf", signal?: AbortSignal): Promise<Blob> {
+    const res = await fetch(`${API_BASE_URL}/v1/payroll/payslip-templates/preview?format=${format}`, {
+      method: "POST",
+      headers: { "Content-Type": "application/json", "X-HRMS-Session": "cookie" },
+      credentials: "include",
+      body: JSON.stringify({ legal_entity_id: companyId, template }),
+      signal,
+    });
+    if (!res.ok) {
+      const body = await res.json().catch(() => ({}));
+      const detail = typeof body.detail === "string" ? body.detail : "The preview couldn’t be made";
+      throw new ApiError(res.status, body.code ?? "UNKNOWN", detail, res.headers.get("x-request-id") ?? "");
+    }
+    return res.blob();
+  },
+};
