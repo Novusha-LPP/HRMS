@@ -94,6 +94,8 @@ _PREFIX_MAP: dict[str, str] = {
     "payslip_template": "pstm",
     # Branding
     "brand_asset": "bast",
+    "reminder_rule": "rmr",
+    "reminder_mail": "rmm",
     "brand_profile": "brnd",
     "document_signatory": "sgn",
     # Integrations

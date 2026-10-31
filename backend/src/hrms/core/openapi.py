@@ -250,6 +250,13 @@ TAGS_METADATA: list[dict[str, str]] = [
         "differs. HR and Admin manage it (`org.write`).",
     },
     {
+        "name": "Reminders",
+        "description": "Scheduled birthday and work-anniversary mail: rules (which event, how many "
+        "days ahead, how often, at what time, who is told) and the wording of each mail, with a "
+        "preview, a test send, a look at who is coming up, and the delivery log. HR and Admin "
+        "manage it (`org.write`).",
+    },
+    {
         "name": "Payroll",
         "description": "Statutory values (PF, ESIC) with the date they apply from and who "
         "verified them, pay components, versioned salary structures, the CTC breakup, each "
@@ -293,7 +300,10 @@ TAGS_METADATA: list[dict[str, str]] = [
 # ReDoc's sidebar groups (Swagger UI ignores this extension).
 TAG_GROUPS: list[dict[str, Any]] = [
     {"name": "Access", "tags": ["Auth", "Users", "Preferences"]},
-    {"name": "Core HR", "tags": ["Organisation", "People", "Onboarding", "Employee KYC"]},
+    {
+        "name": "Core HR",
+        "tags": ["Organisation", "People", "Onboarding", "Employee KYC", "Reminders"],
+    },
     {"name": "Pay", "tags": ["Payroll", "Branding"]},
     {
         "name": "Time & leave",

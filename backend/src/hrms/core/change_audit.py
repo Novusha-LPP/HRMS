@@ -75,6 +75,7 @@ ENTITY_TYPES = frozenset(
         "brand_profile",
         "document_signatory",
         "payslip_template",
+        "reminder_rule",
     }
 )
 

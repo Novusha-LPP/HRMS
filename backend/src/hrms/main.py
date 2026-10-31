@@ -52,6 +52,7 @@ from hrms.modules.platform.router import router as platform_router
 from hrms.modules.policy.router import router as policy_router
 from hrms.modules.preferences.router import router as preferences_router
 from hrms.modules.recruitment.router import router as recruitment_router
+from hrms.modules.reminders.router import router as reminders_router
 from hrms.modules.reports.router import router as reports_router
 from hrms.modules.time.groups import router as time_groups_router
 from hrms.modules.time.holiday_calendars import router as holiday_calendars_router
@@ -131,6 +132,7 @@ app.include_router(time_groups_router)
 app.include_router(holiday_calendars_router)
 app.include_router(onboarding_router)
 app.include_router(reports_router)
+app.include_router(reminders_router)
 app.include_router(dashboard_router)
 app.include_router(policy_router)
 app.include_router(leave_router)
