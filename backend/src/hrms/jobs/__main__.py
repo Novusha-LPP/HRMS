@@ -6,6 +6,7 @@
 `schedule` is what the deploy's `jobs` container runs; `run` is for cron, a CI smoke test or
 running a job by hand.
 """
+
 from __future__ import annotations
 
 import asyncio
@@ -43,11 +44,25 @@ async def _schedule() -> None:
         await asyncio.sleep(wait)
 
 
+REMINDER_TICK_SECONDS = 15 * 60
+
+
+async def _schedule_reminders() -> None:
+    """Birthday and anniversary mail goes out at a time of day chosen per rule, so this job
+    cannot wait for the daily run: it checks every few minutes."""
+    while True:
+        try:
+            await run_job("reminders")
+        except Exception:
+            logger.exception("reminders run failed")
+        await asyncio.sleep(REMINDER_TICK_SECONDS)
+
+
 async def _schedulers() -> None:
     if settings.mail_backend == "ses":
         from hrms.core.mail import schedule_delivery
 
-        await asyncio.gather(_schedule(), schedule_delivery())
+        await asyncio.gather(_schedule(), schedule_delivery(), _schedule_reminders())
     else:
         await _schedule()
 

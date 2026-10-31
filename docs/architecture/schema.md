@@ -164,6 +164,8 @@ erDiagram
     jobs ||--o{ positions : job_id
     org_units ||--o{ positions : org_unit_id
     legal_entities ||--o{ rejoin_policies : legal_entity_id
+    legal_entities ||--o{ reminder_rules : legal_entity_id
+    org_units ||--o{ reminder_rules : org_unit_id
     legal_entities ||--o{ salary_structures : legal_entity_id
 ```
 
@@ -936,6 +938,19 @@ erDiagram
         uuid approved_by FK
         uuid created_by FK
     }
+    reminder_outbox {
+        uuid tenant_id PK
+        uuid id PK
+        uuid rule_id FK
+    }
+    reminder_rules {
+        uuid tenant_id PK
+        uuid id PK
+        uuid legal_entity_id FK
+        uuid org_unit_id FK
+        uuid created_by FK
+        uuid updated_by FK
+    }
     attendance_groups ||--o{ attendance_group_access : group_id
     user_accounts ||--o{ attendance_group_access : user_account_id
     employments ||--o{ attendance_group_members : employment_id
@@ -966,6 +981,9 @@ erDiagram
     employment_spells ||--o{ rejoin_records : new_spell_id
     personnel_actions ||--o{ rejoin_records : personnel_action_id
     employment_spells ||--o{ rejoin_records : previous_spell_id
+    reminder_rules ||--o{ reminder_outbox : rule_id
+    legal_entities ||--o{ reminder_rules : legal_entity_id
+    org_units ||--o{ reminder_rules : org_unit_id
 ```
 
 ## Tables
@@ -1063,6 +1081,8 @@ erDiagram
 | `recruitment_stages` | Recruitment | Pipeline stages a tenant uses for candidates. |
 | `rejoin_policies` | Other | How a company treats someone who rejoins: continue earlier service by default or start fresh, and how long a break can be before it must start fresh. |
 | `rejoin_records` | Other | What was decided when a separated employee rejoined: keep earlier service and leave (CONTINUE) or start over (FRESH), who approved it, and why. |
+| `reminder_outbox` | Other | Reminder mails queued for delivery. The people are kept as a payload and the mail is worded when it is sent. FAILED means every attempt was used. |
+| `reminder_rules` | Other | A birthday or work-anniversary reminder: when it runs, who is told, and the wording. last_run_date is the local date it last queued mail for. |
 | `report_definitions` | Reports, history and jobs | Saved report layouts and filters. |
 | `role_assignments` | Platform and access | A role granted to a login, with the scope it applies to. |
 | `roles` | Platform and access | Roles a tenant can grant (built-in ones are is_system). |

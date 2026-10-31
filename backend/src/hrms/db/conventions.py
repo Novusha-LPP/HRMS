@@ -162,6 +162,7 @@ _INTEGRATIONS = "hrms.modules.integrations.schemas:"
 _MASTER = "hrms.modules.org.schemas:MasterStatus"
 _PAYROLL = "hrms.modules.payroll.models:"
 _RECRUITMENT = "hrms.modules.recruitment.schemas:"
+_REMINDERS = "hrms.modules.reminders.models:"
 _REQUEST_TYPE = "hrms.modules.approvals.schemas:RequestType"
 
 # "table.column" -> "module:Name", where Name is a StrEnum or a Literal type; or a tuple
@@ -244,6 +245,10 @@ DOMAINS: dict[str, str | tuple[str, ...]] = {
     "pay_components.status": _PAYROLL + "ComponentStatus",
     "payslip_templates.layout": _PAYROLL + "PayslipLayout",
     "payslip_templates.signature_mode": _PAYROLL + "SignatureMode",
+    "reminder_rules.trigger": _REMINDERS + "ReminderTrigger",
+    "reminder_rules.frequency": _REMINDERS + "ReminderFrequency",
+    "reminder_outbox.audience": _REMINDERS + "Audience",
+    "reminder_outbox.status": _REMINDERS + "OutboxStatus",
     "salary_structures.status": _PAYROLL + "StructureStatus",
     "statutory_rules.status": _PAYROLL + "RuleStatus",
     "statutory_rules.unit": _PAYROLL + "RuleUnit",

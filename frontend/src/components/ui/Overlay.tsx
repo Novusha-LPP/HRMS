@@ -79,13 +79,14 @@ export function Dialog({ open, onClose, children, className = "max-w-md", labell
   );
 }
 
-export function ConfirmDialog({ open, onClose, onConfirm, title, description, confirmLabel = "Delete", loading }: {
+export function ConfirmDialog({ open, onClose, onConfirm, title, description, confirmLabel = "Delete", cancelLabel = "Cancel", loading }: {
   open: boolean;
   onClose: () => void;
   onConfirm: () => void;
   title: string;
   description?: ReactNode;
   confirmLabel?: string;
+  cancelLabel?: string;
   loading?: boolean;
 }) {
   const titleId = useId(), descriptionId = useId();
@@ -101,7 +102,7 @@ export function ConfirmDialog({ open, onClose, onConfirm, title, description, co
         </div>
       </div>
       <div className="flex justify-end gap-2 border-t border-line bg-panel px-6 py-3.5">
-        <button className="btn-secondary" onClick={onClose} data-autofocus>Cancel</button>
+        <button className="btn-secondary" onClick={onClose} data-autofocus>{cancelLabel}</button>
         <button className="btn-danger" onClick={onConfirm} disabled={loading}>
           {loading ? "Working…" : confirmLabel}
         </button>

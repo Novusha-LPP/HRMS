@@ -18,6 +18,7 @@ from hrms.core.endpoint_docs import (
     leave,
     payroll,
     policy,
+    reminders,
     time,
     workflows,
 )
@@ -31,6 +32,7 @@ for _module in (
     time,
     policy,
     leave,
+    reminders,
     workflows,
     insights_platform,
     integrations,

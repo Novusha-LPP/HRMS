@@ -47,6 +47,37 @@ def _send(payload: dict) -> None:
     )
 
 
+def _ses():
+    import boto3
+    from botocore.config import Config
+
+    return boto3.client(
+        "ses",
+        region_name=settings.mail_region,
+        config=Config(
+            connect_timeout=3,
+            read_timeout=10,
+            retries={"mode": "standard", "total_max_attempts": 2},
+        ),
+    )
+
+
+def send_html(to: str, subject: str, html: str, text: str) -> None:
+    """Send one HTML mail with a plain-text alternative (blocking; call from a thread).
+    Raises when the provider refuses it; the caller decides whether to retry."""
+    _ses().send_email(
+        Source=settings.mail_from,
+        Destination={"ToAddresses": [to]},
+        Message={
+            "Subject": {"Data": subject, "Charset": "UTF-8"},
+            "Body": {
+                "Html": {"Data": html, "Charset": "UTF-8"},
+                "Text": {"Data": text, "Charset": "UTF-8"},
+            },
+        },
+    )
+
+
 async def deliver_pending() -> bool:
     if settings.mail_backend != "ses":
         return True
