@@ -1,8 +1,24 @@
-# Date reminders (birthdays, anniversaries, joiners and exits)
+# Scheduled mails (birthdays, anniversaries, joiners, exits and late arrivals)
+
+In the app this is **Scheduled mails** (menu: Settings). The code, tables and API keep the earlier
+name *reminders*.
 
 HR sets up rules that email people ahead of a birthday, work anniversary, joining date or last
 working day. Everything about a rule is data: which event, for which company or department, how often, at what time, who is told
 and the wording. Nothing needs a deploy to change.
+
+## Switched on per company (platform)
+
+Not every company needs this, so it is an optional **service** the platform switches on per
+company. A platform admin opens the company in the platform console and ticks **Services →
+Scheduled mails** (`PATCH /v1/platform/tenants/{id}` with `{"services": ["SCHEDULED_MAIL"]}`,
+recorded in the platform audit log as `TENANT_SERVICES_CHANGED`; viewers cannot change it).
+`tenants.enabled_services` (migration 0079) holds the list; a company starts with none.
+
+While it is off: the menu item is hidden, `/v1/reminders/*` answers `403 SERVICE_NOT_ENABLED`,
+the job queues nothing and sends nothing (mail already queued waits and goes out when it is
+switched back on, unless it is older than two days). Rules and history are kept. The company's
+own `/me` response lists its services (`services`), which the client uses to hide the menu item.
 
 ## How a rule works
 
@@ -30,6 +46,23 @@ and the wording. Nothing needs a deploy to change.
   refused on save, so a mail never goes out with a literal `{placeholder}`. The body is cut down
   to a safe set of tags on save and every value is HTML-escaped when filled in.
 
+## Late arrivals (a daily report)
+
+`LATE_ARRIVAL` looks at what already happened rather than ahead to a date. Each day at `send_time`
+it lists the people who arrived late **that day**, read from `attendance_days.late_by_minutes`,
+which the attendance policy computes (grace period included), so there is one definition of
+"late". `min_late_minutes` (1-600, default 1) hides small amounts.
+
+- Scope is the same as any rule: the whole group, one company, or one department (and the ones
+  beneath it).
+- Who: the addresses typed on the rule (they get the full list for the scope), each person's line
+  manager (only the late people in their own team) and, optionally, each late person (a short note).
+  "Everyone" is not allowed. It is always one list per recipient on `SAME_DAY`.
+- A day on which nobody is late sends nothing.
+- Anyone who arrives after `send_time` is not in that day's mail, so set the time after people
+  are expected in (the form suggests 11:00).
+- "Who will get mail soon?" is empty for this event: who is late is only known on the day.
+
 ## How it runs
 
 `python -m hrms.jobs schedule` runs the `reminders` job every 15 minutes (the other jobs run
@@ -46,6 +79,13 @@ daily). Each run, per tenant:
 
 A rule saved after its time of day has passed starts tomorrow, not at once. Nothing is queued or
 sent while `HRMS_MAIL_BACKEND=disabled`.
+
+## Mail transport
+
+`HRMS_MAIL_BACKEND` is `disabled`, `ses` or `smtp`. SMTP (`core/mail._smtp_send`) needs
+`HRMS_MAIL_FROM`, `HRMS_SMTP_HOST`, `HRMS_SMTP_USERNAME` and `HRMS_SMTP_PASSWORD`, and optionally
+`HRMS_MAIL_FROM_NAME`, `HRMS_SMTP_PORT` (587) and `HRMS_SMTP_STARTTLS` (true). SMTP covers
+scheduled mail only; password-reset mail still needs `ses`.
 
 ## API
 

@@ -21,6 +21,7 @@ from starlette.concurrency import run_in_threadpool
 
 from hrms.core.config import settings
 from hrms.core.datetime_utils import now_utc, safe_tz
+from hrms.core.services import SCHEDULED_MAIL, is_enabled
 from hrms.modules.branding import resolve
 from hrms.modules.reminders import dates, templates
 from hrms.modules.reminders.models import ReminderRule, ReminderTrigger
@@ -44,7 +45,7 @@ SELECT e.id AS employment_id, e.hire_date, e.separation_date, e.continuity_start
        p.date_of_birth, p.legal_first_name, p.legal_last_name, p.preferred_name,
        ou.name AS department, j.title AS designation,
        ua.email AS email, mua.email AS manager_email,
-       mp.legal_first_name AS manager_first, mp.legal_last_name AS manager_last
+       mp.legal_first_name AS manager_first, mp.legal_last_name AS manager_last{extra_cols}
 FROM employments e
 JOIN persons p ON p.tenant_id = e.tenant_id AND p.id = e.person_id
 LEFT JOIN assignments a ON a.tenant_id = e.tenant_id AND a.employment_id = e.id
@@ -61,16 +62,37 @@ LEFT JOIN employments me ON me.tenant_id = am.tenant_id AND me.id = am.manager_e
 LEFT JOIN persons mp ON mp.tenant_id = me.tenant_id AND mp.id = me.person_id
 LEFT JOIN user_accounts ua ON ua.tenant_id = e.tenant_id AND ua.employment_id = e.id
 LEFT JOIN user_accounts mua ON mua.tenant_id = me.tenant_id AND mua.employment_id = me.id
-WHERE e.tenant_id = :tid AND e.archived_at IS NULL AND p.archived_at IS NULL
+{extra_join}WHERE e.tenant_id = :tid AND e.archived_at IS NULL AND p.archived_at IS NULL
   AND {still_here}
   AND (CAST(:le AS uuid) IS NULL OR e.legal_entity_id = CAST(:le AS uuid))
-  AND (CAST(:ou AS uuid) IS NULL OR a.org_unit_id IN (SELECT id FROM units))
+  AND (CAST(:ou AS uuid) IS NULL OR a.org_unit_id IN (SELECT id FROM units)){extra_where}
 """
+# Late arrivals: the day's attendance row, as the attendance policy computed it (grace period
+# included). first_punch_in is shown in the company's timezone.
+LATE_COLS = (
+    ",\n       ad.late_by_minutes,"
+    "\n       ad.first_punch_in AT TIME ZONE (SELECT timezone FROM tenants WHERE id = :tid)"
+    " AS arrived"
+)
+LATE_JOIN = (
+    "JOIN attendance_days ad ON ad.tenant_id = e.tenant_id AND ad.employment_id = e.id\n"
+    "     AND ad.work_date = CAST(:today AS date)\n"
+)
+LATE_WHERE = "\n  AND ad.late_by_minutes >= :min_late AND ad.first_punch_in IS NOT NULL"
 # Who is still part of the company on the day: not yet left (an exit reminder also counts the
 # last day itself and needs a date to be set).
 STILL_HERE = "(e.separation_date IS NULL OR e.separation_date > :today)"
 STILL_HERE_EXIT = "e.separation_date IS NOT NULL AND e.separation_date >= :today"
 ONE_OFF = {ReminderTrigger.NEW_JOINER, ReminderTrigger.EXIT}
+
+
+def _sql(still_here: str, late: bool = False) -> str:
+    return CANDIDATES.format(
+        still_here=still_here,
+        extra_cols=LATE_COLS if late else "",
+        extra_join=LATE_JOIN if late else "",
+        extra_where=LATE_WHERE if late else "",
+    )
 
 
 def _name(first: str | None, last: str | None) -> str:
@@ -81,10 +103,11 @@ async def candidates(session, tenant_id: UUID, rule: ReminderRule, today: date) 
     """The people the rule could apply to: its company and department, still employed."""
     still_here = STILL_HERE_EXIT if rule.trigger == ReminderTrigger.EXIT else STILL_HERE
     rows = await session.execute(
-        text(CANDIDATES.format(still_here=still_here)),
+        text(_sql(still_here, late=rule.trigger == ReminderTrigger.LATE_ARRIVAL)),
         {
             "tid": tenant_id,
             "today": today,
+            "min_late": rule.min_late_minutes,
             "le": str(rule.legal_entity_id) if rule.legal_entity_id else None,
             "ou": str(rule.org_unit_id) if rule.org_unit_id else None,
         },
@@ -114,6 +137,8 @@ def due_on(rows: list[dict], rule: ReminderRule, day: date) -> list[dict]:
     anniversaries come round every year; a joining or leaving date happens once."""
     offsets = dates.offsets_for(rule.frequency, rule.days_before, rule.custom_offsets)
     people = []
+    if rule.trigger == ReminderTrigger.LATE_ARRIVAL:
+        return _late_people(rows, day)
     for row in rows:
         origin = _origin(row, rule.trigger)
         if origin is None:
@@ -155,11 +180,49 @@ def due_on(rows: list[dict], rule: ReminderRule, day: date) -> list[dict]:
     return sorted(people, key=lambda p: (p["event_date"], p["full_name"]))
 
 
+def _clock(moment: datetime) -> str:
+    return f"{moment:%I:%M %p}".lstrip("0")
+
+
+def _late_people(rows: list[dict], day: date) -> list[dict]:
+    """The people the candidate query found late on `day`, latest arrival first."""
+    people = []
+    for row in rows:
+        arrived: datetime = row["arrived"]
+        first = row["preferred_name"] or row["legal_first_name"]
+        minutes = row["late_by_minutes"]
+        people.append(
+            {
+                "employment_id": str(row["employment_id"]),
+                "first_name": first,
+                "full_name": _name(first, row["legal_last_name"]),
+                "department": row["department"] or "",
+                "designation": row["designation"] or "",
+                "manager_name": _name(row["manager_first"], row["manager_last"]),
+                "event_date": day.isoformat(),
+                "days_left": 0,
+                "email": row["email"],
+                "manager_email": row["manager_email"],
+                "late_minutes": minutes,
+                "arrived_at": _clock(arrived),
+                "expected_at": _clock(arrived - timedelta(minutes=minutes)),
+            }
+        )
+    return sorted(people, key=lambda p: (-p["late_minutes"], p["full_name"]))
+
+
+def late_text(minutes: int) -> str:
+    hours, rest = divmod(minutes, 60)
+    if not hours:
+        return f"{rest} min"
+    return f"{hours} h {rest} min" if rest else f"{hours} h"
+
+
 async def everyone(session, tenant_id: UUID, rule: ReminderRule, today: date) -> dict[str, UUID]:
     """The address of every employee in the rule's company and department -> their employment,
     for the 'tell everyone' option. Only people who are working today and have an email."""
     rows = await session.execute(
-        text(CANDIDATES.format(still_here=STILL_HERE) + " AND e.hire_date <= :today"),
+        text(_sql(STILL_HERE) + " AND e.hire_date <= :today"),
         {
             "tid": tenant_id,
             "today": today,
@@ -193,7 +256,12 @@ def person_values(person: dict, trigger: str) -> dict[str, str]:
         "days_left": str(person["days_left"]),
         "when": templates.when_text(person["days_left"]),
     }
-    if trigger == ReminderTrigger.BIRTHDAY:
+    if trigger == ReminderTrigger.LATE_ARRIVAL:
+        values["event_date"] = _long(event)
+        values["late_by"] = late_text(person["late_minutes"])
+        values["arrived_at"] = person["arrived_at"]
+        values["expected_at"] = person["expected_at"]
+    elif trigger == ReminderTrigger.BIRTHDAY:
         values["age"] = str(person.get("age", ""))
     elif trigger == ReminderTrigger.WORK_ANNIVERSARY:
         values["years"] = str(person.get("years", ""))
@@ -302,6 +370,8 @@ async def tick(session, tenant_id: UUID, now: datetime | None = None) -> str:
     """Queue mail for every rule that is due now. Returns a one-line summary."""
     if settings.mail_backend == "disabled":
         return "mail is disabled; nothing queued"
+    if not await is_enabled(session, tenant_id, SCHEDULED_MAIL):
+        return "service not enabled for this company; nothing queued"
     timezone = (
         await session.execute(
             text("SELECT timezone FROM tenants WHERE id = :tid"), {"tid": tenant_id}
@@ -363,16 +433,37 @@ async def compose(
     return " ".join(subject.split()), page, templates.to_text(body)
 
 
-def _default_sender(to: str, subject: str, html: str, plain: str) -> None:
+async def attachments_for(
+    session, tenant_id: UUID, rule: ReminderRule, audience: str, people: list[dict]
+) -> list[tuple[str, bytes, str]]:
+    """Files that travel with the mail: the late-arrivals PDF goes with the team mail."""
+    if rule.trigger != ReminderTrigger.LATE_ARRIVAL or audience != "TEAM" or not people:
+        return []
+    from hrms.modules.reminders import late_report
+
+    context = await resolve.context(session, tenant_id, rule.legal_entity_id)
+    color = resolve.readable_on_white(
+        str(context.fields["primary_color"].value or resolve.DEFAULTS["primary_color"])
+    )
+    day = date.fromisoformat(people[0]["event_date"])
+    pdf = await run_in_threadpool(
+        late_report.render_pdf, people, context.company.name, day, color, resolve.text_on(color)
+    )
+    return [(late_report.filename(day), pdf, "application/pdf")]
+
+
+def _default_sender(
+    to: str, subject: str, html: str, plain: str, attachments: list | None = None
+) -> None:
     from hrms.core.mail import send_html
 
-    send_html(to, subject, html, plain)
+    send_html(to, subject, html, plain, attachments)
 
 
 async def deliver(
     session,
     tenant_id: UUID,
-    sender: Callable[[str, str, str, str], None] | None = None,
+    sender: Callable[..., None] | None = None,
     today: date | None = None,
 ) -> dict[str, int]:
     """Send queued mail in batches until none is waiting or MAX_PER_RUN is reached. A failure is
@@ -380,6 +471,8 @@ async def deliver(
     counts = {"sent": 0, "failed": 0}
     if settings.mail_backend == "disabled" and sender is None:
         return counts
+    if not await is_enabled(session, tenant_id, SCHEDULED_MAIL):
+        return counts  # switched off by the platform: queued mail waits
     send = sender or _default_sender
     today = today or now_utc().date()
     handled = 0
@@ -431,7 +524,9 @@ async def _deliver_one(session, tenant_id: UUID, row, send, today: date, counts:
         subject, html, plain = await compose(
             session, tenant_id, rule, row["audience"], payload["people"]
         )
-        await run_in_threadpool(send, row["recipient_email"], subject, html, plain)
+        files = await attachments_for(session, tenant_id, rule, row["audience"], payload["people"])
+        extra = (files,) if files else ()  # a sender that takes no files is never given any
+        await run_in_threadpool(send, row["recipient_email"], subject, html, plain, *extra)
     except Exception as exc:
         # Provider errors can hold addresses: keep only the class.
         attempts = row["attempts"] + 1

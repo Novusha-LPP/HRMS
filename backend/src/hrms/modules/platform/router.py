@@ -222,9 +222,7 @@ async def forgot_password(
 
 
 @router.post("/reset-password", summary="Complete a password reset")
-async def reset_password(
-    body: ResetPasswordRequest, session: PlatformSessionDep
-) -> dict[str, str]:
+async def reset_password(body: ResetPasswordRequest, session: PlatformSessionDep) -> dict[str, str]:
     token_hash = hash_reset_token(body.token)
     row = (
         (
@@ -352,7 +350,7 @@ async def _tenant_detail(tenant_id_str: str, session) -> TenantDetail:
             await session.execute(
                 text(
                     "SELECT id, slug, display_name, status, plan, country_code, created_at, "
-                    "archived_at FROM tenants WHERE id = :id"
+                    "archived_at, enabled_services FROM tenants WHERE id = :id"
                 ),
                 {"id": str(tid)},
             )
@@ -397,6 +395,7 @@ async def _tenant_detail(tenant_id_str: str, session) -> TenantDetail:
         employee_count=employee_count,
         created_at=tenant_row["created_at"],
         archived_at=tenant_row["archived_at"],
+        services=sorted(tenant_row["enabled_services"]),
         legal_entities=[
             TenantLegalEntity(
                 id=to_typed_id("legal_entity", r["id"]),
@@ -423,7 +422,7 @@ async def get_tenant(
 @router.patch(
     "/tenants/{tenant_id}",
     response_model=TenantDetail,
-    summary="Suspend/reactivate a tenant, or change its plan",
+    summary="Suspend/reactivate a tenant, change its plan, or switch its services on or off",
 )
 async def update_tenant(
     tenant_id: str,
@@ -435,7 +434,10 @@ async def update_tenant(
     row = (
         (
             await session.execute(
-                text("SELECT display_name, status, plan FROM tenants WHERE id = :id"),
+                text(
+                    "SELECT display_name, status, plan, enabled_services "
+                    "FROM tenants WHERE id = :id"
+                ),
                 {"id": str(tid)},
             )
         )
@@ -471,6 +473,22 @@ async def update_tenant(
             tid,
             row["display_name"],
             {"from": row["plan"], "to": body.plan},
+        )
+
+    if body.services is not None and sorted(set(body.services)) != sorted(row["enabled_services"]):
+        wanted = sorted(set(body.services))
+        await session.execute(
+            text("UPDATE tenants SET enabled_services = CAST(:s AS text[]) WHERE id = :id"),
+            {"s": wanted, "id": str(tid)},
+        )
+        await record_audit(
+            session,
+            admin,
+            "TENANT_SERVICES_CHANGED",
+            "tenant",
+            tid,
+            row["display_name"],
+            {"from": sorted(row["enabled_services"]), "to": wanted},
         )
 
     return await _tenant_detail(tenant_id, session)

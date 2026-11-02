@@ -62,9 +62,62 @@ def _ses():
     )
 
 
-def send_html(to: str, subject: str, html: str, text: str) -> None:
-    """Send one HTML mail with a plain-text alternative (blocking; call from a thread).
-    Raises when the provider refuses it; the caller decides whether to retry."""
+Attachment = tuple[str, bytes, str]  # (file name, content, MIME type like "application/pdf")
+
+
+def _message(to: str, subject: str, html: str, text: str, attachments: list[Attachment]):
+    from email.message import EmailMessage
+    from email.utils import formataddr
+
+    assert settings.mail_from
+    message = EmailMessage()
+    message["Subject"] = subject
+    message["From"] = formataddr((settings.mail_from_name or "", settings.mail_from))
+    message["To"] = to
+    message.set_content(text)
+    message.add_alternative(html, subtype="html")
+    for name, content, mime in attachments:
+        maintype, _, subtype = mime.partition("/")
+        message.add_attachment(content, maintype=maintype, subtype=subtype, filename=name)
+    return message
+
+
+def _smtp_send(
+    to: str, subject: str, html: str, text: str, attachments: list[Attachment] | None = None
+) -> None:
+    import smtplib
+
+    assert settings.smtp_host and settings.smtp_password
+    message = _message(to, subject, html, text, attachments or [])
+    with smtplib.SMTP(settings.smtp_host, settings.smtp_port, timeout=15) as server:
+        if settings.smtp_starttls:
+            server.starttls()
+        server.login(
+            settings.smtp_username or settings.mail_from,
+            settings.smtp_password.get_secret_value(),
+        )
+        server.send_message(message)
+
+
+def send_html(
+    to: str,
+    subject: str,
+    html: str,
+    text: str,
+    attachments: list[Attachment] | None = None,
+) -> None:
+    """Send one HTML mail with a plain-text alternative and optional attachments (blocking; call
+    from a thread). Raises when the provider refuses it; the caller decides whether to retry."""
+    if settings.mail_backend == "smtp":
+        _smtp_send(to, subject, html, text, attachments)
+        return
+    if attachments:
+        _ses().send_raw_email(
+            Source=settings.mail_from,
+            Destinations=[to],
+            RawMessage={"Data": _message(to, subject, html, text, attachments).as_bytes()},
+        )
+        return
     _ses().send_email(
         Source=settings.mail_from,
         Destination={"ToAddresses": [to]},

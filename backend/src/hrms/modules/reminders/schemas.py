@@ -39,6 +39,12 @@ class RuleBase(BaseModel):
         default=False,
         description="Also mail every employee with an email address, about everyone else",
     )
+    min_late_minutes: int = Field(
+        default=1,
+        ge=1,
+        le=600,
+        description="LATE_ARRIVAL only: list people at least this many minutes late",
+    )
     extra_emails: list[EmailStr] = Field(default_factory=list, max_length=MAX_EXTRA)
     digest: bool = Field(
         default=True, description="One mail listing everyone due, instead of one mail per person"
@@ -67,6 +73,13 @@ class RuleBase(BaseModel):
             self.notify_employee or self.notify_manager or self.notify_everyone or self.extra_emails
         ):
             raise ValueError("Choose at least one person to tell")
+        if self.trigger == ReminderTrigger.LATE_ARRIVAL:
+            if self.frequency != ReminderFrequency.SAME_DAY:
+                raise ValueError("Late arrivals are sent on the day itself")
+            if self.notify_everyone:
+                raise ValueError("A late-arrival list cannot go to everyone")
+            if not self.digest:
+                raise ValueError("A late-arrival mail is one list per recipient")
         if self.frequency == ReminderFrequency.CUSTOM and not self.custom_offsets:
             raise ValueError("Enter at least one day for a custom schedule")
         if self.frequency in {ReminderFrequency.CONTINUOUS, ReminderFrequency.ALTERNATE_DAYS} and (
@@ -93,6 +106,7 @@ class RuleUpdate(BaseModel):
     notify_employee: bool | None = None
     notify_manager: bool | None = None
     notify_everyone: bool | None = None
+    min_late_minutes: int | None = Field(default=None, ge=1, le=600)
     extra_emails: list[EmailStr] | None = Field(default=None, max_length=MAX_EXTRA)
     digest: bool | None = None
     subject: str | None = Field(default=None, min_length=1, max_length=300)

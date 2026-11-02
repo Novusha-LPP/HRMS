@@ -78,6 +78,8 @@ class MeResponse(BaseModel):
     permissions: list[str]
     is_all_scope: bool
     legal_entities: list[LegalEntitySummary]
+    # Optional services the platform has switched on for the company, e.g. SCHEDULED_MAIL.
+    services: list[str] = []
     # True until the user has replaced an imported / admin-issued password.
     must_change_password: bool = False
 

@@ -22,6 +22,11 @@ import { API_DOCS_URL } from "../lib/runtimeConfig";
 
 type Section = "overview" | "tenants" | "admins" | "audit";
 
+/** Optional services a platform admin can switch on for a company. */
+const SERVICES = [
+  { id: "SCHEDULED_MAIL", label: "Scheduled mails", help: "Birthday, anniversary, joiner, exit and daily late-arrival email. Off: the company doesn't see it and nothing is sent." },
+];
+
 function PlanBadge({ plan }: { plan: string }) {
   const tone = plan === "ENTERPRISE" ? "badge-brand" : plan === "GROWTH" ? "badge-info" : "badge-neutral";
   return <span className={`badge ${tone}`}>{plan}</span>;
@@ -329,7 +334,7 @@ function TenantDrawer({ tenantId, canWrite, onClose }: { tenantId: string | null
   };
 
   const update = useMutation({
-    mutationFn: (body: { status?: string; plan?: string }) => platformTenantsApi.updateTenant(tenantId as string, body),
+    mutationFn: (body: { status?: string; plan?: string; services?: string[] }) => platformTenantsApi.updateTenant(tenantId as string, body),
     onSuccess: (t) => { refresh(); toast.success(t.status === "SUSPENDED" ? "Tenant suspended" : "Tenant updated", t.display_name); setConfirmAction(null); },
     onError: (e) => toast.error("Couldn't update tenant", e instanceof PlatformApiError ? e.message : errorMessage(e)),
   });
@@ -393,6 +398,25 @@ function TenantDrawer({ tenantId, canWrite, onClose }: { tenantId: string | null
                       {p}
                     </button>
                   ))}
+                </div>
+              </div>
+
+              <div>
+                <p className="label mb-2">Services</p>
+                <div className="space-y-2">
+                  {SERVICES.map((s) => {
+                    const on = t.services.includes(s.id);
+                    return (
+                      <label key={s.id} className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 ${on ? "border-brand-500/50 bg-brand-500/5" : "border-line"} ${canWrite ? "cursor-pointer" : "opacity-70"}`}>
+                        <input type="checkbox" className="mt-0.5" checked={on} disabled={!canWrite || busy}
+                          onChange={(e) => update.mutate({ services: e.target.checked ? [...t.services, s.id] : t.services.filter((x) => x !== s.id) })} />
+                        <span>
+                          <span className="block text-[13px] font-medium text-fg">{s.label} <span className="font-normal text-fg-subtle">· {on ? "On" : "Off"}</span></span>
+                          <span className="block text-xs text-fg-subtle">{s.help}</span>
+                        </span>
+                      </label>
+                    );
+                  })}
                 </div>
               </div>
 
@@ -732,6 +756,7 @@ const ACTION_LABEL: Record<string, string> = {
   TENANT_SUSPENDED: "Tenant suspended",
   TENANT_REACTIVATED: "Tenant reactivated",
   TENANT_PLAN_CHANGED: "Plan changed",
+  TENANT_SERVICES_CHANGED: "Services changed",
   TENANT_ARCHIVED: "Tenant archived",
   TENANT_RESTORED: "Tenant restored",
   ADMIN_CREATED: "Admin added",

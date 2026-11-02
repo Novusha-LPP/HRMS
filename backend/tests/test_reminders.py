@@ -11,7 +11,10 @@ from hrms.core import database
 from hrms.core.config import settings
 from hrms.core.ids import to_uuid
 from hrms.modules.reminders import service
-from tests.helpers import make_user, ok, person_and_employment, tenant
+from tests.helpers import hire, make_user, ok, org_basics, person_and_employment
+from tests.helpers import tenant as register_company
+
+tenant = register_company
 
 pytestmark = pytest.mark.database
 
@@ -38,6 +41,23 @@ RULE = {
 @pytest.fixture(autouse=True)
 def mail_on(monkeypatch):
     monkeypatch.setattr(settings, "mail_backend", "ses")
+
+
+@pytest.fixture(autouse=True)
+def service_on(api, monkeypatch):
+    """Every company these tests register has the platform's SCHEDULED_MAIL service switched on."""
+    _, engine = api
+
+    async def enabled_tenant(client):
+        result = await register_company(client)
+        async with engine.begin() as conn:
+            await conn.execute(
+                text("UPDATE tenants SET enabled_services = ARRAY['SCHEDULED_MAIL'] WHERE id = :t"),
+                {"t": to_uuid(result["user"]["tenant_id"])},
+            )
+        return result
+
+    monkeypatch.setitem(globals(), "tenant", enabled_tenant)
 
 
 async def _in_tenant(tenant_id, work):
@@ -352,3 +372,122 @@ def service_person():
         "days_left": 3,
         "age": 30,
     }
+
+
+LATE = {
+    **RULE,
+    "name": "Late arrivals",
+    "trigger": "LATE_ARRIVAL",
+    "frequency": "SAME_DAY",
+    "days_before": 0,
+    "min_late_minutes": 10,
+    "notify_employee": True,
+    "subject": "Late today ({count})",
+    "body_html": (
+        "<ul>{#each}<li>{full_name} {arrived_at} {late_by} late, due {expected_at}</li>{/each}</ul>"
+    ),
+    "employee_subject": "Late today, {first_name}",
+    "employee_body_html": "<p>{first_name}: {arrived_at}, {late_by} after {expected_at}</p>",
+}
+
+
+async def _came_in(engine, tid, employment_id, arrived_utc, late):
+    async with engine.begin() as conn:
+        await conn.execute(
+            text(
+                "INSERT INTO attendance_days (tenant_id, id, employment_id, work_date, status,"
+                " first_punch_in, late_by_minutes) VALUES (:t, gen_random_uuid(), :e, :d,"
+                " 'LATE', :f, :late)"
+            ),
+            {"t": tid, "e": to_uuid(employment_id), "d": TODAY, "f": arrived_utc, "late": late},
+        )
+
+
+async def test_late_arrivals_list_who_the_policy_marked_late_within_the_chosen_department(api):
+    client, engine = api
+    tid, asha, asha_email = await _setup(client)
+    company = (await ok(client, "GET", "/v1/org/legal-entities"))[0]["id"]
+    placement = await org_basics(client, company)
+    await hire(client, asha["id"], placement)
+    other = await person_and_employment(client, company, legal_first_name="Ravi")
+    await _came_in(engine, tid, asha["id"], datetime(2026, 10, 31, 4, 25, tzinfo=UTC), 25)
+    await _came_in(engine, tid, other["id"], datetime(2026, 10, 31, 4, 5, tzinfo=UTC), 40)
+
+    rule = {**LATE, "org_unit_id": placement["org_unit_id"]}
+    await ok(client, "POST", "/v1/reminders/rules", json=rule)
+    await _arm(engine, tid)
+    assert "2 mail(s)" in await _in_tenant(tid, lambda s: service.tick(s, tid, NOW))
+
+    sent = []
+    await _in_tenant(tid, lambda s: service.deliver(s, tid, lambda *m: sent.append(m), TODAY))
+    by_address = {m[0]: m for m in sent}
+    # Only the chosen department is listed, and Ravi (outside it) is left out.
+    hr = by_address["hr@example.com"]
+    assert hr[1] == "Late today (1)"
+    assert "Asha Patel &lt;Co&gt; 9:55 AM 25 min late, due 9:30 AM" in hr[2]
+    assert "Ravi" not in hr[2]
+    assert "Asha: 9:55 AM, 25 min after 9:30 AM" in by_address[asha_email][2]
+    # The team mail carries the PDF report; the person's own note does not.
+    ((name, content, mime),) = hr[4]
+    assert name == "late-arrivals-2026-10-31.pdf" and mime == "application/pdf"
+    assert content.startswith(b"%PDF")
+    assert len(by_address[asha_email]) == 4
+
+
+async def test_late_arrivals_respect_the_minimum_and_send_nothing_when_no_one_is_late(api):
+    client, engine = api
+    tid, asha, _ = await _setup(client)
+    await _came_in(engine, tid, asha["id"], datetime(2026, 10, 31, 4, 5, tzinfo=UTC), 5)
+    await ok(client, "POST", "/v1/reminders/rules", json=LATE)  # at least 10 minutes late
+    await _arm(engine, tid)
+    assert "0 mail(s)" in await _in_tenant(tid, lambda s: service.tick(s, tid, NOW))
+
+
+async def test_a_late_arrival_rule_cannot_look_ahead_or_go_to_everyone(api):
+    client, _ = api
+    await tenant(client)
+    ahead = await client.post(
+        "/v1/reminders/rules", json={**LATE, "frequency": "CONTINUOUS", "days_before": 3}
+    )
+    assert ahead.status_code == 422
+    everyone = await client.post("/v1/reminders/rules", json={**LATE, "notify_everyone": True})
+    assert everyone.status_code == 422
+    variables = await ok(client, "GET", "/v1/reminders/variables?trigger=LATE_ARRIVAL")
+    assert {"late_by", "arrived_at", "expected_at"} <= set(variables["variables"])
+
+
+async def test_a_company_without_the_service_cannot_use_it_and_nothing_is_queued_or_sent(api):
+    client, engine = api
+    # The platform has not switched the service on for this company.
+    admin = await register_company(client)
+    tid = to_uuid(admin["user"]["tenant_id"])
+    assert admin["user"]["services"] == []
+    for path in (
+        "/v1/reminders/rules",
+        "/v1/reminders/deliveries",
+        "/v1/reminders/defaults?trigger=EXIT",
+    ):
+        refused = await client.get(path)
+        assert refused.status_code == 403 and "SERVICE_NOT_ENABLED" in refused.text, path
+    assert (await client.post("/v1/reminders/rules", json=RULE)).status_code == 403
+
+    # Switched on, it works, and switching it off again stops the job as well.
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE tenants SET enabled_services = ARRAY['SCHEDULED_MAIL'] WHERE id = :t"),
+            {"t": tid},
+        )
+    rule = await ok(client, "POST", "/v1/reminders/rules", json=RULE)
+    assert rule["trigger"] == "BIRTHDAY"
+    async with engine.begin() as conn:
+        await conn.execute(
+            text("UPDATE tenants SET enabled_services = '{}' WHERE id = :t"), {"t": tid}
+        )
+        await conn.execute(text("UPDATE reminder_rules SET last_run_date = NULL"))
+    summary = await _in_tenant(tid, lambda s: service.tick(s, tid, NOW))
+    assert "not enabled" in summary
+    sent = []
+    assert await _in_tenant(
+        tid, lambda s: service.deliver(s, tid, lambda *m: sent.append(m), TODAY)
+    ) == {"sent": 0, "failed": 0}
+    assert not sent

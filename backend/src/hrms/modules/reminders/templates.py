@@ -43,6 +43,11 @@ TRIGGER_VARIABLES: dict[str, dict[str, str]] = {
     "WORK_ANNIVERSARY": {"years": "Years of service", "joining_date": "Date of joining"},
     "NEW_JOINER": {"joining_date": "Date of joining"},
     "EXIT": {"last_day": "Last working day"},
+    "LATE_ARRIVAL": {
+        "late_by": "How late, e.g. 25 min",
+        "arrived_at": "Time they arrived, e.g. 10:25 AM",
+        "expected_at": "Time they were due, e.g. 10:00 AM",
+    },
 }
 GROUP_VARIABLES: dict[str, str] = {
     "company_name": "Company name",
@@ -349,6 +354,25 @@ DEFAULTS: dict[str, dict[str, str]] = {
             "Thank you, {first_name}",
             "Thank you for everything you did at {company_name}. We wish you all the best for "
             "what comes next.",
+        ),
+    },
+    "LATE_ARRIVAL": {
+        "subject": "⏰ Late arrivals today ({count})",
+        # No list: the report is attached as a PDF, by department and role.
+        "body_html": (
+            '<p style="margin:0;font-size:34px">⏰</p>'
+            '<h2 style="margin:6px 0 4px;font-size:21px">Late arrivals today</h2>'
+            f'<p style="margin:0 0 14px;{MUTED}">{{count}} colleague(s) arrived after their '
+            "start time.</p>"
+            "<p>The full report, by department and role, is attached as a PDF.</p>"
+            f'<p style="margin:18px 0 0;{MUTED}">Please follow up where needed.</p>'
+        ),
+        "employee_subject": "You were late today, {first_name}",
+        "employee_body_html": _greeting(
+            "⏰",
+            "Good day, {first_name}",
+            "You arrived at {arrived_at} today, {late_by} after your start time of "
+            "{expected_at}. Please let your manager know if there was a reason.",
         ),
     },
 }

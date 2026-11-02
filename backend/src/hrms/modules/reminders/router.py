@@ -6,6 +6,7 @@ Checking     POST /preview (a draft, filled with sample people)   GET /rules/{id
              POST /rules/{id}/test-send (to yourself)
 Reference    GET /variables   GET /defaults   GET /deliveries
 
+Needs the SCHEDULED_MAIL service, which a platform admin switches on per company.
 Access: org.read to see, org.write to change (HR and Admin). A rule for the whole group needs
 group-level org.write; a rule for one company needs org.write covering that company.
 """
@@ -28,6 +29,7 @@ from hrms.core.database import SessionDep
 from hrms.core.datetime_utils import now_utc, safe_tz
 from hrms.core.errors import CodedHTTPException
 from hrms.core.ids import to_typed_id, to_uuid
+from hrms.core.services import SCHEDULED_MAIL, require_service
 from hrms.core.tenancy import TenantDep
 from hrms.core.versioning import require_version
 from hrms.modules.kernel.models import EntityChangeLog
@@ -45,7 +47,9 @@ from hrms.modules.reminders.schemas import (
     UpcomingPerson,
 )
 
-router = APIRouter(prefix="/v1/reminders", tags=["Reminders"])
+router = APIRouter(
+    prefix="/v1/reminders", tags=["Reminders"], dependencies=[require_service(SCHEDULED_MAIL)]
+)
 
 SAMPLE_PEOPLE = [
     {
@@ -77,6 +81,9 @@ SAMPLE_PEOPLE = [
         "joining_date": "2015-01-04",
     },
 ]
+for _i, _p in enumerate(SAMPLE_PEOPLE):  # the late-arrival variables
+    _p.update(late_minutes=(25, 70)[_i], arrived_at=("10:25 AM", "10:10 AM")[_i])
+    _p["expected_at"] = ("10:00 AM", "9:00 AM")[_i]
 RULE_FIELDS = tuple(f for f in RuleUpdate.model_fields if f != "version")
 
 
@@ -96,6 +103,7 @@ def _response(rule: ReminderRule) -> RuleResponse:
         notify_employee=rule.notify_employee,
         notify_manager=rule.notify_manager,
         notify_everyone=rule.notify_everyone,
+        min_late_minutes=rule.min_late_minutes,
         extra_emails=list(rule.extra_emails),
         digest=rule.digest,
         subject=rule.subject,
@@ -161,6 +169,13 @@ def _check_consistent(rule: ReminderRule) -> None:
         rule.notify_employee or rule.notify_manager or rule.notify_everyone or rule.extra_emails
     ):
         problems.append("Choose at least one person to tell.")
+    if rule.trigger == "LATE_ARRIVAL":
+        if rule.frequency != "SAME_DAY":
+            problems.append("Late arrivals are sent on the day itself.")
+        if rule.notify_everyone:
+            problems.append("A late-arrival list cannot go to everyone.")
+        if not rule.digest:
+            problems.append("A late-arrival mail is one list per recipient.")
     if rule.frequency == "CUSTOM" and not rule.custom_offsets:
         problems.append("Enter at least one day for a custom schedule.")
     if rule.frequency in {"CONTINUOUS", "ALTERNATE_DAYS"} and rule.days_before < 1:
@@ -496,10 +511,14 @@ async def test_send_reminder(
     ).scalar()
     if not address:
         raise CodedHTTPException(409, "Your account has no email address", code="NO_EMAIL")
-    subject, html, plain = await service.compose(
-        session, tenant_id, rule, audience, SAMPLE_PEOPLE[: 1 if audience == "EMPLOYEE" else 2]
+    people = SAMPLE_PEOPLE[: 1 if audience == "EMPLOYEE" else 2]
+    today = (await _local_now(session, tenant_id)).date().isoformat()
+    people = [{**p, "event_date": today} for p in people]  # the report is dated today
+    subject, html, plain = await service.compose(session, tenant_id, rule, audience, people)
+    files = await service.attachments_for(session, tenant_id, rule, audience, people)
+    await run_in_threadpool(
+        service._default_sender, address, "[Test] " + subject, html, plain, files
     )
-    await run_in_threadpool(service._default_sender, address, "[Test] " + subject, html, plain)
     return {"sent_to": address}
 
 
@@ -517,6 +536,8 @@ async def upcoming_reminders(
 ):
     """Who the rule will mail about over the next days, and on which dates."""
     rule = await _visible(session, tenant_id, rule_id, scope)
+    if rule.trigger == "LATE_ARRIVAL":
+        return []  # who is late is only known on the day
     today = (await _local_now(session, tenant_id)).date()
     rows = await service.candidates(session, tenant_id, rule, today)
     found: dict[str, UpcomingPerson] = {}

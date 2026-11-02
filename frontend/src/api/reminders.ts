@@ -1,6 +1,6 @@
 import { api, type Versioned } from "./client";
 
-export type ReminderTrigger = "BIRTHDAY" | "WORK_ANNIVERSARY" | "NEW_JOINER" | "EXIT";
+export type ReminderTrigger = "BIRTHDAY" | "WORK_ANNIVERSARY" | "NEW_JOINER" | "EXIT" | "LATE_ARRIVAL";
 export type ReminderFrequency = "SAME_DAY" | "ONE_DAY_BEFORE" | "CONTINUOUS" | "ALTERNATE_DAYS" | "CUSTOM";
 export type Audience = "EMPLOYEE" | "TEAM";
 
@@ -19,6 +19,8 @@ export interface ReminderRuleInput {
   notify_manager: boolean;
   /** Also mail every employee with an email address, about everyone else. */
   notify_everyone: boolean;
+  /** LATE_ARRIVAL only: list people at least this many minutes late. */
+  min_late_minutes: number;
   extra_emails: string[];
   digest: boolean;
   subject: string;

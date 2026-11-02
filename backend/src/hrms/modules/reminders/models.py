@@ -2,7 +2,8 @@
 Date reminders (migration 0076): birthday and work-anniversary mail on a schedule.
 
 - Triggers: BIRTHDAY and WORK_ANNIVERSARY repeat every year; NEW_JOINER (hire date) and EXIT
-  (separation date) are one-off dates.
+  (separation date) are one-off dates. LATE_ARRIVAL (migration 0078) is a daily report of who
+  arrived late that day, read from attendance_days, not a date to look ahead to.
 - ReminderRule: when it runs (frequency, days before, time of day in the tenant's timezone),
   who is told (the person, their manager, extra addresses) and the wording. `custom_offsets`
   is only read for frequency CUSTOM.
@@ -24,6 +25,7 @@ class ReminderTrigger(enum.StrEnum):
     WORK_ANNIVERSARY = "WORK_ANNIVERSARY"
     NEW_JOINER = "NEW_JOINER"
     EXIT = "EXIT"
+    LATE_ARRIVAL = "LATE_ARRIVAL"
 
 
 class ReminderFrequency(enum.StrEnum):
@@ -63,6 +65,7 @@ class ReminderRule(SQLModel, table=True):
     notify_employee: bool = Field(default=False)
     notify_manager: bool = Field(default=False)
     notify_everyone: bool = Field(default=False)
+    min_late_minutes: int = Field(default=1, sa_column=Column(SmallInteger, nullable=False))
     extra_emails: list[str] = Field(
         default_factory=list, sa_column=Column(ARRAY(String), nullable=False)
     )

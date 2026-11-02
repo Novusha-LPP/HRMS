@@ -1,7 +1,7 @@
 import { useEffect, useMemo, useState, type FormEvent, type KeyboardEvent } from "react";
 import { useMutation, useQuery, useQueryClient } from "@tanstack/react-query";
 import { format, parseISO } from "date-fns";
-import { Cake, Eye, LogOut, PartyPopper, RotateCcw, Send, Trash2, UserPlus, X } from "lucide-react";
+import { AlarmClock, Cake, Eye, LogOut, PartyPopper, RotateCcw, Send, Trash2, UserPlus, X } from "lucide-react";
 import {
   remindersApi,
   type Audience, type ReminderFrequency, type ReminderRule, type ReminderRuleInput, type ReminderTrigger,
@@ -14,7 +14,7 @@ import { Segmented } from "../ui/Tabs";
 import { useToast, errorMessage } from "../ui/Toast";
 import { WordingEditor } from "./WordingEditor";
 
-const EVENT_ICON = { BIRTHDAY: Cake, WORK_ANNIVERSARY: PartyPopper, NEW_JOINER: UserPlus, EXIT: LogOut } as const;
+const EVENT_ICON = { BIRTHDAY: Cake, WORK_ANNIVERSARY: PartyPopper, NEW_JOINER: UserPlus, EXIT: LogOut, LATE_ARRIVAL: AlarmClock } as const;
 const DAY_CHOICES = [0, 1, 2, 3, 5, 7, 14, 30];
 const EMAIL = /^[^\s@]+@[^\s@]+\.[^\s@]+$/;
 const hhmm = (time: string) => time.slice(0, 5);
@@ -22,7 +22,7 @@ const hhmm = (time: string) => time.slice(0, 5);
 const BLANK: ReminderRuleInput = {
   name: "", trigger: "BIRTHDAY", legal_entity_id: null, org_unit_id: null, frequency: "SAME_DAY", days_before: 3,
   custom_offsets: [], send_time: "09:00", notify_employee: false, notify_manager: false, notify_everyone: false,
-  extra_emails: [], digest: true, subject: "", body_html: "", employee_subject: "", employee_body_html: "", is_active: true,
+  min_late_minutes: 1, extra_emails: [], digest: true, subject: "", body_html: "", employee_subject: "", employee_body_html: "", is_active: true,
 };
 
 function useDebounced<T>(value: T, ms: number): T {
@@ -60,7 +60,7 @@ function Choice({ checked, onChange, title, help, type = "checkbox", disabled }:
   );
 }
 
-/** Create or change a reminder: four short steps, a one-sentence summary, and a live preview. */
+/** Create or change a scheduled mail: four short steps, a one-sentence summary, and a live preview. */
 export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; preset?: Partial<ReminderRuleInput>; onClose: () => void }) {
   const qc = useQueryClient();
   const toast = useToast();
@@ -83,6 +83,7 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
   // A new rule shows ready-made wording for its event until the wording is edited.
   const starterWording = !wordingEdited ? starter.data : undefined;
   const d: ReminderRuleInput = starterWording ? { ...state, ...starterWording } : state;
+  const late = d.trigger === "LATE_ARRIVAL";
   const set = <K extends keyof ReminderRuleInput>(k: K, v: ReminderRuleInput[K]) => {
     const wording = k === "subject" || k === "body_html" || k === "employee_subject" || k === "employee_body_html";
     if (wording) setWordingEdited(true);
@@ -97,7 +98,7 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
   const hasHeadsUp = d.notify_manager || d.notify_everyone || d.extra_emails.length > 0;
   // Show only the messages that will actually be sent.
   const kinds: { value: Audience; label: string }[] = [
-    ...(hasHeadsUp ? [{ value: "TEAM" as Audience, label: "Heads-up message" }] : []),
+    ...(hasHeadsUp ? [{ value: "TEAM" as Audience, label: late ? "List of late arrivals" : "Heads-up message" }] : []),
     ...(d.notify_employee ? [{ value: "EMPLOYEE" as Audience, label: "Message to the person" }] : []),
   ];
   const shown: Audience = kinds.some((k) => k.value === mail) ? mail : (kinds[0]?.value ?? "TEAM");
@@ -116,7 +117,7 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
   });
 
   const companyUnits = (units.data ?? []).filter((u) => u.status === "ACTIVE" && (!d.legal_entity_id || !u.legal_entity_id || u.legal_entity_id === d.legal_entity_id));
-  const defaultName = `${TRIGGERS[d.trigger].label} reminder`;
+  const defaultName = late ? "Daily late arrivals" : `${TRIGGERS[d.trigger].label} reminder`;
 
   // Problems that block saving, in plain words; shown beside the Save button.
   const problems: string[] = [];
@@ -135,16 +136,16 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
   const save = useMutation({
     mutationFn: () => rule ? remindersApi.update(rule.id, { ...payload, version: rule.version }) : remindersApi.create(payload),
     onSuccess: (saved) => {
-      toast.success(rule ? "Reminder saved" : "Reminder created", saved.name);
+      toast.success(rule ? "Scheduled mail saved" : "Scheduled mail created", saved.name);
       qc.invalidateQueries({ queryKey: ["reminder-rules"] });
       onClose();
     },
-    onError: (e) => toast.error("Couldn’t save the reminder", errorMessage(e)),
+    onError: (e) => toast.error("Couldn’t save the scheduled mail", errorMessage(e)),
   });
   const remove = useMutation({
     mutationFn: () => remindersApi.remove(rule!.id),
-    onSuccess: () => { toast.success("Reminder removed", rule!.name); qc.invalidateQueries({ queryKey: ["reminder-rules"] }); onClose(); },
-    onError: (e) => toast.error("Couldn’t remove the reminder", errorMessage(e)),
+    onSuccess: () => { toast.success("Scheduled mail removed", rule!.name); qc.invalidateQueries({ queryKey: ["reminder-rules"] }); onClose(); },
+    onError: (e) => toast.error("Couldn’t remove the scheduled mail", errorMessage(e)),
   });
   const test = useMutation({
     mutationFn: () => remindersApi.testSend(rule!.id, shown),
@@ -171,29 +172,33 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
 
   return (
     <>
-      <Sheet open onClose={close} className="max-w-3xl" title={rule ? `Edit “${rule.name}”` : "New reminder"}
-        description="Four short steps. The sentence below always shows what this reminder will do."
+      <Sheet open onClose={close} className="max-w-3xl" title={rule ? `Edit “${rule.name}”` : "New scheduled mail"}
+        description="Four short steps. The sentence below always shows what this will do."
         footer={<>
           {rule && <button type="button" className="btn-ghost text-danger" onClick={() => setConfirmDelete(true)}><Trash2 size={15} /> Remove</button>}
           <p className="mr-auto min-w-0 flex-1 truncate text-xs text-fg-subtle" role="status">
             {problems.length > 0 ? `To save: ${problems.join(", ")}.` : dirty ? "You have unsaved changes." : ""}
           </p>
           <button type="button" className="btn-secondary" onClick={close}>Cancel</button>
-          <button className="btn-primary" type="submit" form="reminder-form" disabled={problems.length > 0 || save.isPending}>{save.isPending ? "Saving…" : rule ? "Save changes" : "Create reminder"}</button>
+          <button className="btn-primary" type="submit" form="reminder-form" disabled={problems.length > 0 || save.isPending}>{save.isPending ? "Saving…" : rule ? "Save changes" : "Create scheduled mail"}</button>
         </>}>
         <form id="reminder-form" onSubmit={submit} className="space-y-7">
           <div className="rounded-xl border border-brand-500/30 bg-brand-500/5 px-4 py-3 text-[13px] text-fg" aria-live="polite">
             <span className="font-medium">In short: </span>{describeRule({ ...d, send_time: d.send_time })}
           </div>
 
-          <Step n={1} title="Which event is this about?" hint="Pick the date the reminder counts from.">
+          <Step n={1} title="Which event is this about?" hint="Pick what triggers the mail.">
             <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="Event">
               {(Object.keys(TRIGGERS) as ReminderTrigger[]).map((t) => {
                 const Icon = EVENT_ICON[t];
                 const on = d.trigger === t;
                 return (
                   <button key={t} type="button" role="radio" aria-checked={on} disabled={!!rule && !on}
-                    onClick={() => { set("trigger", t); if (!rule) setWordingEdited(false); }}
+                    onClick={() => {
+                      set("trigger", t);
+                      if (t === "LATE_ARRIVAL") setD((p) => ({ ...p, trigger: t, frequency: "SAME_DAY", days_before: 0, notify_everyone: false, digest: true, send_time: p.send_time < "10:00" ? "11:00" : p.send_time }));
+                      if (!rule) setWordingEdited(false);
+                    }}
                     className={`flex items-start gap-3 rounded-lg border px-3 py-2.5 text-left transition-colors disabled:cursor-not-allowed disabled:opacity-50 ${on ? "border-brand-500 bg-brand-500/5" : "border-line hover:bg-muted"}`}>
                     <Icon size={18} className={on ? "text-accent" : "text-fg-subtle"} />
                     <span><span className="block text-[13px] font-medium text-fg">{TRIGGERS[t].label}</span><span className="block text-xs text-fg-subtle">{TRIGGERS[t].help}</span></span>
@@ -201,12 +206,12 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
                 );
               })}
             </div>
-            {rule && <p className="hint">The event can’t be changed after the reminder is created. Create a new reminder for a different event.</p>}
+            {rule && <p className="hint">The event can’t be changed after it is created. Create a new scheduled mail for a different event.</p>}
             <div className="grid gap-3 sm:grid-cols-2">
               <div>
-                <label className="label" htmlFor="rm-company">Whose {TRIGGERS[d.trigger].label.toLowerCase()}?</label>
+                <label className="label" htmlFor="rm-company">{late ? "Which company?" : `Whose ${TRIGGERS[d.trigger].label.toLowerCase()}?`}</label>
                 <select id="rm-company" className="input" value={d.legal_entity_id ?? ""} onChange={(e) => { set("legal_entity_id", e.target.value || null); set("org_unit_id", null); }}>
-                  <option value="">Everyone in the group</option>
+                  <option value="">{late ? "All companies (whole group)" : "Everyone in the group"}</option>
                   {(companies.data ?? []).map((c) => <option key={c.id} value={c.id}>{c.name}</option>)}
                 </select>
               </div>
@@ -224,7 +229,14 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
             </div>
           </Step>
 
-          <Step n={2} title="When should the mail go out?" hint={oneOff ? "This date happens once, so the mail goes out before it and on it." : "The mail goes out ahead of the date and on it."}>
+          <Step n={2} title="When should the mail go out?" hint={late ? "Every day, once, at the time you choose." : oneOff ? "This date happens once, so the mail goes out before it and on it." : "The mail goes out ahead of the date and on it."}>
+            {late ? (
+              <div className="max-w-[20rem]">
+                <label className="label" htmlFor="rm-minlate">Only list people at least this many minutes late</label>
+                <input id="rm-minlate" type="number" min={1} max={600} className="input" value={d.min_late_minutes} onChange={(e) => set("min_late_minutes", Math.max(1, Math.min(600, Number(e.target.value) || 1)))} />
+                <p className="hint">“Late” comes from your attendance policy, so the grace period is already allowed for. Nothing is sent on a day when nobody is late.</p>
+              </div>
+            ) : (
             <div className="grid gap-2 sm:grid-cols-2" role="radiogroup" aria-label="How often">
               {(Object.keys(FREQUENCIES) as ReminderFrequency[]).map((f) => (
                 <button key={f} type="button" role="radio" aria-checked={d.frequency === f} onClick={() => set("frequency", f)}
@@ -234,6 +246,7 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
                 </button>
               ))}
             </div>
+            )}
             {needsDays && (
               <div className="max-w-[16rem]">
                 <label className="label" htmlFor="rm-days">Start how many days ahead?</label>
@@ -256,16 +269,16 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
             <div className="max-w-[16rem]">
               <label className="label" htmlFor="rm-time">At what time?</label>
               <input id="rm-time" type="time" className="input" value={d.send_time} onChange={(e) => set("send_time", e.target.value)} />
-              <p className="hint">Company time. Mail goes out within about 15 minutes of this. A reminder saved after this time today starts tomorrow.</p>
+              <p className="hint">Company time. Mail goes out within about 15 minutes of this. {late ? "Set it after people are expected in: anyone who arrives later isn’t in that day’s list." : "Saved after this time today, it starts tomorrow."}</p>
             </div>
-            <p className="text-xs text-fg-muted">Mail goes out {describeOffsets(offsets, TRIGGERS[d.trigger].short)}.</p>
+            {!late && <p className="text-xs text-fg-muted">Mail goes out {describeOffsets(offsets, TRIGGERS[d.trigger].short)}.</p>}
           </Step>
 
           <Step n={3} title="Who should get it?" hint="Tick everyone who should be told. You can choose more than one.">
-            <Choice checked={d.notify_employee} onChange={(v) => set("notify_employee", v)} title="The person themselves" help="A personal message (like “Happy birthday”), sent on the day only." />
-            <Choice checked={d.notify_manager} onChange={(v) => set("notify_manager", v)} title="Their line manager" help="A heads-up about the people in their team." />
-            <Choice checked={d.notify_everyone} onChange={(v) => set("notify_everyone", v)} title="Everyone in the company"
-              help={`A heads-up to every employee with an email address (${d.org_unit_id ? "in that department" : d.legal_entity_id ? "in that company" : "in the whole group"}), never about themselves.`} />
+            <Choice checked={d.notify_employee} onChange={(v) => set("notify_employee", v)} title={late ? "Each person who was late" : "The person themselves"} help={late ? "A short note to each person who arrived late." : "A personal message (like “Happy birthday”), sent on the day only."} />
+            <Choice checked={d.notify_manager} onChange={(v) => set("notify_manager", v)} title="Their line manager" help={late ? "Each manager gets the late people in their own team." : "A heads-up about the people in their team."} />
+            {!late && <Choice checked={d.notify_everyone} onChange={(v) => set("notify_everyone", v)} title="Everyone in the company"
+              help={`A heads-up to every employee with an email address (${d.org_unit_id ? "in that department" : d.legal_entity_id ? "in that company" : "in the whole group"}), never about themselves.`} />}
             <div>
               <label className="label" htmlFor="rm-emails">Other email addresses</label>
               <div className="input flex h-auto min-h-9 flex-wrap items-center gap-1.5 py-1.5">
@@ -278,9 +291,9 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
                 <input id="rm-emails" className="min-w-[10rem] flex-1 bg-transparent text-[13px] outline-none" value={emailText} placeholder={d.extra_emails.length ? "Add another…" : "hr@company.com"}
                   onChange={(e) => setEmailText(e.target.value)} onKeyDown={emailKey} onBlur={addEmails} />
               </div>
-              <p className="hint">Type an address and press Enter. These get the heads-up for everyone this reminder covers.</p>
+              <p className="hint">Type one or more addresses and press Enter. {late ? "Each gets the full list for the company or department chosen in step 1." : "These get the heads-up for everyone this covers."}</p>
             </div>
-            {hasHeadsUp && (
+            {hasHeadsUp && !late && (
               <fieldset className="space-y-2">
                 <legend className="label">How should the heads-up be sent?</legend>
                 <Choice type="radio" checked={d.digest} onChange={() => set("digest", true)} title="One mail listing everyone due" help="Best when several people share a day." />
@@ -298,7 +311,7 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
                 <label className="label" htmlFor="rm-subject">Subject</label>
                 <input id="rm-subject" className="input" maxLength={300} value={own ? d.employee_subject : d.subject} onChange={(e) => set(own ? "employee_subject" : "subject", e.target.value)} />
               </div>
-              <WordingEditor key={`${d.trigger}-${shown}`} label={own ? "Message to the person" : "Heads-up message"}
+              <WordingEditor key={`${d.trigger}-${shown}`} label={own ? "Message to the person" : late ? "List of late arrivals" : "Heads-up message"}
                 value={own ? d.employee_body_html : d.body_html} onChange={(html) => set(own ? "employee_body_html" : "body_html", html)}
                 variables={variables.data?.variables ?? {}} allowRepeat={!own} />
               <p className="hint">Use “Insert field” to add things like the person’s name or date; they’re filled in for each mail.{!own && " “Repeat for each person” lists everyone when one mail covers several people."}</p>
@@ -319,7 +332,7 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
                     title={dirtyWording ? "Save your changes first; the test uses the saved message" : undefined}>
                     <Send size={14} /> Send this message to me
                   </button>
-                  <button type="button" className="btn-secondary btn-sm" onClick={() => setShowUpcoming((s) => !s)}><Eye size={14} /> Who will get mail soon?</button>
+                  <button type="button" hidden={late} className="btn-secondary btn-sm" onClick={() => setShowUpcoming((s) => !s)}><Eye size={14} /> Who will get mail soon?</button>
                 </div>
               )}
             </>}
@@ -328,10 +341,10 @@ export function RuleForm({ rule, preset, onClose }: { rule?: ReminderRule; prese
         </form>
       </Sheet>
       <ConfirmDialog open={confirmDiscard} onClose={() => setConfirmDiscard(false)} onConfirm={onClose}
-        title="Discard your changes?" description="What you changed in this reminder hasn’t been saved."
+        title="Discard your changes?" description="What you changed hasn’t been saved."
         confirmLabel="Discard changes" cancelLabel="Keep editing" />
       <ConfirmDialog open={confirmDelete} onClose={() => setConfirmDelete(false)} onConfirm={() => remove.mutate()}
-        title="Remove this reminder?" description="It stops sending. Its history and the mail already sent are kept." confirmLabel="Remove" loading={remove.isPending} />
+        title="Remove this scheduled mail?" description="It stops sending. Its history and the mail already sent are kept." confirmLabel="Remove" loading={remove.isPending} />
     </>
   );
 }

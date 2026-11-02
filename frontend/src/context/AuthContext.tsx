@@ -30,6 +30,8 @@ export interface AuthUser {
   permissions: string[];
   isAllScope: boolean;
   legalEntities: LegalEntitySummary[];
+  /** Optional services the platform switched on for the company, e.g. SCHEDULED_MAIL. */
+  services: string[];
   /** True until the person has replaced an imported / admin-issued password. */
   mustChangePassword: boolean;
   mfaRequired: boolean;
@@ -46,6 +48,7 @@ interface MeResponse {
   permissions: string[];
   is_all_scope: boolean;
   legal_entities: LegalEntitySummary[];
+  services?: string[];
   must_change_password?: boolean;
   mfa_required?: boolean;
 }
@@ -90,6 +93,7 @@ function toAuthUser(m: MeResponse): AuthUser {
     permissions: m.permissions,
     isAllScope: m.is_all_scope,
     legalEntities: m.legal_entities,
+    services: m.services ?? [],
     mustChangePassword: m.must_change_password ?? false,
     mfaRequired: m.mfa_required ?? false,
   };

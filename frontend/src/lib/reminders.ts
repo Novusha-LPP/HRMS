@@ -1,10 +1,11 @@
 import type { ReminderFrequency, ReminderRuleInput, ReminderTrigger } from "../api/reminders";
 
 /** What HR sees for each event, in plain words. */
-export const TRIGGERS: Record<ReminderTrigger, { label: string; short: string; help: string; oneOff: boolean }> = {
+export const TRIGGERS: Record<ReminderTrigger, { label: string; short: string; help: string; oneOff: boolean; daily?: boolean }> = {
   BIRTHDAY: { label: "Birthday", short: "birthday", help: "Every year, from the date of birth on the employee’s record.", oneOff: false },
   WORK_ANNIVERSARY: { label: "Work anniversary", short: "work anniversary", help: "Every year, counted from the joining date.", oneOff: false },
   NEW_JOINER: { label: "New joiner", short: "joining day", help: "Once, from the joining date: get desks, laptops and accounts ready.", oneOff: true },
+  LATE_ARRIVAL: { label: "Late arrivals", short: "late arrivals", help: "Every working day: a list of who arrived late, as the attendance policy marked them.", oneOff: false, daily: true },
   EXIT: { label: "Exit", short: "last working day", help: "Once, from the last working day: handover, assets and settlement.", oneOff: true },
 };
 
@@ -55,21 +56,26 @@ export function describeTime(time: string): string {
   return `${hour}:${String(m).padStart(2, "0")} ${h < 12 ? "AM" : "PM"}`;
 }
 
-type Who = Pick<ReminderRuleInput, "notify_employee" | "notify_manager" | "notify_everyone"> & { extra_emails: string[] };
+type Who = Pick<ReminderRuleInput, "notify_employee" | "notify_manager" | "notify_everyone"> & { extra_emails: string[]; trigger?: ReminderTrigger };
 
 export function describeAudience(r: Who): string {
   const parts: string[] = [];
-  if (r.notify_employee) parts.push("the person themselves");
+  if (r.notify_employee) parts.push(r.trigger === "LATE_ARRIVAL" ? "each person who was late" : "the person themselves");
   if (r.notify_manager) parts.push("their manager");
   if (r.notify_everyone) parts.push("everyone in the company");
   if (r.extra_emails.length) parts.push(r.extra_emails.length === 1 ? "1 other address" : `${r.extra_emails.length} other addresses`);
   return parts.length ? joinList(parts) : "nobody yet";
 }
 
-type Plan = Pick<ReminderRuleInput, "trigger" | "frequency" | "days_before" | "custom_offsets" | "send_time"> & Who;
+type Plan = Pick<ReminderRuleInput, "trigger" | "frequency" | "days_before" | "custom_offsets" | "send_time"> & Who & { min_late_minutes?: number };
 
 /** The whole rule in one sentence, shown in the list and as the form's summary. */
 export function describeRule(r: Plan): string {
+  if (r.trigger === "LATE_ARRIVAL") {
+    const min = r.min_late_minutes ?? 1;
+    const who = min > 1 ? `people at least ${min} minutes late` : "people who arrived late";
+    return `Every day at ${describeTime(r.send_time)}, email ${describeAudience(r)} the list of ${who} that day. Nothing is sent when nobody is late.`;
+  }
   const when = TRIGGERS[r.trigger].short;
   const offsets = offsetsFor(r.frequency, r.days_before, r.custom_offsets);
   const greeting = r.notify_employee ? " The person’s own message is sent on the day only." : "";

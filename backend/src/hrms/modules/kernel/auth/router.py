@@ -388,7 +388,10 @@ async def _build_me_response(
     tenant_row = (
         (
             await session.execute(
-                text("SELECT display_name FROM tenants WHERE id = CAST(:tid AS uuid)"),
+                text(
+                    "SELECT display_name, enabled_services FROM tenants "
+                    "WHERE id = CAST(:tid AS uuid)"
+                ),
                 {"tid": str(tenant_id)},
             )
         )
@@ -499,6 +502,7 @@ async def _build_me_response(
         permissions=sorted(permissions),
         is_all_scope=scope.is_all,
         legal_entities=legal_entities,
+        services=sorted(tenant_row["enabled_services"]) if tenant_row else [],
         must_change_password=bool(account_row["must_change_password"]) if account_row else False,
     )
 

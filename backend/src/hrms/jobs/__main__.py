@@ -63,6 +63,8 @@ async def _schedulers() -> None:
         from hrms.core.mail import schedule_delivery
 
         await asyncio.gather(_schedule(), schedule_delivery(), _schedule_reminders())
+    elif settings.mail_backend == "smtp":
+        await asyncio.gather(_schedule(), _schedule_reminders())
     else:
         await _schedule()
 

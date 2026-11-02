@@ -3,6 +3,7 @@
 from datetime import date
 
 import pytest
+from pydantic import SecretStr
 
 from hrms.modules.reminders import dates, templates
 
@@ -129,3 +130,98 @@ def test_every_ready_made_template_is_valid_and_renders_cleanly(trigger):
         .split("</h2>")[1]
         .split("<p")[2]
     )
+
+
+def test_smtp_mail_is_sent_with_login_and_both_text_and_html(monkeypatch):
+    import smtplib
+
+    from hrms.core import mail
+    from hrms.core.config import settings
+
+    calls = []
+
+    class FakeSMTP:
+        def __init__(self, host, port, timeout):
+            calls.append(("connect", host, port))
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *exc):
+            return False
+
+        def starttls(self):
+            calls.append(("starttls",))
+
+        def login(self, user, password):
+            calls.append(("login", user, password))
+
+        def send_message(self, message):
+            calls.append(("send", message["To"], message["From"], message["Subject"]))
+            assert message.is_multipart()
+
+    monkeypatch.setattr(smtplib, "SMTP", FakeSMTP)
+    for name, value in {
+        "mail_backend": "smtp",
+        "mail_from": "hr@example.com",
+        "mail_from_name": "Acme HR",
+        "smtp_host": "smtp.example.com",
+        "smtp_port": 587,
+        "smtp_username": "hr@example.com",
+        "smtp_password": SecretStr("s3cret"),
+        "smtp_starttls": True,
+    }.items():
+        monkeypatch.setattr(settings, name, value)
+
+    mail.send_html("a@example.com", "Hello", "<p>Hi</p>", "Hi")
+
+    assert calls == [
+        ("connect", "smtp.example.com", 587),
+        ("starttls",),
+        ("login", "hr@example.com", "s3cret"),
+        ("send", "a@example.com", "Acme HR <hr@example.com>", "Hello"),
+    ]
+
+
+def test_late_report_groups_people_by_department_and_role_and_renders_a_pdf():
+    from datetime import date
+
+    from hrms.modules.reminders import late_report
+
+    people = [
+        {
+            "full_name": "A One",
+            "department": "Sales",
+            "designation": "Executive",
+            "manager_name": "",
+            "late_minutes": 20,
+            "arrived_at": "9:20 AM",
+            "expected_at": "9:00 AM",
+        },
+        {
+            "full_name": "B Two",
+            "department": "Sales",
+            "designation": "Manager",
+            "manager_name": "X",
+            "late_minutes": 70,
+            "arrived_at": "10:10 AM",
+            "expected_at": "9:00 AM",
+        },
+        {
+            "full_name": "C Three",
+            "department": "",
+            "designation": "",
+            "manager_name": "",
+            "late_minutes": 10,
+            "arrived_at": "9:10 AM",
+            "expected_at": "9:00 AM",
+        },
+    ]
+    view = late_report.build_view(people)
+    assert view["total"] == 3 and view["longest"] == 70 and view["average"] == 33
+    assert [d["name"] for d in view["departments"]] == ["Sales", "No department"]
+    assert view["departments"][0]["share"] == 67
+    assert {r["name"] for r in view["roles"]} == {"Executive", "Manager", "No role"}
+    pdf = late_report.render_pdf(people, "Acme <b>", date(2026, 11, 2))
+    assert pdf.startswith(b"%PDF")
+    assert late_report.filename(date(2026, 11, 2)) == "late-arrivals-2026-11-02.pdf"

@@ -31,3 +31,14 @@ test("a rule is described in one sentence", () => {
     "Email the person themselves, their manager and 1 other address 3 days before, 1 day before and on the birthday, at 9:00 AM. The person’s own message is sent on the day only.",
   );
 });
+
+test("a late-arrival rule reads as a daily list", () => {
+  const sentence = describeRule({
+    trigger: "LATE_ARRIVAL", frequency: "SAME_DAY", days_before: 0, custom_offsets: [], send_time: "11:00",
+    notify_employee: false, notify_manager: true, notify_everyone: false, extra_emails: ["hr@x.com"], min_late_minutes: 10,
+  });
+  assert.equal(
+    sentence,
+    "Every day at 11:00 AM, email their manager and 1 other address the list of people at least 10 minutes late that day. Nothing is sent when nobody is late.",
+  );
+});
