@@ -14,6 +14,7 @@ from sqlmodel import SQLModel
 
 from hrms.jobs import models as jobs  # noqa: F401
 from hrms.modules.approvals import models as approvals  # noqa: F401
+from hrms.modules.branding import models as branding  # noqa: F401
 from hrms.modules.corrections import models as corrections  # noqa: F401
 from hrms.modules.dashboard import models as dashboard  # noqa: F401
 from hrms.modules.kernel import models as kernel  # noqa: F401
@@ -26,6 +27,7 @@ from hrms.modules.people import models as people  # noqa: F401
 from hrms.modules.policy import models as policy  # noqa: F401
 from hrms.modules.preferences import models as preferences  # noqa: F401
 from hrms.modules.recruitment import models as recruitment  # noqa: F401
+from hrms.modules.reminders import models as reminders  # noqa: F401
 from hrms.modules.reports import models as reports  # noqa: F401
 from hrms.modules.time import models as time  # noqa: F401
 
@@ -66,6 +68,13 @@ RELATIONS = {
     },
     "positions": {"org_unit_id": "org_units", "job_id": "jobs", "grade_id": "grades"},
     "employments": {"person_id": "persons", "legal_entity_id": "legal_entities"},
+    "reminder_rules": {
+        "legal_entity_id": "legal_entities",
+        "org_unit_id": "org_units",
+        "created_by": "user_accounts",
+        "updated_by": "user_accounts",
+    },
+    "reminder_outbox": {"rule_id": "reminder_rules"},
     "assignments": {
         "employment_id": "employments",
         "org_unit_id": "org_units",
@@ -261,6 +270,12 @@ _STRICT_TABLES = {
     "attendance_groups",
     "attendance_group_members",
     "attendance_group_access",
+    "brand_assets",
+    "brand_profiles",
+    "document_signatories",
+    "payslip_templates",
+    "reminder_rules",
+    "reminder_outbox",
 }
 _NULLABLE_TIMESTAMPS = {
     "created_at",

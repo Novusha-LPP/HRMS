@@ -1,0 +1,290 @@
+{#- One payslip. The view is built by document.build_view; everything here only lays it out. -#}
+{%- set v = view -%}
+{%- set d = v.data -%}
+{%- set c = v.colors -%}
+<!doctype html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>{{ v.title }} {{ d.period_label }} – {{ d.employee_name }}</title>
+<meta name="author" content="{{ v.issuer.name }}">
+<meta name="generator" content="HRMS">
+<style>
+@font-face { font-family: "Payslip Sans"; src: url("NotoSans-Regular.ttf"); font-weight: 400; }
+@font-face { font-family: "Payslip Sans"; src: url("NotoSans-Bold.ttf"); font-weight: 700; }
+@page {
+  size: {{ "A5 landscape" if v.layout == "COMPACT" else "A4" }};
+  margin: {{ "8mm 9mm 10mm" if v.layout == "COMPACT" else "13mm 14mm 16mm" }};
+  @bottom-right {
+    content: "Page " counter(page) " of " counter(pages);
+    font-family: "Payslip Sans"; font-size: 7pt; color: #6B7280;
+  }
+}
+* { box-sizing: border-box; }
+html { font-family: "Payslip Sans", sans-serif; color: #111827; font-size: {{ "7.4pt" if v.layout == "COMPACT" else "8.6pt" }}; line-height: 1.4; }
+body { margin: 0; }
+h1, h2, h3, p { margin: 0; }
+table { border-collapse: collapse; width: 100%; }
+td, th { padding: 0; vertical-align: top; text-align: left; font-weight: 400; }
+.num { text-align: right; font-variant-numeric: tabular-nums; white-space: nowrap; }
+.muted { color: #6B7280; }
+.strong { font-weight: 700; }
+.section { margin-top: {{ "2.6mm" if v.layout == "COMPACT" else "4.5mm" }}; }
+.label { font-size: 0.86em; color: #6B7280; }
+.cols { width: 100%; }
+.cols > tbody > tr > td { width: 50%; }
+.cols > tbody > tr > td:first-child { padding-right: 3mm; }
+.cols > tbody > tr > td:last-child { padding-left: 3mm; }
+.lines th { font-size: 0.86em; color: #6B7280; padding: 1.4mm 0; border-bottom: 0.6pt solid #D1D5DB; }
+.lines td { padding: 1.3mm 0; border-bottom: 0.4pt solid #E5E7EB; }
+.lines tr.total td { font-weight: 700; border-bottom: none; padding-top: 1.8mm; }
+.lines .rate, .lines .ytd { color: #6B7280; }
+.fields td { padding: 0.9mm 3mm 0.9mm 0; width: 25%; }
+.fields .value { font-weight: 700; }
+.net { padding: 3mm 4mm; }
+.net .amount { font-size: 1.9em; font-weight: 700; }
+.small-table td, .small-table th { padding: 0.9mm 0; border-bottom: 0.4pt solid #E5E7EB; }
+.small-table th { font-size: 0.86em; color: #6B7280; }
+.note { margin-top: 3mm; font-size: 0.92em; color: #374151; }
+.signature { margin-top: 6mm; }
+.signature img { height: 13mm; max-width: 50mm; display: block; margin-bottom: 1mm; }
+.signature .line { border-top: 0.6pt solid #9CA3AF; width: 55mm; padding-top: 1mm; }
+.footer { margin-top: 5mm; padding-top: 2mm; border-top: 0.6pt solid #E5E7EB; font-size: 0.86em; color: #6B7280; }
+.watermark {
+  position: fixed; top: 38%; left: 0; width: 100%; text-align: center;
+  font-size: 80pt; font-weight: 700; letter-spacing: 6mm; color: rgba(17, 24, 39, 0.06);
+  transform: rotate(-24deg);
+}
+.sample-ribbon { display: inline-block; padding: 0.4mm 2mm; border-radius: 1mm; background: #FEF3C7; color: #92400E; font-size: 0.8em; font-weight: 700; }
+
+/* ── Modern: brand colour band, side-by-side tables, highlighted net pay ── */
+.modern .band { background: {{ c.primary }}; color: {{ c.on_primary }}; padding: 4.5mm 5mm; border-radius: 2.2mm; }
+.modern .band .muted, .modern .band .label { color: {{ c.on_primary }}; opacity: 0.85; }
+.modern .logo { background: #FFFFFF; border-radius: 1.6mm; padding: 1.6mm; width: 1%; }
+.modern .logo img { height: 12mm; max-width: 42mm; display: block; }
+.modern .company { padding-left: 4mm; }
+.modern .company h1 { font-size: 1.45em; font-weight: 700; }
+.modern .period { text-align: right; white-space: nowrap; padding-left: 4mm; }
+.modern .period h2 { font-size: 1.3em; font-weight: 700; }
+.modern .who h2 { font-size: 1.35em; font-weight: 700; }
+.modern .days { background: #F3F4F6; border-radius: 1.6mm; padding: 2mm 3mm; }
+.modern .days td { width: 25%; }
+.modern .net { background: {{ c.tint }}; border: 0.6pt solid {{ c.tint_border }}; border-radius: 2mm; color: {{ c.primary_text }}; }
+.modern .heading { color: {{ c.primary_text }}; font-weight: 700; font-size: 1em; margin-bottom: 1mm; }
+
+/* ── Classic: black and grey, bordered grid ── */
+.classic .head td { vertical-align: middle; }
+.classic .logo img { height: 15mm; max-width: 45mm; display: block; }
+.classic .company { text-align: center; }
+.classic .company h1 { font-size: 1.6em; font-weight: 700; letter-spacing: 0.02em; }
+.classic .titlebar { margin-top: 3mm; border: 0.8pt solid #374151; background: #F3F4F6; text-align: center; padding: 1.6mm; font-weight: 700; font-size: 1.1em; }
+.classic .box { border: 0.8pt solid #374151; border-top: none; padding: 2mm 3mm; }
+.classic .grid th, .classic .grid td { border: 0.8pt solid #374151; padding: 1.2mm 2mm; }
+.classic .grid th { background: #F3F4F6; font-weight: 700; color: #111827; }
+.classic .grid tr.total td { font-weight: 700; background: #F9FAFB; }
+.classic .net { border: 0.8pt solid #374151; margin-top: 3mm; }
+.classic .net .amount { font-size: 1.5em; }
+.classic .heading { font-weight: 700; margin-bottom: 1mm; }
+
+/* ── Compact: half A4, essentials only ── */
+.compact .head td { vertical-align: middle; }
+.compact .logo img { height: 8mm; max-width: 30mm; display: block; }
+.compact .company { padding-left: 2.5mm; }
+.compact .company h1 { font-size: 1.25em; font-weight: 700; color: {{ c.primary_text }}; }
+.compact .period { text-align: right; white-space: nowrap; }
+.compact .period h2 { font-size: 1.15em; font-weight: 700; }
+.compact .rule { border-bottom: 1pt solid {{ c.primary }}; margin-top: 2mm; }
+.compact .net { border: 0.8pt solid {{ c.primary }}; border-radius: 1.4mm; padding: 1.8mm 3mm; color: {{ c.primary_text }}; }
+.compact .net .amount { font-size: 1.5em; }
+.compact .heading { font-weight: 700; color: {{ c.primary_text }}; margin-bottom: 0.6mm; }
+.compact .fields td { padding: 0.5mm 2mm 0.5mm 0; }
+.compact .lines td { padding: 0.7mm 0; }
+.compact .lines th { padding: 0.8mm 0; }
+.compact .signature { margin-top: 0; }
+.compact .signature img { height: 9mm; }
+.compact .signature .line { width: 45mm; }
+.compact .note { margin-top: 0; }
+.compact .footer { margin-top: 1.5mm; padding-top: 1mm; }
+</style>
+</head>
+<body class="{{ v.layout | lower }}">
+{% if v.sample %}<div class="watermark">SAMPLE</div>{% endif %}
+
+{#- ── Header ── #}
+{% if v.layout == "MODERN" %}
+<div class="band">
+  <table><tr>
+    {% if v.logo_uri %}<td class="logo"><img src="{{ v.logo_uri }}" alt=""></td>{% endif %}
+    <td class="company">
+      <h1>{{ v.issuer.name }}</h1>
+      {% if v.issuer.address %}<p class="muted">{{ v.issuer.address }}</p>{% endif %}
+      {% if v.issuer.registrations %}<p class="label">{% for k, val in v.issuer.registrations %}{{ k }} {{ val }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+    </td>
+    <td class="period">
+      <h2>{{ v.title }}</h2>
+      <p>{{ d.period_label }}</p>
+      <p class="label">Ref {{ d.reference }}</p>
+    </td>
+  </tr></table>
+</div>
+{% elif v.layout == "CLASSIC" %}
+<table class="head"><tr>
+  <td style="width: 25%">{% if v.logo_uri %}<div class="logo"><img src="{{ v.logo_uri }}" alt=""></div>{% endif %}</td>
+  <td class="company">
+    <h1>{{ v.issuer.name }}</h1>
+    {% if v.issuer.address %}<p>{{ v.issuer.address }}</p>{% endif %}
+    {% if v.issuer.registrations %}<p class="label">{% for k, val in v.issuer.registrations %}{{ k }} {{ val }}{% if not loop.last %} · {% endif %}{% endfor %}</p>{% endif %}
+  </td>
+  <td class="num" style="width: 25%"><span class="label">Ref</span><br>{{ d.reference }}</td>
+</tr></table>
+<div class="titlebar">{{ v.title }} for the month of {{ d.period_label }}</div>
+{% else %}
+<table class="head"><tr>
+  {% if v.logo_uri %}<td style="width: 1%"><div class="logo"><img src="{{ v.logo_uri }}" alt=""></div></td>{% endif %}
+  <td class="company">
+    <h1>{{ v.issuer.name }}</h1>
+    {% if v.issuer.address %}<p class="muted">{{ v.issuer.address }}</p>{% endif %}
+  </td>
+  <td class="period"><h2>{{ v.title }} · {{ d.period_label }}</h2><p class="label">Ref {{ d.reference }}</p></td>
+</tr></table>
+<div class="rule"></div>
+{% endif %}
+
+{#- ── Employee ── #}
+<div class="{{ 'box' if v.layout == 'CLASSIC' else 'section' }}">
+  <table class="who"><tr>
+    <td>
+      {% if v.layout == "MODERN" %}<h2>{{ d.employee_name }}</h2>{% else %}<span class="label">Employee</span> <span class="strong">{{ d.employee_name }}</span>{% endif %}
+    </td>
+    {% if v.sample %}<td class="num"><span class="sample-ribbon">SAMPLE</span></td>{% endif %}
+  </tr></table>
+  {% if v.employee_fields %}
+  <table class="fields" style="margin-top: 1.5mm">
+    {% for row in v.employee_fields | batch(4) %}
+    <tr>{% for label, value in row %}<td><div class="label">{{ label }}</div><div class="value">{{ value }}</div></td>{% endfor %}</tr>
+    {% endfor %}
+  </table>
+  {% endif %}
+</div>
+
+{#- ── Days ── #}
+{% if v.layout == "MODERN" %}
+<div class="section days"><table><tr>
+  <td><span class="label">Pay period</span><br><span class="strong">{{ d.period_label }}</span></td>
+  <td><span class="label">Pay date</span><br><span class="strong">{{ d.pay_date.strftime("%d %b %Y") }}</span></td>
+  <td><span class="label">Paid days</span><br><span class="strong">{{ v.days.paid }} of {{ v.days.in_period }}</span></td>
+  <td><span class="label">Loss of pay</span><br><span class="strong">{{ v.days.lop }} {{ "day" if v.days.lop == "1" else "days" }}</span></td>
+</tr></table></div>
+{% elif v.layout == "CLASSIC" %}
+<div class="box"><table><tr>
+  <td><span class="label">Pay date</span> {{ d.pay_date.strftime("%d %b %Y") }}</td>
+  <td><span class="label">Days in month</span> {{ v.days.in_period }}</td>
+  <td><span class="label">Paid days</span> {{ v.days.paid }}</td>
+  <td><span class="label">Loss of pay</span> {{ v.days.lop }}</td>
+</tr></table></div>
+{% else %}
+<p class="section"><span class="label">Paid days</span> <span class="strong">{{ v.days.paid }} of {{ v.days.in_period }}</span> &nbsp; <span class="label">Loss of pay</span> <span class="strong">{{ v.days.lop }}</span> &nbsp; <span class="label">Pay date</span> <span class="strong">{{ d.pay_date.strftime("%d %b %Y") }}</span></p>
+{% endif %}
+
+{#- ── Earnings and deductions ── #}
+{% set grid = "grid" if v.layout == "CLASSIC" else "lines" %}
+<table class="cols section"><tr>
+  <td>
+    <table class="{{ grid }}">
+      <tr><th>Earnings</th><th class="num">Rate</th><th class="num">Earned</th>{% if v.show_ytd %}<th class="num">YTD</th>{% endif %}</tr>
+      {% for ln in v.earnings %}
+      <tr><td>{{ ln.label }}</td><td class="num rate">{{ ln.rate or "" }}</td><td class="num">{{ ln.amount }}</td>{% if v.show_ytd %}<td class="num ytd">{{ ln.ytd or "" }}</td>{% endif %}</tr>
+      {% endfor %}
+      <tr class="total"><td>Gross earnings</td><td class="num rate">{{ v.totals.gross_rate }}</td><td class="num">{{ v.totals.gross }}</td>{% if v.show_ytd %}<td class="num ytd">{{ v.totals.gross_ytd }}</td>{% endif %}</tr>
+    </table>
+  </td>
+  <td>
+    <table class="{{ grid }}">
+      <tr><th>Deductions</th><th class="num">Amount</th>{% if v.show_ytd %}<th class="num">YTD</th>{% endif %}</tr>
+      {% for ln in v.deductions %}
+      <tr><td>{{ ln.label }}</td><td class="num">{{ ln.amount }}</td>{% if v.show_ytd %}<td class="num ytd">{{ ln.ytd or "" }}</td>{% endif %}</tr>
+      {% else %}
+      <tr><td class="muted">No deductions</td><td></td>{% if v.show_ytd %}<td></td>{% endif %}</tr>
+      {% endfor %}
+      <tr class="total"><td>Total deductions</td><td class="num">{{ v.totals.deductions }}</td>{% if v.show_ytd %}<td class="num ytd">{{ v.totals.deductions_ytd }}</td>{% endif %}</tr>
+    </table>
+  </td>
+</tr></table>
+
+{% if v.reimbursements %}
+<table class="{{ grid }} section">
+  <tr><th>Reimbursements (not taxable)</th><th class="num">Amount</th></tr>
+  {% for ln in v.reimbursements %}<tr><td>{{ ln.label }}</td><td class="num">{{ ln.amount }}</td></tr>{% endfor %}
+</table>
+{% endif %}
+
+{#- ── Net pay ── #}
+<div class="net section">
+  <table><tr>
+    <td><div class="label">Net pay{% if v.reimbursements %} (earnings − deductions + reimbursements){% endif %}</div><div>{{ v.net_pay_words }}</div></td>
+    <td class="num amount">₹ {{ v.net_pay }}</td>
+  </tr></table>
+</div>
+
+{% if v.employer_contributions %}
+<p class="section label">Paid by the employer, not part of net pay:
+  {% for ln in v.employer_contributions %}{{ ln.label }} {{ ln.amount }}{% if not loop.last %} · {% endif %}{% endfor %}</p>
+{% endif %}
+
+{#- ── Attendance and leave ── #}
+{% if v.show_attendance or v.show_leave_balances %}
+<table class="cols section"><tr>
+  {% if v.show_attendance %}
+  <td>
+    <p class="heading">Attendance</p>
+    <table class="small-table">
+      {% for row in d.attendance | batch(2) %}
+      <tr>{% for label, value in row %}<td class="muted">{{ label }}</td><td class="num" style="padding-right: 4mm">{{ value }}</td>{% endfor %}</tr>
+      {% endfor %}
+    </table>
+  </td>
+  {% endif %}
+  {% if v.show_leave_balances %}
+  <td>
+    <p class="heading">Leave balance</p>
+    <table class="small-table">
+      <tr><th>Leave type</th><th class="num">Opening</th><th class="num">Availed</th><th class="num">Closing</th></tr>
+      {% for lb in d.leave_balances %}
+      <tr><td>{{ lb.leave_type }}</td><td class="num">{{ lb.opening | days }}</td><td class="num">{{ lb.availed | days }}</td><td class="num">{{ lb.closing | days }}</td></tr>
+      {% endfor %}
+    </table>
+  </td>
+  {% endif %}
+</tr></table>
+{% endif %}
+
+{#- ── Signature and footer (side by side on the half-page Compact layout) ── #}
+{% macro signature() %}
+<div class="signature">
+  {% if v.signature_mode == "SIGNATORY" and v.issuer.signer %}
+    {% if v.signature_uri %}<img src="{{ v.signature_uri }}" alt="">{% endif %}
+    <div class="line"><span class="strong">{{ v.issuer.signer.name }}</span>{% if v.issuer.signer.designation %}<br><span class="muted">{{ v.issuer.signer.designation }}</span>{% endif %}<br><span class="label">For {{ v.issuer.name }}</span></div>
+  {% else %}
+    <p class="muted">{{ v.no_signature_text }}</p>
+  {% endif %}
+</div>
+{% endmacro %}
+{% macro footer() %}
+<div class="footer">
+  {% if v.issuer.footer_text %}<p>{{ v.issuer.footer_text }}</p>{% endif %}
+  {% if v.issuer.contact %}<p>{{ v.issuer.contact | join(" · ") }}</p>{% endif %}
+  <p>Generated {{ v.generated_at }}{% if v.sample %} · Sample with made-up figures, for checking the layout{% endif %}</p>
+</div>
+{% endmacro %}
+{% if v.layout == "COMPACT" %}
+<table class="cols section"><tr>
+  <td>{% if v.note_text %}<p class="note">{{ v.note_text }}</p>{% endif %}{{ footer() }}</td>
+  <td>{{ signature() }}</td>
+</tr></table>
+{% else %}
+{% if v.note_text %}<p class="note">{{ v.note_text }}</p>{% endif %}
+{{ signature() }}
+{{ footer() }}
+{% endif %}
+</body>
+</html>

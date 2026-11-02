@@ -2,7 +2,7 @@ import {
   LayoutGrid, NavigationUsers as Users, Clock, NavigationLeave as Umbrella, FilePenLine, ClipboardCheck, BarChart3, ShieldCheck, Building2, UserCheck, BookOpen,
   Briefcase, CalendarCheck, UserCircle as UserRound, IdCard, Wallet, Cable,
 } from "../icons/ThemeIcons";
-import type { LucideIcon } from "lucide-react";
+import { BellRing, type LucideIcon } from "lucide-react";
 import type { UserRole } from "../../context/AuthContext";
 import { API_DOCS_URL } from "../../lib/runtimeConfig";
 
@@ -15,6 +15,8 @@ export interface NavItem {
   permission?: string;
   /** Visible when the user holds any one of these permissions. */
   anyPermission?: string[];
+  /** Shown only when the platform has switched this service on for the company. */
+  service?: string;
   /** Whether this link points to an external destination (e.g. Swagger API docs). */
   external?: boolean;
 }
@@ -71,6 +73,7 @@ export const NAV_SECTIONS: NavSection[] = [
       { to: "/organization", label: "Organization", icon: Building2, permission: "org.write" },
       { to: "/policy", label: "Policies", icon: ShieldCheck, roles: HR_ROLES },
       { to: "/attendance/groups", label: "Attendance groups", icon: Users, permission: "attendance.groups.manage" },
+      { to: "/reminders", label: "Scheduled mails", icon: BellRing, permission: "org.write", service: "SCHEDULED_MAIL" },
       { to: "/approval-flows", label: "Approval flows", icon: ClipboardCheck, permission: "approvals.manage" },
       // Connected apps (ERP, CRM): the company administrator only.
       { to: "/integrations", label: "Integrations", icon: Cable, permission: "integrations.manage" },
@@ -87,9 +90,11 @@ export const NAV_SECTIONS: NavSection[] = [
 interface NavUser {
   role: UserRole;
   permissions: string[];
+  services?: string[];
 }
 
 function canSee(item: NavItem, user: NavUser): boolean {
+  if (item.service && !(user.services ?? []).includes(item.service)) return false;
   if (item.roles && !item.roles.includes(user.role)) return false;
   if (item.permission && !user.permissions.includes(item.permission) && !user.permissions.includes("*")) return false;
   if (item.anyPermission && !user.permissions.includes("*") && !item.anyPermission.some((p) => user.permissions.includes(p))) return false;

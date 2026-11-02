@@ -1,12 +1,85 @@
+import re
 from datetime import date, datetime
 from typing import Any, Literal
 
-from pydantic import BaseModel, ConfigDict, Field
+from pydantic import BaseModel, ConfigDict, Field, field_validator
 
 from hrms.core.versioning import version_field
 
+# Company identifiers as issued in India. Spaces and dashes are dropped and letters upper-cased
+# before the format is checked; a blank value clears the field.
+COMPANY_IDENTIFIER_FORMATS: dict[str, tuple[re.Pattern[str], str]] = {
+    "cin": (
+        re.compile(r"^[LU][0-9]{5}[A-Z]{2}[0-9]{4}[A-Z]{3}[0-9]{6}$"),
+        "A CIN has 21 characters, e.g. U63090MH2015PTC123456",
+    ),
+    "pan": (
+        re.compile(r"^[A-Z]{5}[0-9]{4}[A-Z]$"),
+        "A PAN is 5 letters, 4 digits and a letter, e.g. AAACA1234A",
+    ),
+    "tan": (
+        re.compile(r"^[A-Z]{4}[0-9]{5}[A-Z]$"),
+        "A TAN is 4 letters, 5 digits and a letter, e.g. MUMA12345B",
+    ),
+    "gstin": (
+        re.compile(r"^[0-9]{2}[A-Z]{5}[0-9]{4}[A-Z][1-9A-Z]Z[0-9A-Z]$"),
+        "A GSTIN has 15 characters, e.g. 27AAACA1234A1Z5",
+    ),
+    "pf_establishment_code": (
+        re.compile(r"^[A-Z]{5}[0-9]{7,10}$"),
+        "A PF establishment code is 5 letters and 7 to 10 digits, e.g. MHBAN0012345000",
+    ),
+    "esic_employer_code": (
+        re.compile(r"^[0-9]{17}$"),
+        "An ESIC employer code has exactly 17 digits",
+    ),
+    "pincode": (re.compile(r"^[A-Z0-9 ]{3,10}$"), "Enter a valid PIN code, e.g. 400093"),
+}
 
-class LegalEntityCreate(BaseModel):
+
+class CompanyDetailsFields(BaseModel):
+    """What a payslip and the statutory files print about the employer (migration 0075)."""
+
+    registered_name: str | None = Field(default=None, max_length=255)
+    address_line1: str | None = Field(default=None, max_length=255)
+    address_line2: str | None = Field(default=None, max_length=255)
+    city: str | None = Field(default=None, max_length=100)
+    state_code: str | None = Field(default=None, max_length=10)
+    pincode: str | None = Field(default=None, max_length=10)
+    cin: str | None = Field(default=None, max_length=30)
+    pan: str | None = Field(default=None, max_length=20)
+    tan: str | None = Field(default=None, max_length=20)
+    gstin: str | None = Field(default=None, max_length=30)
+    pf_establishment_code: str | None = Field(default=None, max_length=30)
+    esic_employer_code: str | None = Field(default=None, max_length=30)
+
+    @field_validator(
+        "registered_name",
+        "address_line1",
+        "address_line2",
+        "city",
+        "state_code",
+        *COMPANY_IDENTIFIER_FORMATS,
+        mode="before",
+    )
+    @classmethod
+    def _clean(cls, value, info):
+        if not isinstance(value, str):
+            return value
+        value = value.strip()
+        if info.field_name in COMPANY_IDENTIFIER_FORMATS:
+            value = value.upper()
+            if info.field_name != "pincode":
+                value = re.sub(r"[\s-]", "", value)
+            pattern, message = COMPANY_IDENTIFIER_FORMATS[info.field_name]
+            if value and not pattern.match(value):
+                raise ValueError(message)
+        elif info.field_name == "state_code":
+            value = value.upper()
+        return value or None
+
+
+class LegalEntityCreate(CompanyDetailsFields):
     name: str = Field(max_length=255)
     short_name: str | None = Field(default=None, max_length=50)
     country_code: str = Field(default="IN", max_length=2)
@@ -15,7 +88,7 @@ class LegalEntityCreate(BaseModel):
     financial_year_start_month: int | None = Field(default=None, ge=1, le=12)
 
 
-class LegalEntityUpdate(BaseModel):
+class LegalEntityUpdate(CompanyDetailsFields):
     """All fields optional — only what's sent gets changed (and audited)."""
 
     name: str | None = Field(default=None, max_length=255)
@@ -37,6 +110,18 @@ class LegalEntityResponse(BaseModel):
     version: int
     establishment_date: date | None = None
     financial_year_start_month: int | None = None
+    registered_name: str | None = None
+    address_line1: str | None = None
+    address_line2: str | None = None
+    city: str | None = None
+    state_code: str | None = None
+    pincode: str | None = None
+    cin: str | None = None
+    pan: str | None = None
+    tan: str | None = None
+    gstin: str | None = None
+    pf_establishment_code: str | None = None
+    esic_employer_code: str | None = None
 
 
 class LocationCreate(BaseModel):

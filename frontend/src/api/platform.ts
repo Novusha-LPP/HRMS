@@ -37,6 +37,8 @@ export interface TenantDetail extends TenantSummary {
   country_code: string;
   employee_count: number;
   legal_entities: TenantLegalEntity[];
+  /** Optional services switched on for the company, e.g. SCHEDULED_MAIL. */
+  services: string[];
 }
 
 export type CompanyMode = "NEW_TENANT" | "SUBSIDIARY";
@@ -102,7 +104,7 @@ export const platformTenantsApi = {
     return platformApi.get<TenantListResponse>(`/v1/platform/tenants?${qs.toString()}`);
   },
   getTenant: (id: string) => platformApi.get<TenantDetail>(`/v1/platform/tenants/${id}`),
-  updateTenant: (id: string, body: { status?: string; plan?: string }) =>
+  updateTenant: (id: string, body: { status?: string; plan?: string; services?: string[] }) =>
     platformApi.patch<TenantDetail>(`/v1/platform/tenants/${id}`, body),
   archiveTenant: (id: string) => platformApi.post<TenantDetail>(`/v1/platform/tenants/${id}/archive`, {}),
   restoreTenant: (id: string) => platformApi.post<TenantDetail>(`/v1/platform/tenants/${id}/restore`, {}),

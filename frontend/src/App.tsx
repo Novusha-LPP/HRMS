@@ -28,6 +28,7 @@ const ProfilePage = lazy(() => import("./pages/ProfilePage").then(m => ({ defaul
 const RecruitmentPage = lazy(() => import("./pages/RecruitmentPage").then(m => ({ default: m.RecruitmentPage })));
 const OpeningDetailPage = lazy(() => import("./pages/OpeningDetailPage").then(m => ({ default: m.OpeningDetailPage })));
 const DailyAnalysisPage = lazy(() => import("./pages/DailyAnalysisPage").then(m => ({ default: m.DailyAnalysisPage })));
+const RemindersPage = lazy(() => import("./pages/RemindersPage").then(m => ({ default: m.RemindersPage })));
 const AttendanceGroupsPage = lazy(() => import("./pages/AttendanceGroupsPage").then(m => ({ default: m.AttendanceGroupsPage })));
 const MarkAttendancePage = lazy(() => import("./pages/MarkAttendancePage").then(m => ({ default: m.MarkAttendancePage })));
 const AttendanceRegisterPage = lazy(() => import("./pages/AttendanceRegisterPage").then(m => ({ default: m.AttendanceRegisterPage })));
@@ -143,6 +144,7 @@ export default function App() {
                               <Route path="/reports" element={<ReportsPage />} />
                               <Route path="/statutory" element={<StatutoryPage />} />
                               <Route path="/payroll" element={<PayrollPage />} />
+                              <Route path="/reminders" element={<RemindersPage />} />
                               <Route path="/integrations" element={<IntegrationsPage />} />
                               <Route path="*" element={<Navigate to="/dashboard" replace />} />
                             </Routes>

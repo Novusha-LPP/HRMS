@@ -12,6 +12,7 @@ class PlatformLoginRequest(BaseModel):
     password: str
     otp: str | None = Field(default=None, pattern=r"^[0-9]{6}$")
 
+
 class PlatformLoginResponse(BaseModel):
     access_token: str
     token_type: str = "bearer"
@@ -55,11 +56,17 @@ class TenantDetail(TenantSummary):
     country_code: str
     employee_count: int
     legal_entities: list[TenantLegalEntity]
+    services: list[str] = Field(
+        default_factory=list, description="Optional services switched on for this company"
+    )
 
 
 class TenantUpdate(BaseModel):
     status: TenantStatus | None = None
     plan: Literal["STARTER", "GROWTH", "ENTERPRISE"] | None = None
+    services: list[Literal["SCHEDULED_MAIL"]] | None = Field(
+        default=None, description="The optional services switched on for the company"
+    )
 
 
 class PlatformCompanyCreate(BaseModel):

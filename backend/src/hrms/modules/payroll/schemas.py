@@ -2,9 +2,11 @@ from datetime import date, datetime
 from decimal import Decimal
 from typing import Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from hrms.modules.payroll.models import ComponentStatus
+from hrms.core.versioning import version_field
+from hrms.modules.payroll.models import ComponentStatus, PayslipLayout, SignatureMode
+from hrms.modules.payroll.payslip.document import DEFAULT_EMPLOYEE_FIELDS, EMPLOYEE_FIELDS
 
 ComponentKindLiteral = Literal[
     "EARNING", "DEDUCTION", "EMPLOYER_CONTRIBUTION", "REIMBURSEMENT", "INFO"
@@ -204,3 +206,87 @@ class SalaryListItem(BaseModel):
     # Set when this salary is encrypted with a key that is not configured (annual_ctc is then
     # empty); the rest of the list is unaffected.
     error: str | None = None
+
+
+# ─── Payslip templates ────────────────────────────────────────────────────────
+
+
+class PayslipTemplateInput(BaseModel):
+    """What a payslip shows and in which layout."""
+
+    layout: PayslipLayout = "MODERN"
+    title: str = Field(default="Payslip", min_length=1, max_length=60)
+    employee_fields: list[str] = Field(
+        default_factory=lambda: list(DEFAULT_EMPLOYEE_FIELDS),
+        description="Employee details to print, in order (keys from the overview's fields)",
+    )
+    show_attendance: bool = True
+    show_leave_balances: bool = False
+    show_employer_contributions: bool = False
+    show_ytd: bool = False
+    hide_zero_lines: bool = True
+    signature_mode: SignatureMode = "COMPUTER_GENERATED"
+    signatory_id: str | None = None
+    note_text: str | None = Field(default=None, max_length=500)
+
+    @field_validator("title", "note_text", "signatory_id", mode="before")
+    @classmethod
+    def _strip(cls, value):
+        if isinstance(value, str):
+            value = value.strip()
+            return value or None
+        return value
+
+    @field_validator("employee_fields")
+    @classmethod
+    def _known_fields(cls, value: list[str]) -> list[str]:
+        unknown = [f for f in value if f not in EMPLOYEE_FIELDS]
+        if unknown:
+            raise ValueError(f"Unknown employee fields: {', '.join(unknown)}")
+        if len(set(value)) != len(value):
+            raise ValueError("An employee field is listed twice")
+        return value
+
+    @model_validator(mode="after")
+    def _signatory(self):
+        if self.signature_mode == "SIGNATORY" and not self.signatory_id:
+            raise ValueError("Choose who signs, or print the computer-generated statement")
+        if self.signature_mode == "COMPUTER_GENERATED":
+            self.signatory_id = None
+        return self
+
+
+class PayslipTemplateSave(PayslipTemplateInput):
+    version: int | None = version_field()
+
+
+class PayslipTemplateResponse(PayslipTemplateInput):
+    id: str | None  # "pstm_..."; null: the built-in default (nothing saved yet)
+    legal_entity_id: str | None  # null: the group default
+    version: int | None
+    recorded_at: datetime | None
+
+
+class CompanyPayslipTemplate(BaseModel):
+    legal_entity_id: str
+    name: str
+    # null: the company uses the group's template
+    template: PayslipTemplateResponse | None
+
+
+class EmployeeFieldOption(BaseModel):
+    key: str
+    label: str
+
+
+class PayslipTemplateOverview(BaseModel):
+    group: PayslipTemplateResponse
+    companies: list[CompanyPayslipTemplate]
+    fields: list[EmployeeFieldOption]
+
+
+class PayslipPreviewRequest(BaseModel):
+    legal_entity_id: str | None = Field(
+        default=None, description="Whose branding to use; omit for the group's"
+    )
+    template: PayslipTemplateInput

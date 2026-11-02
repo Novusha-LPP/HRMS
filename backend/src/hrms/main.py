@@ -28,6 +28,7 @@ from hrms.core.openapi import install_openapi
 from hrms.core.perf import QueryMetricsMiddleware, instrument_engine
 from hrms.core.version import APP_VERSION
 from hrms.modules.approvals.router import router as approvals_router
+from hrms.modules.branding.router import router as branding_router
 from hrms.modules.corrections.router import router as corrections_router
 from hrms.modules.dashboard.router import router as dashboard_router
 from hrms.modules.integrations.admin import employee_router as integration_employee_router
@@ -40,6 +41,7 @@ from hrms.modules.leave.router import router as leave_router
 from hrms.modules.leave.separation_router import router as leave_separation_router
 from hrms.modules.onboarding.router import router as onboarding_router
 from hrms.modules.org.router import router as org_router
+from hrms.modules.payroll.payslip_templates import router as payslip_templates_router
 from hrms.modules.payroll.router import router as payroll_router
 from hrms.modules.people.lifecycle_reports import router as lifecycle_reports_router
 from hrms.modules.people.prior_service_router import router as prior_service_router
@@ -50,6 +52,7 @@ from hrms.modules.platform.router import router as platform_router
 from hrms.modules.policy.router import router as policy_router
 from hrms.modules.preferences.router import router as preferences_router
 from hrms.modules.recruitment.router import router as recruitment_router
+from hrms.modules.reminders.router import router as reminders_router
 from hrms.modules.reports.router import router as reports_router
 from hrms.modules.time.groups import router as time_groups_router
 from hrms.modules.time.holiday_calendars import router as holiday_calendars_router
@@ -129,6 +132,7 @@ app.include_router(time_groups_router)
 app.include_router(holiday_calendars_router)
 app.include_router(onboarding_router)
 app.include_router(reports_router)
+app.include_router(reminders_router)
 app.include_router(dashboard_router)
 app.include_router(policy_router)
 app.include_router(leave_router)
@@ -142,6 +146,8 @@ app.include_router(kyc_router)
 app.include_router(preferences_router)
 app.include_router(recruitment_router)
 app.include_router(payroll_router)
+app.include_router(payslip_templates_router)
+app.include_router(branding_router)
 
 
 # ─── Health ───────────────────────────────────────────────────────────────────

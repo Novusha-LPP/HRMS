@@ -1,6 +1,22 @@
 import { api, type Versioned } from "./client";
 
-export interface LegalEntity {
+/** What payslips and statutory files print about the employer. */
+export interface CompanyDetails {
+  registered_name: string | null;
+  address_line1: string | null;
+  address_line2: string | null;
+  city: string | null;
+  state_code: string | null;
+  pincode: string | null;
+  cin: string | null;
+  pan: string | null;
+  tan: string | null;
+  gstin: string | null;
+  pf_establishment_code: string | null;
+  esic_employer_code: string | null;
+}
+
+export interface LegalEntity extends CompanyDetails {
   id: string;
   name: string;
   short_name: string | null;
@@ -117,10 +133,10 @@ export const orgApi = {
   listLegalEntities: () => api.get<LegalEntity[]>("/v1/org/legal-entities"),
   createLegalEntity: (body: {
     name: string; short_name?: string; country_code?: string; financial_year_start_month?: number; establishment_date?: string | null;
-  }) => api.post<LegalEntity>("/v1/org/legal-entities", body),
+  } & Partial<CompanyDetails>) => api.post<LegalEntity>("/v1/org/legal-entities", body),
   updateLegalEntity: (
     id: string,
-    body: Partial<Pick<LegalEntity, "name" | "short_name" | "country_code" | "financial_year_start_month" | "establishment_date">> & Versioned,
+    body: Partial<Pick<LegalEntity, "name" | "short_name" | "country_code" | "financial_year_start_month" | "establishment_date">> & Partial<CompanyDetails> & Versioned,
   ) => api.patch<LegalEntity>(`/v1/org/legal-entities/${id}`, body),
   legalEntityHistory: (id: string) => api.get<ChangeLogEntry[]>(`/v1/org/legal-entities/${id}/history`),
 

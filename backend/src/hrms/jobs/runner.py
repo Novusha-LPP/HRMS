@@ -13,6 +13,8 @@ so one tenant's failure is logged and counted without stopping the others; the r
 - missed-punches: marks days whose session is still open 24 hours after check-in as
   MISSED_PUNCH, so reports show them for correction.
 - integrations: connected-app housekeeping (held events, feed and sync-log retention).
+- reminders: queues and sends the birthday / work-anniversary mail that is due. Also runs on
+  its own short schedule, because a rule fires at the time of day HR chose.
 - integrity: counts references the database can't protect with a foreign key (hrms.db.integrity);
   /metrics exports the totals and an alert fires above zero.
 """
@@ -140,10 +142,14 @@ async def _integrations(session, tenant_id: UUID) -> str:
     purged = await purge_old_events(session, tenant_id)
     trimmed = 0
     apps = (
-        await session.execute(
-            text("SELECT id FROM connected_apps WHERE tenant_id = :tid"), {"tid": tenant_id}
+        (
+            await session.execute(
+                text("SELECT id FROM connected_apps WHERE tenant_id = :tid"), {"tid": tenant_id}
+            )
         )
-    ).scalars().all()
+        .scalars()
+        .all()
+    )
     for app_id in apps:
         days = (await tenant_settings(session, tenant_id, app_id))["retention_days"]
         result = await session.execute(
@@ -173,6 +179,17 @@ async def _integrity(session, tenant_id: UUID) -> dict[str, int]:
     return await run_checks(session)
 
 
+async def _reminders(session, tenant_id: UUID) -> str:
+    """Queue the birthday and anniversary mail that is due, send what is queued, and drop
+    delivered rows after 90 days. Runs every few minutes (see jobs/__main__.py)."""
+    from hrms.modules.reminders import service
+
+    queued = await service.tick(session, tenant_id)
+    sent = await service.deliver(session, tenant_id)
+    purged = await service.purge_old(session, tenant_id)
+    return f"{queued}; {sent['sent']} sent, {sent['failed']} failed; {purged} old rows removed"
+
+
 JOBS: dict[str, TenantJob] = {
     "scheduled-actions": _scheduled_actions,
     "accrual": _accrual,
@@ -180,6 +197,7 @@ JOBS: dict[str, TenantJob] = {
     "missed-punches": _missed_punches,
     "integrations": _integrations,
     "integrity": _integrity,
+    "reminders": _reminders,
 }
 
 

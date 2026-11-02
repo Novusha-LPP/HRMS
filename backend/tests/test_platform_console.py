@@ -152,3 +152,30 @@ async def test_password_reset_with_the_emailed_link(api, monkeypatch):
     again = await client.post("/v1/platform/reset-password",
                               json={"token": token, "new_password": "Other-" + uuid4().hex})
     assert again.status_code in (400, 401, 410)
+
+
+async def test_a_platform_admin_switches_a_service_on_and_off_for_a_company(api):
+    client, engine = api
+    _, admin = await _console(client, engine)
+    company, email = await _new_tenant(client, admin)
+    path = f"/v1/platform/tenants/{company['tenant_id']}"
+    assert (await ok(client, "GET", path, headers=admin))["services"] == []
+
+    on = await ok(client, "PATCH", path, headers=admin, json={"services": ["SCHEDULED_MAIL"]})
+    assert on["services"] == ["SCHEDULED_MAIL"]
+    login = await _tenant_login(client, email)
+    assert login.json()["user"]["services"] == ["SCHEDULED_MAIL"]
+
+    off = await ok(client, "PATCH", path, headers=admin, json={"services": []})
+    assert off["services"] == []
+    assert (
+        await client.patch(path, headers=admin, json={"services": ["PAYROLL"]})
+    ).status_code == 422
+
+    log = await ok(client, "GET", "/v1/platform/audit-log", headers=admin)
+    entries = log["items"] if isinstance(log, dict) else log
+    assert [e["action"] for e in entries[:2]] == ["TENANT_SERVICES_CHANGED"] * 2  # newest first
+
+    _, viewer = await _console(client, engine, role="VIEWER")
+    denied = await client.patch(path, headers=viewer, json={"services": ["SCHEDULED_MAIL"]})
+    assert denied.status_code == 403

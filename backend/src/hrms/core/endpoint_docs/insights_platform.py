@@ -153,9 +153,12 @@ return `429` with `Retry-After`.
         "One tenant's companies, status, plan and employee count.",
     ),
     "update_tenant": (
-        "Suspend, reactivate or change a tenant's plan",
+        "Suspend, reactivate, change the plan or switch services on or off",
         f"""
-Sets `status` (`ACTIVE` or `SUSPENDED`) and/or `plan` (`STARTER`, `GROWTH` or `ENTERPRISE`).
+Sets `status` (`ACTIVE` or `SUSPENDED`), `plan` (`STARTER`, `GROWTH` or `ENTERPRISE`) and/or
+`services`: the optional services switched on for the company, today `SCHEDULED_MAIL` (the
+birthday, anniversary, joiner, exit and late-arrival mail). Send the full list; a company starts
+with none, and a service that is off refuses the company's calls with `SERVICE_NOT_ENABLED`.
 A suspended tenant's users can't sign in, and their existing sessions stop working.
 {_ADMIN_ONLY}
 """,

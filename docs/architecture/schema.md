@@ -133,6 +133,8 @@ erDiagram
     org_units ||--o{ assignments : org_unit_id
     positions ||--o{ assignments : position_id
     legal_entities ||--o{ attendance_groups : legal_entity_id
+    legal_entities ||--o{ brand_profiles : legal_entity_id
+    legal_entities ||--o{ document_signatories : legal_entity_id
     legal_entities ||--o{ employee_id_schemes : legal_entity_id
     legal_entities ||--o{ employee_policy_assignments : legal_entity_id
     org_units ||--o{ employee_policy_assignments : org_unit_id
@@ -157,10 +159,13 @@ erDiagram
     locations ||--o{ org_units : location_id
     org_units ||--o{ org_units : parent_id
     employments ||--o{ org_units : pm_employment_id
+    legal_entities ||--o{ payslip_templates : legal_entity_id
     grades ||--o{ positions : grade_id
     jobs ||--o{ positions : job_id
     org_units ||--o{ positions : org_unit_id
     legal_entities ||--o{ rejoin_policies : legal_entity_id
+    legal_entities ||--o{ reminder_rules : legal_entity_id
+    org_units ||--o{ reminder_rules : org_unit_id
     legal_entities ||--o{ salary_structures : legal_entity_id
 ```
 
@@ -853,6 +858,18 @@ erDiagram
         uuid employment_id FK
         uuid marked_by FK
     }
+    brand_assets {
+        uuid tenant_id PK
+        uuid id PK
+        uuid uploaded_by FK
+    }
+    brand_profiles {
+        uuid tenant_id PK
+        uuid id PK
+        uuid legal_entity_id FK
+        uuid logo_asset_id FK
+        uuid recorded_by FK
+    }
     company_transfers {
         uuid tenant_id PK
         uuid id PK
@@ -860,6 +877,13 @@ erDiagram
         uuid from_employment_id FK
         uuid to_employment_id FK
         uuid created_by FK
+    }
+    document_signatories {
+        uuid tenant_id PK
+        uuid id PK
+        uuid legal_entity_id FK
+        uuid signature_asset_id FK
+        uuid recorded_by FK
     }
     employment_spells {
         uuid tenant_id PK
@@ -884,6 +908,13 @@ erDiagram
         uuid balance_transaction_id FK
         uuid created_by FK
     }
+    payslip_templates {
+        uuid tenant_id PK
+        uuid id PK
+        uuid legal_entity_id FK
+        uuid signatory_id FK
+        uuid recorded_by FK
+    }
     prior_service {
         uuid tenant_id PK
         uuid id PK
@@ -907,15 +938,32 @@ erDiagram
         uuid approved_by FK
         uuid created_by FK
     }
+    reminder_outbox {
+        uuid tenant_id PK
+        uuid id PK
+        uuid rule_id FK
+    }
+    reminder_rules {
+        uuid tenant_id PK
+        uuid id PK
+        uuid legal_entity_id FK
+        uuid org_unit_id FK
+        uuid created_by FK
+        uuid updated_by FK
+    }
     attendance_groups ||--o{ attendance_group_access : group_id
     user_accounts ||--o{ attendance_group_access : user_account_id
     employments ||--o{ attendance_group_members : employment_id
     attendance_groups ||--o{ attendance_group_members : group_id
     legal_entities ||--o{ attendance_groups : legal_entity_id
     employments ||--o{ attendance_marks : employment_id
+    legal_entities ||--o{ brand_profiles : legal_entity_id
+    brand_assets ||--o{ brand_profiles : logo_asset_id
     employments ||--o{ company_transfers : from_employment_id
     persons ||--o{ company_transfers : person_id
     employments ||--o{ company_transfers : to_employment_id
+    legal_entities ||--o{ document_signatories : legal_entity_id
+    brand_assets ||--o{ document_signatories : signature_asset_id
     employments ||--o{ employment_spells : employment_id
     leave_types ||--o{ leave_separation_rules : leave_type_id
     legal_entities ||--o{ leave_separation_rules : legal_entity_id
@@ -924,6 +972,8 @@ erDiagram
     employments ||--o{ leave_separation_settlements : employment_id
     leave_types ||--o{ leave_separation_settlements : leave_type_id
     employment_spells ||--o{ leave_separation_settlements : spell_id
+    legal_entities ||--o{ payslip_templates : legal_entity_id
+    document_signatories ||--o{ payslip_templates : signatory_id
     employee_kyc_documents ||--o{ prior_service : document_id
     persons ||--o{ prior_service : person_id
     legal_entities ||--o{ rejoin_policies : legal_entity_id
@@ -931,6 +981,9 @@ erDiagram
     employment_spells ||--o{ rejoin_records : new_spell_id
     personnel_actions ||--o{ rejoin_records : personnel_action_id
     employment_spells ||--o{ rejoin_records : previous_spell_id
+    reminder_rules ||--o{ reminder_outbox : rule_id
+    legal_entities ||--o{ reminder_rules : legal_entity_id
+    org_units ||--o{ reminder_rules : org_unit_id
 ```
 
 ## Tables
@@ -951,6 +1004,8 @@ erDiagram
 | `attendance_groups` | Other | Groups of people whose attendance is marked, not punched (guards, drivers, cleaners): a name, optionally the one company it belongs to, retired by archiving. |
 | `attendance_marks` | Other | Every time a marked day was set or cleared: the employee and date, the status (NULL: cleared) and any in/out times set, who did it, when, through what, and why. |
 | `auth_throttle` | Platform and access | Failed-attempt counters and lockouts for sign-in and similar endpoints. |
+| `brand_assets` | Other | Logos and signature images uploaded for documents, re-encoded to PNG. Never changed or removed, so a payslip issued with an image can always be reproduced. |
+| `brand_profiles` | Other | How documents look: logo, colours, footer and contact details. The row without a company is the group default; a company row overrides only the fields it sets. |
 | `candidates` | Recruitment | People who applied or were sourced. |
 | `comp_off_grants` | Time and attendance | Compensatory leave earned for working on an off day. |
 | `company_transfers` | Other | A person moved from one company of the group to another: the employment they left, the one they joined, when, and whether leave was carried over or settled. |
@@ -960,6 +1015,7 @@ erDiagram
 | `daily_report_rows` | Reports, history and jobs | The rows of a cached daily report. |
 | `daily_report_snapshots` | Reports, history and jobs | Cached daily report results per login, kept until expiry. |
 | `dashboard_layouts` | Platform and access | Per-login widget layout of a dashboard. |
+| `document_signatories` | Other | People who sign documents (payslips, later letters): name, designation and an optional signature image; for one company, or for any company when none is set. |
 | `employee_approval_flows` | Approvals | The approval flow chosen for one employee and request type. |
 | `employee_compensations` | Payroll | An employee's salary over time. No overlaps. |
 | `employee_id_schemes` | Organisation | How new employee numbers are generated, per company or tenant-wide. |
@@ -1010,6 +1066,7 @@ erDiagram
 | `onboarding_templates` | Onboarding | Reusable onboarding checklists. |
 | `org_units` | Organisation | Departments and teams, as a tree within a company. |
 | `pay_components` | Payroll | Earnings, deductions and contributions a salary is built from. |
+| `payslip_templates` | Other | What a payslip shows and in which layout. The row without a company is the group default; a company with its own row uses that instead, as a whole. |
 | `personnel_actions` | People | Hires, transfers, promotions, separations and similar changes. |
 | `persons` | People | A human being. One person can have several employments over time. |
 | `platform_admins` | Platform and access | Operators of the platform console. Not tenant users. |
@@ -1024,6 +1081,8 @@ erDiagram
 | `recruitment_stages` | Recruitment | Pipeline stages a tenant uses for candidates. |
 | `rejoin_policies` | Other | How a company treats someone who rejoins: continue earlier service by default or start fresh, and how long a break can be before it must start fresh. |
 | `rejoin_records` | Other | What was decided when a separated employee rejoined: keep earlier service and leave (CONTINUE) or start over (FRESH), who approved it, and why. |
+| `reminder_outbox` | Other | Reminder mails queued for delivery. The people are kept as a payload and the mail is worded when it is sent. FAILED means every attempt was used. |
+| `reminder_rules` | Other | A birthday or work-anniversary reminder: when it runs, who is told, and the wording. last_run_date is the local date it last queued mail for. |
 | `report_definitions` | Reports, history and jobs | Saved report layouts and filters. |
 | `role_assignments` | Platform and access | A role granted to a login, with the scope it applies to. |
 | `roles` | Platform and access | Roles a tenant can grant (built-in ones are is_system). |

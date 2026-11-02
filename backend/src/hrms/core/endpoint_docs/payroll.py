@@ -146,4 +146,39 @@ that day; history is never overwritten. Refused when:
 - it is your own salary (`403`).
 """,
     ),
+    # ─── Payslip templates ───────────────────────────────────────────────────
+    "payslip_template_overview": (
+        "Payslip templates",
+        """
+The group's payslip template (`id: null` until one is saved: the built-in default), each
+company's own template (`null` when it uses the group's), and the employee `fields` a template
+can print. Needs `payroll.write` or `org.write`; companies outside your scope aren't listed.
+""",
+    ),
+    "put_group_payslip_template": (
+        "Save the group's payslip template",
+        """
+Sets what every company's payslips show unless a company has its own template: the `layout`
+(`MODERN`, `CLASSIC` or `COMPACT`, half A4), the `title`, the employee fields in order, which
+blocks appear, and the signature (`COMPUTER_GENERATED` statement, or a `SIGNATORY` who signs for
+every company). Needs a group-level administrator. Send the `version` you loaded.
+""",
+    ),
+    "put_company_payslip_template": (
+        "Save a company's own payslip template",
+        "A complete template for one company, used instead of the group's. The signatory must "
+        "sign for this company or for every company.",
+    ),
+    "delete_company_payslip_template": (
+        "Use the group's payslip template again",
+        "Removes a company's own template.",
+    ),
+    "preview_payslip_template": (
+        "Preview a payslip template",
+        """
+Returns a PDF of an unsaved `template` with the branding of `legal_entity_id` (or the group's),
+filled with made-up figures and watermarked SAMPLE, so designing a payslip shows nobody's pay.
+`format=png` returns the pages as one image instead, for showing on screen.
+""",
+    ),
 }

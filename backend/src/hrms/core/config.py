@@ -1,6 +1,6 @@
 from typing import Literal
 
-from pydantic import field_validator, model_validator
+from pydantic import SecretStr, field_validator, model_validator
 from pydantic_settings import BaseSettings, SettingsConfigDict
 from sqlalchemy.engine import make_url
 
@@ -141,13 +141,19 @@ class Settings(BaseSettings):
     jobs_retry_seconds: int = 300
     # First automated accrual period. Leave unset to start in the current tenant month.
     jobs_accrual_start_period: str | None = None
-    mail_backend: Literal["disabled", "ses"] = "disabled"
+    mail_backend: Literal["disabled", "ses", "smtp"] = "disabled"
     mail_from: str | None = None
+    mail_from_name: str | None = None
     mail_region: str | None = None
+    # Only for mail_backend="smtp" (reminder mail; password-reset mail still needs ses).
+    smtp_host: str | None = None
+    smtp_port: int = 587
+    smtp_username: str | None = None
+    smtp_password: SecretStr | None = None
+    smtp_starttls: bool = True
     platform_reset_base_url: str | None = None
     platform_token_expire_minutes: int = 30
     document_timeout_seconds: int = 15
-
 
     @field_validator("environment", mode="before")
     @classmethod
@@ -176,6 +182,14 @@ class Settings(BaseSettings):
                 raise ValueError("SES requires HRMS_MAIL_FROM and HRMS_PLATFORM_RESET_BASE_URL")
             if not self.platform_reset_base_url.startswith("https://"):
                 raise ValueError("Reset links require an HTTPS base URL")
+
+        if self.mail_backend == "smtp":
+            smtp = (self.smtp_host, self.smtp_username, self.smtp_password)
+            if not (self.mail_from and all(smtp)):
+                raise ValueError(
+                    "SMTP requires HRMS_MAIL_FROM, HRMS_SMTP_HOST, HRMS_SMTP_USERNAME "
+                    "and HRMS_SMTP_PASSWORD"
+                )
 
         if self.is_deployed:
             where = self.environment.capitalize()
@@ -240,9 +254,7 @@ class Settings(BaseSettings):
                 raise ValueError(
                     "HRMS_PAYROLL_ENCRYPTION_KEYS uses the published development key id 'dev'"
                 )
-            if set(parse_keys(self.payroll_encryption_keys).values()) & set(
-                key_ids.values()
-            ):
+            if set(parse_keys(self.payroll_encryption_keys).values()) & set(key_ids.values()):
                 raise ValueError(
                     "HRMS_PAYROLL_ENCRYPTION_KEYS must not reuse an identifier key: payroll "
                     "keys are held by fewer people"

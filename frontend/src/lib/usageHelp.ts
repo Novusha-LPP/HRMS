@@ -18,6 +18,8 @@ export type UsageHelpTopic =
   | "payroll-structures"
   | "payroll-components"
   | "payroll-statutory"
+  | "payslip-template"
+  | "branding"
   | "leavers"
   | "prior-service"
   | "company-transfer"
@@ -470,6 +472,30 @@ export const usageHelp: Record<UsageHelpTopic, UsageHelp> = {
       { title: "Quick navigation to organization modules", description: "Click on any summary metric card (Legal entities, Locations & hubs, Departments) to open that module for editing." },
     ],
     note: "All overview metrics calculate automatically from active employee records and current organization settings. KYC compliance measures the percentage of active staff with verified identity and statutory records.",
+  },
+  branding: {
+    title: "Set how payslips look",
+    introduction: "The logo, colours, footer and signatories on payslips. Set them once for the group; a company that looks different overrides only what differs.",
+    steps: [
+      { title: "Fill in each company’s details", description: "On the Companies tab, edit each company and fill in Details for payslips: the registered name and address, and the CIN, TAN, PF and ESIC codes you want printed. The payslip header shows them." },
+      { title: "Set the group branding", description: "Choose Edit group branding. Upload the logo (PNG, JPEG or WebP, at least 200 pixels wide), pick the brand colour, and add a footer and contact details. Every company uses these unless it sets its own." },
+      { title: "Customize a company if it differs", description: "Choose Customize on a company and change only what differs, for example its own logo. Empty fields keep using the group’s value, shown in grey. Use the group’s branding resets it." },
+      { title: "Add signatories", description: "If payslips should be signed, add the person who signs, their designation and a scan of their signature, for one company or for every company." },
+      { title: "Set the payslip layout", description: "Under Payslip layout, pick Modern, Classic or Compact, the employee details to print, and the signature. The preview updates as you change it." },
+    ],
+    note: "A light brand colour is printed in a darker shade for text, so payslips stay readable. Images can’t be deleted: a payslip issued with a logo keeps it.",
+  },
+  "payslip-template": {
+    title: "Set the payslip layout",
+    introduction: "What every payslip shows and how it is laid out. The group’s layout applies to every company unless a company has its own.",
+    steps: [
+      { title: "Choose the layout", description: "Modern has a brand colour header and highlighted net pay. Classic uses bordered tables in black and grey. Compact fits on half an A4 page, for printing two to a sheet." },
+      { title: "Choose the employee details", description: "Add the details to print and put them in order. Identity and bank numbers always print masked, showing only the last four characters." },
+      { title: "Choose what else to show", description: "Attendance, leave balances, employer contributions and a year-to-date column are optional. Lines that are zero can be hidden." },
+      { title: "Choose the signature", description: "Print that the payslip is computer-generated and needs no signature, or choose a signatory whose name, designation and signature image print at the bottom." },
+      { title: "Customize one company", description: "Pick the company in Layout for and choose Customize for this company. From then on it keeps its own layout until you choose Use the group’s layout." },
+    ],
+    note: "The preview fills the payslip with made-up figures and marks it SAMPLE, so designing it shows no one’s pay.",
   },
   companies: {
     title: "Manage group legal entities & companies",
